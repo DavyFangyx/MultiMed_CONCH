@@ -7,10 +7,11 @@ pipeline.py — JSON → Prompt CSV → CONCH Embedding 一键流水线
   pipeline     先 json2prompt 后 encode，一键完成整条流水线
 
 默认路径 (均可通过参数覆盖):
+  --datasets_config  .../CONCH-main/projects/datasets.json
+  --dataset       可选；指定后输出到 projects/outputs/{dataset}/...
   --json_path     /data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json
   --template_dir  .../CONCH-main/projects/templates/l0_l5
   --prompt_dir    .../CONCH-main/projects/outputs/prompts
-  --filtered_csv  .../SurvPGC/patients_index/filtered_patient_id.csv
   --ckpt          .../CONCH/pytorch_model.bin
   --out           .../CONCH-main/projects/outputs/embeddings
 
@@ -34,6 +35,12 @@ python projects/scripts/run_pipeline.py encode --scheme L0
 
   # 编码所有方案
 python projects/scripts/run_pipeline.py encode --scheme all
+
+  # 多数据集：指定一个数据集
+python projects/scripts/run_pipeline.py pipeline --dataset TCGA-READ --scheme all
+
+  # 多数据集：运行 datasets.json 中所有数据集
+python projects/scripts/run_pipeline.py pipeline --dataset all --scheme all
 
   # 全流程：json→prompt→embedding（单方案）
 python projects/scripts/run_pipeline.py pipeline --scheme L0
@@ -68,9 +75,9 @@ REPO_ROOT = PROJECT_ROOT.parent
 WORKSPACE_ROOT = REPO_ROOT.parent
 
 DEFAULT_JSON_PATH     = "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
+DEFAULT_DATASETS_CONFIG = str(PROJECT_ROOT / "datasets.json")
 DEFAULT_TEMPLATE_DIR  = str(PROJECT_ROOT / "templates/l0_l5")
 DEFAULT_PROMPT_DIR    = str(PROJECT_ROOT / "outputs/prompts")
-DEFAULT_FILTERED_CSV  = "/data/fangyuxuan/projects/medical_dl/SurvPGC/patients_index/filtered_patient_id.csv"
 DEFAULT_CKPT          = str(WORKSPACE_ROOT / "CONCH/pytorch_model.bin")
 DEFAULT_OUT_DIR       = str(PROJECT_ROOT / "outputs/embeddings")
 DEFAULT_GPU           = "7"
@@ -82,6 +89,46 @@ SCHEME_PROMPT_FILE = {}  # 方案名 → prompt CSV 文件名
 SCHEME_DIRNAME     = {}  # 方案名 → embedding 输出子目录名
 SCHEME_COLS        = {}  # 方案名 → prompt 列名列表（encode 阶段使用）
 SCHEME_CONFIG      = {}  # 方案名 → {template_cols, placeholders, output_cols}
+
+
+def load_dataset_configs(config_path: str) -> dict:
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"数据集配置不存在: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"数据集配置必须是 JSON object: {path}")
+    return data
+
+
+def resolve_dataset_names(dataset_arg: str, datasets: dict) -> list:
+    if not dataset_arg:
+        return []
+    if dataset_arg == "all":
+        return list(datasets.keys())
+
+    names = [x.strip() for x in dataset_arg.split(",") if x.strip()]
+    unknown = [x for x in names if x not in datasets]
+    if unknown:
+        raise ValueError(f"未知 dataset: {unknown}; 可用: {sorted(datasets)}")
+    return names
+
+
+def dataset_prompt_dir(dataset_name: str) -> str:
+    return str(PROJECT_ROOT / "outputs" / dataset_name / "prompts")
+
+
+def dataset_embedding_dir(dataset_name: str) -> str:
+    return str(PROJECT_ROOT / "outputs" / dataset_name / "embeddings")
+
+
+def get_dataset_clinic_files(dataset_name: str, datasets: dict) -> list:
+    cfg = datasets[dataset_name]
+    files = cfg.get("clinic_files", [])
+    if not files:
+        raise ValueError(f"dataset '{dataset_name}' 没有配置 clinic_files")
+    return list(files)
 
 
 # ─────────────────────────────────────────────────────────
@@ -287,23 +334,59 @@ def generate_prompt_row(case: dict, templates: dict, scheme: str) -> dict:
 # 2. json2prompt 核心逻辑
 # ─────────────────────────────────────────────────────────
 
+def _normalize_json_paths(json_paths) -> list:
+    if isinstance(json_paths, (str, Path)):
+        return [str(json_paths)]
+    return [str(x) for x in json_paths]
+
+
+def load_clinical_cases(json_paths) -> list:
+    paths = _normalize_json_paths(json_paths)
+    cases_by_patient = {}
+    total, skipped, duplicated = 0, 0, 0
+
+    for path in paths:
+        with open(path, "r", encoding="utf-8") as f:
+            cases = json.load(f)
+        print(f"      {path}: {len(cases)} 个病例")
+        total += len(cases)
+
+        for case in cases:
+            pid = str(case.get("submitter_id", "")).strip()
+            if not pid:
+                skipped += 1
+                continue
+            if pid in cases_by_patient:
+                duplicated += 1
+                continue
+            cases_by_patient[pid] = case
+
+    print(f"      合计病例数: {total}")
+    print(f"      去重后病例数: {len(cases_by_patient)}")
+    if duplicated:
+        print(f"      重复 submitter_id: {duplicated} 个，保留首次出现记录")
+    if skipped:
+        print(f"      跳过缺少 submitter_id: {skipped} 个")
+
+    return list(cases_by_patient.values())
+
+
 def run_json2prompt(json_path: str, scheme: str, template_dir: str, prompt_dir: str):
     cfg = SCHEME_CONFIG[scheme]
     template_file = Path(template_dir) / SCHEME_TEMPLATE[scheme]
     output_file   = Path(prompt_dir)   / SCHEME_PROMPT_FILE[scheme]
+    json_paths = _normalize_json_paths(json_path)
 
     print(f"\n{'='*55}")
     print(f"[json2prompt] 方案 {scheme}")
-    print(f"  JSON    : {json_path}")
+    print(f"  JSON    : {json_paths}")
     print(f"  模板    : {template_file}")
     print(f"  输出    : {output_file}")
     print(f"{'='*55}")
 
     # 读取 JSON
     print(f"\n[1/3] 读取 JSON ...")
-    with open(json_path, "r", encoding="utf-8") as f:
-        cases = json.load(f)
-    print(f"      共 {len(cases)} 个病例")
+    cases = load_clinical_cases(json_paths)
 
     # 读取模板
     print(f"[2/3] 读取模板 ...")
@@ -367,8 +450,7 @@ def _build_patient_prompt_matrix(df: pd.DataFrame, prompt_cols: list) -> list:
     return patient_prompts
 
 
-def run_encode(scheme: str, prompt_dir: str, filtered_csv: str,
-               ckpt: str, out_dir: str, batch_size: int = 64):
+def run_encode(scheme: str, prompt_dir: str, ckpt: str, out_dir: str, batch_size: int = 64):
     os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
@@ -387,36 +469,20 @@ def run_encode(scheme: str, prompt_dir: str, filtered_csv: str,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"  设备: {device}")
 
-    # 读取筛选患者表
-    print(f"\n[1/4] 读取筛选患者表: {filtered_csv}")
-    filter_df = pd.read_csv(filtered_csv)
-    assert "patient_id" in filter_df.columns, "filtered_csv 必须含 patient_id 列"
-    valid_patients = set(filter_df["patient_id"].astype(str).tolist())
-    print(f"      筛选患者数: {len(valid_patients)}")
-
     # 读取 prompt CSV
-    print(f"\n[2/4] 读取 prompt CSV: {csv_path}")
+    print(f"\n[1/3] 读取 prompt CSV: {csv_path}")
     df = pd.read_csv(csv_path)
-    print(f"      原始病例数: {len(df)}")
+    print(f"      病例数: {len(df)}")
 
     missing_cols = [c for c in prompt_cols if c not in df.columns]
     if missing_cols:
         raise ValueError(f"prompt CSV 缺少以下列（方案 {scheme}）：{missing_cols}")
 
-    df_filtered = df[df["patient_id"].astype(str).isin(valid_patients)].reset_index(drop=True)
-    print(f"      过滤后病例数: {len(df_filtered)}")
-
-    missing_patients = valid_patients - set(df_filtered["patient_id"].astype(str))
-    if missing_patients:
-        print(f"\n      ⚠️  {len(missing_patients)} 个患者在 prompt CSV 中未找到（显示前10个）:")
-        for p in sorted(missing_patients)[:10]:
-            print(f"         {p}")
-
-    patient_ids = df_filtered["patient_id"].astype(str).tolist()
-    patient_prompts = _build_patient_prompt_matrix(df_filtered, prompt_cols)
+    patient_ids = df["patient_id"].astype(str).tolist()
+    patient_prompts = _build_patient_prompt_matrix(df, prompt_cols)
 
     if not patient_ids:
-        print("\n      过滤后无患者，跳过编码。")
+        print("\n      prompt CSV 中无患者，跳过编码。")
         return
 
     num_prompt_fields = len(prompt_cols)
@@ -430,7 +496,7 @@ def run_encode(scheme: str, prompt_dir: str, filtered_csv: str,
         print()
 
     # 加载模型
-    print(f"[3/4] 加载 CONCH: {ckpt}")
+    print(f"[2/3] 加载 CONCH: {ckpt}")
     model, _ = create_model_from_pretrained(model_cfg="conch_ViT-B-16", checkpoint_path=ckpt)
     model = model.to(device).eval()
     tokenizer = get_tokenizer()
@@ -450,7 +516,7 @@ def run_encode(scheme: str, prompt_dir: str, filtered_csv: str,
     print(f"      Embedding shape: {embeddings.shape}")
 
     # 保存
-    print(f"\n[4/4] 按患者 ID 保存文件 → {out_subdir}")
+    print(f"\n[3/3] 按患者 ID 保存文件 → {out_subdir}")
     pt_dir = out_subdir / "pt"
     pt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -476,15 +542,17 @@ def run_encode(scheme: str, prompt_dir: str, filtered_csv: str,
 
 def _add_common_args(p: argparse.ArgumentParser):
     p.add_argument("--scheme", default="all",
-                   help="方案名（all = 运行 JSON 中所有方案；或指定单个方案名，如 O/A/B/C/D/A1）")
+                   help="方案名（all = 运行当前 template_dir 中所有方案；默认如 L0 / L1 / ... / L5）")
+    p.add_argument("--dataset", default=None,
+                   help="数据集名；支持 all 或逗号分隔列表。为空时使用 --json_path 单数据集模式。")
+    p.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG,
+                   help="数据集 clinical JSON 配置文件")
     p.add_argument("--json_path",    default=DEFAULT_JSON_PATH,
                    help="TCGA GDC 原始 JSON 文件路径")
     p.add_argument("--template_dir", default=DEFAULT_TEMPLATE_DIR,
                    help="模板 CSV 所在目录")
     p.add_argument("--prompt_dir",   default=DEFAULT_PROMPT_DIR,
                    help="prompt CSV 输入/输出目录")
-    p.add_argument("--filtered_csv", default=DEFAULT_FILTERED_CSV,
-                   help="筛选患者表路径（含 patient_id 列）")
     p.add_argument("--ckpt",         default=DEFAULT_CKPT,
                    help="CONCH pytorch_model.bin 路径")
     p.add_argument("--out",          default=DEFAULT_OUT_DIR,
@@ -528,26 +596,51 @@ def main():
         )
 
     schemes = list(SCHEME_CONFIG.keys()) if args.scheme == "all" else [args.scheme]
+    datasets = load_dataset_configs(args.datasets_config)
+    dataset_names = resolve_dataset_names(args.dataset, datasets)
 
-    if args.cmd in ("json2prompt", "pipeline"):
-        for s in schemes:
-            run_json2prompt(
-                json_path    = args.json_path,
-                scheme       = s,
-                template_dir = args.template_dir,
-                prompt_dir   = args.prompt_dir,
-            )
+    if not dataset_names:
+        dataset_jobs = [
+            {
+                "name": None,
+                "json_paths": [args.json_path],
+                "prompt_dir": args.prompt_dir,
+                "out_dir": args.out,
+            }
+        ]
+    else:
+        dataset_jobs = [
+            {
+                "name": name,
+                "json_paths": get_dataset_clinic_files(name, datasets),
+                "prompt_dir": dataset_prompt_dir(name),
+                "out_dir": dataset_embedding_dir(name),
+            }
+            for name in dataset_names
+        ]
 
-    if args.cmd in ("encode", "pipeline"):
-        for s in schemes:
-            run_encode(
-                scheme       = s,
-                prompt_dir   = args.prompt_dir,
-                filtered_csv = args.filtered_csv,
-                ckpt         = args.ckpt,
-                out_dir      = args.out,
-                batch_size   = args.batch_size,
-            )
+    for job in dataset_jobs:
+        if job["name"]:
+            print(f"\n######## Dataset: {job['name']} ########")
+
+        if args.cmd in ("json2prompt", "pipeline"):
+            for s in schemes:
+                run_json2prompt(
+                    json_path    = job["json_paths"],
+                    scheme       = s,
+                    template_dir = args.template_dir,
+                    prompt_dir   = job["prompt_dir"],
+                )
+
+        if args.cmd in ("encode", "pipeline"):
+            for s in schemes:
+                run_encode(
+                    scheme       = s,
+                    prompt_dir   = job["prompt_dir"],
+                    ckpt         = args.ckpt,
+                    out_dir      = job["out_dir"],
+                    batch_size   = args.batch_size,
+                )
 
 
 if __name__ == "__main__":

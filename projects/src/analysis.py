@@ -17,19 +17,25 @@ import argparse
 import json
 import math
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 from pipeline import (
-    DEFAULT_FILTERED_CSV,
+    DEFAULT_DATASETS_CONFIG,
     DEFAULT_JSON_PATH,
     DEFAULT_PROMPT_DIR,
     DEFAULT_TEMPLATE_DIR,
     SCHEME_CONFIG,
     SCHEME_PROMPT_FILE,
+    dataset_prompt_dir,
     extract_values,
+    get_dataset_clinic_files,
+    load_clinical_cases,
+    load_dataset_configs,
     load_custom_schemes,
+    resolve_dataset_names,
 )
 
 
@@ -114,32 +120,22 @@ def _str2bool(v):
 # ─────────────────────────────────────────────────────────
 # 2. 第一层：JSON 语义缺失率（extract_values 口径）
 # ─────────────────────────────────────────────────────────
-def analyze_json_layer(json_path: str, filtered_csv: str) -> pd.DataFrame:
+def analyze_json_layer(json_path) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【第一层】JSON 语义缺失率分析")
     print(f"  JSON       : {json_path}")
-    print(f"  过滤患者表 : {filtered_csv}")
     print(f"{'='*60}")
 
-    filter_df = pd.read_csv(filtered_csv)
-    assert "patient_id" in filter_df.columns, "filtered_csv 必须含 patient_id 列"
-    valid_ids = set(filter_df["patient_id"].astype(str).str.strip())
-    print(f"  过滤患者数 : {len(valid_ids)}")
-
-    with open(json_path, "r", encoding="utf-8") as f:
-        cases = json.load(f)
+    cases = load_clinical_cases(json_path)
     print(f"  JSON 总病例: {len(cases)}")
-
-    matched = [c for c in cases if c.get("submitter_id", "").strip() in valid_ids]
-    print(f"  匹配病例数 : {len(matched)}")
-    if not matched:
-        print("  ⚠️  无匹配病例，请检查 JSON 与 filtered_csv 的 patient_id 格式是否一致。")
+    if not cases:
+        print("  ⚠️  JSON 中无病例，跳过分析。")
         return pd.DataFrame()
 
     field_names = list(FIELD_FALLBACKS.keys())
     counts = {f: {"missing": 0, "total": 0} for f in field_names}
 
-    for case in matched:
+    for case in cases:
         vals = extract_values(case)
         for field in field_names:
             v = vals.get(field, "")
@@ -187,20 +183,16 @@ def _contains_fallback(text: str, fallback_value: str) -> bool:
     return fb in t
 
 
-def analyze_prompt_layer(scheme: str, prompt_dir: str, filtered_csv: str) -> pd.DataFrame:
+def analyze_prompt_layer(scheme: str, prompt_dir: str) -> pd.DataFrame:
     csv_file = Path(prompt_dir) / SCHEME_PROMPT_FILE[scheme]
     if not csv_file.exists():
         print(f"  ⚠️  [{scheme}] prompt CSV 不存在: {csv_file}，请先运行 json2prompt")
         return pd.DataFrame()
 
-    filter_df = pd.read_csv(filtered_csv)
-    valid_ids = set(filter_df["patient_id"].astype(str).str.strip())
-
     df = pd.read_csv(csv_file)
-    df_filtered = df[df["patient_id"].astype(str).str.strip().isin(valid_ids)].reset_index(drop=True)
-    n = len(df_filtered)
+    n = len(df)
     if n == 0:
-        print(f"  ⚠️  [{scheme}] 过滤后无患者")
+        print(f"  ⚠️  [{scheme}] prompt CSV 中无患者")
         return pd.DataFrame()
 
     prompt_cols = SCHEME_CONFIG[scheme]["output_cols"]
@@ -209,9 +201,9 @@ def analyze_prompt_layer(scheme: str, prompt_dir: str, filtered_csv: str) -> pd.
 
     rows = []
     for col in prompt_cols:
-        if col not in df_filtered.columns:
+        if col not in df.columns:
             continue
-        series = df_filtered[col]
+        series = df[col]
         null_count = series.isna().sum() + (series.astype(str).str.strip() == "").sum()
 
         placeholder_key = col_to_placeholder.get(col, "")
@@ -391,26 +383,16 @@ def _calc_variance(values: list) -> tuple:
 
 
 def analyze_json_all_fields(
-    json_path: str,
-    filtered_csv: str,
+    json_path,
     json_field_dict: str,
-    use_filtered_patients: bool = True,
 ) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【第三层】JSON 全字段统计（字典驱动）")
     print(f"  JSON            : {json_path}")
     print(f"  字段字典        : {json_field_dict}")
-    print(f"  过滤患者模式    : {use_filtered_patients}")
     print(f"{'='*60}")
 
-    with open(json_path, "r", encoding="utf-8") as f:
-        cases = json.load(f)
-
-    if use_filtered_patients:
-        filter_df = pd.read_csv(filtered_csv)
-        assert "patient_id" in filter_df.columns, "filtered_csv 必须含 patient_id 列"
-        valid_ids = set(filter_df["patient_id"].astype(str).str.strip())
-        cases = [c for c in cases if c.get("submitter_id", "").strip() in valid_ids]
+    cases = load_clinical_cases(json_path)
 
     patient_total = len(cases)
     print(f"  纳入病例数      : {patient_total}")
@@ -498,19 +480,19 @@ def analyze_json_all_fields(
 # ─────────────────────────────────────────────────────────
 # 5. 汇总 + 输出
 # ─────────────────────────────────────────────────────────
-def run(args):
+def run_one(args, json_paths, prompt_dir: str, output_dir: Path):
     load_custom_schemes(args.template_dir)
 
     if not SCHEME_CONFIG:
         print("未找到任何方案，请确认 template_dir 下存在 custom_schemes.json")
         sys.exit(1)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 第一层：JSON（extract_values 口径） ───────────────
-    df_json = analyze_json_layer(args.json_path, args.filtered_csv)
+    df_json = analyze_json_layer(json_paths)
     if not df_json.empty:
-        out_path = OUTPUT_DIR / "json_layer_stats.csv"
+        out_path = output_dir / "json_layer_stats.csv"
         df_json.to_csv(out_path, index=False)
         print(f"\n✅ JSON 层统计已保存: {out_path}")
 
@@ -522,18 +504,18 @@ def run(args):
         print(f"\n{'='*60}")
         print(f"【第二层】Prompt CSV 分析  方案: {scheme}")
         print(f"{'='*60}")
-        df_p = analyze_prompt_layer(scheme, args.prompt_dir, args.filtered_csv)
+        df_p = analyze_prompt_layer(scheme, prompt_dir)
         if df_p.empty:
             continue
         print(df_p.to_string(index=False))
-        out_path = OUTPUT_DIR / f"prompt_layer_{scheme}.csv"
+        out_path = output_dir / f"prompt_layer_{scheme}.csv"
         df_p.to_csv(out_path, index=False)
         print(f"\n✅ 已保存: {out_path}")
         all_prompt_stats.append(df_p)
 
     if all_prompt_stats:
         merged = pd.concat(all_prompt_stats, ignore_index=True)
-        merged_path = OUTPUT_DIR / "prompt_layer_all_schemes.csv"
+        merged_path = output_dir / "prompt_layer_all_schemes.csv"
         merged.to_csv(merged_path, index=False)
         print(f"\n✅ 所有方案合并统计已保存: {merged_path}")
 
@@ -584,25 +566,46 @@ def run(args):
 
         print(df_stats.to_string(index=False))
 
-        stats_path = OUTPUT_DIR / "prompt_layer_stats.csv"
+        stats_path = output_dir / "prompt_layer_stats.csv"
         df_stats.to_csv(stats_path, index=False)
         print(f"\n✅ 字段并集统计已保存: {stats_path}")
 
     # ── 第三层：JSON 全字段统计（可开关，默认开启） ───────
     if args.json_all_fields:
         df_json_all = analyze_json_all_fields(
-            json_path=args.json_path,
-            filtered_csv=args.filtered_csv,
+            json_path=json_paths,
             json_field_dict=args.json_field_dict,
-            use_filtered_patients=args.use_filtered_patients,
         )
         if not df_json_all.empty:
-            out_path = OUTPUT_DIR / "json_layer_stats_all.csv"
+            out_path = output_dir / "json_layer_stats_all.csv"
             df_json_all.to_csv(out_path, index=False)
             print("\n" + df_json_all.head(20).to_string(index=False))
             print(f"\n✅ JSON 全字段统计已保存: {out_path}")
 
-    print(f"\n所有结果保存于: {OUTPUT_DIR}")
+    print(f"\n所有结果保存于: {output_dir}")
+
+
+def run(args):
+    datasets = load_dataset_configs(args.datasets_config)
+    dataset_names = resolve_dataset_names(args.dataset, datasets)
+
+    if not dataset_names:
+        run_one(
+            args=args,
+            json_paths=[args.json_path],
+            prompt_dir=args.prompt_dir,
+            output_dir=OUTPUT_DIR,
+        )
+        return
+
+    for name in dataset_names:
+        print(f"\n######## Dataset: {name} ########")
+        run_one(
+            args=args,
+            json_paths=get_dataset_clinic_files(name, datasets),
+            prompt_dir=dataset_prompt_dir(name),
+            output_dir=PROJECT_ROOT / "outputs" / name / "stats",
+        )
 
 
 # ─────────────────────────────────────────────────────────
@@ -615,10 +618,11 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("--scheme", default="all", help="方案名（all = 全部；默认如 L0 / L1 / ... / L5）")
+    parser.add_argument("--dataset", default=None, help="数据集名；支持 all 或逗号分隔列表。为空时使用 --json_path 单数据集模式。")
+    parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG, help="数据集 clinical JSON 配置文件")
     parser.add_argument("--json_path", default=DEFAULT_JSON_PATH)
     parser.add_argument("--template_dir", default=DEFAULT_TEMPLATE_DIR)
     parser.add_argument("--prompt_dir", default=DEFAULT_PROMPT_DIR)
-    parser.add_argument("--filtered_csv", default=DEFAULT_FILTERED_CSV)
 
     # 新增：JSON 全字段统计开关（默认开启）
     parser.add_argument(
@@ -632,13 +636,6 @@ def main():
         default=DEFAULT_JSON_FIELD_DICT,
         help="JSON 字段字典文件路径（默认: projects/templates/l0_l5/json_field_dictionary.json）",
     )
-    parser.add_argument(
-        "--use_filtered_patients",
-        type=_str2bool,
-        default=True,
-        help="JSON 全字段统计是否仅使用 filtered_csv 内患者（默认: true）",
-    )
-
     run(parser.parse_args())
 
 

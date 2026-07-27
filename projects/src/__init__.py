@@ -1,1 +1,0 @@
-"""Clinical project source package."""
