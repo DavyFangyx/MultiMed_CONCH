@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Runtime logs and temp files
+*.log
+*.tmp
+*.temp
