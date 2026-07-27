@@ -1,14 +1,7 @@
 import argparse
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import clinical_pipeline as base  # noqa: E402
-
-from .config import (  # noqa: E402
+from . import pipeline as base
+from .config import (
     DEFAULT_CKPT,
     DEFAULT_FILTERED_CSV,
     DEFAULT_GPU,
@@ -79,4 +72,3 @@ def main() -> None:
                 out_dir=args.out,
                 batch_size=args.batch_size,
             )
-

@@ -1,0 +1,607 @@
+{
+  "_comment": "所有方案的统一配置文件（含内置 O/A/B/C/D 及自定义方案）。修改/增减字段直接编辑此处，无需改动 Python 代码。键名以 _ 开头的条目为注释/元数据，程序会自动跳过。",
+  "_available_placeholders": [
+    "AGE",
+    "SEX",
+    "PRIMARY_SITE",
+    "PRIMARY_DIAGNOSIS",
+    "MORPHOLOGY",
+    "LATERALITY",
+    "YEAR_OF_DIAGNOSIS",
+    "AJCC_PATHOLOGIC_STAGE",
+    "AJCC_PATHOLOGIC_T",
+    "AJCC_PATHOLOGIC_N",
+    "AJCC_PATHOLOGIC_M",
+    "TUMOR_GRADE",
+    "TREATMENT_TYPE",
+    "TREATMENT_OR_THERAPY",
+    "TREATMENT_INTENT_TYPE",
+    "PRIOR_TREATMENT",
+    "TOBACCO_SMOKING_STATUS",
+    "PROGRESSION_OR_RECURRENCE",
+    "SUBTYPE",
+    "TUMORSTAGE",
+    "EDITION",
+    "RACE",
+    "DIAGNOSIS"
+  ],
+  "O": {
+    "description": "原始方案（O_origin）：亚型 / 年龄 / 性别 / 肿瘤分期 / 分期版本 / 种族",
+    "template_file": "O_origin_prompt_template.csv",
+    "prompt_file": "tcga_ki_prompt_O.csv",
+    "dirname": "O_origin",
+    "template_cols": [
+      "SUBTYPE_TEMPLATE",
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "TUMORSTAGE_TEMPLATE",
+      "STAGEEDITION_TEMPLATE",
+      "RACE_TEMPLATE",
+      "PRIMARY_TEMPLATE",
+      "PIROR_TEMPLATE",
+      "TREATMENT_TEMPLATE1",
+      "TREATMENT_TEMPLATE2"
+    ],
+    "placeholders": [
+      "SUBTYPE",
+      "AGE",
+      "SEX",
+      "TUMORSTAGE",
+      "EDITION",
+      "RACE",
+      "DIAGNOSIS",
+      "",
+      "",
+      ""
+    ],
+    "output_cols": [
+      "subtype_template",
+      "age_template",
+      "sex_template",
+      "tumorstage_template",
+      "stageedition_template",
+      "race_template",
+      "primary_template",
+      "piror_template",
+      "treatment_template1",
+      "treatment_template2"
+    ]
+  },
+  "O_simple": {
+    "description": "原始方案（O_simple）：亚型 / 年龄 / 性别 / 肿瘤分期 / 分期版本 / 种族",
+    "template_file": "O_simple_prompt_template.csv",
+    "prompt_file": "tcga_ki_prompt_O_simple.csv",
+    "dirname": "O_simple",
+    "template_cols": [
+      "SUBTYPE_TEMPLATE",
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "TUMORSTAGE_TEMPLATE",
+      "STAGEEDITION_TEMPLATE",
+      "RACE_TEMPLATE"
+    ],
+    "placeholders": [
+      "SUBTYPE",
+      "AGE",
+      "SEX",
+      "TUMORSTAGE",
+      "EDITION",
+      "RACE"
+    ],
+    "output_cols": [
+      "subtype_template",
+      "age_template",
+      "sex_template",
+      "tumorstage_template",
+      "stageedition_template",
+      "race_template"
+    ]
+  },
+  "O_noTreatOnly": {
+    "description": "O 去掉 TREATMENT1+2（保留 SUBTYPE/AGE/SEX/TUMORSTAGE/EDITION/RACE/DIAGNOSIS/PRIOR）",
+    "template_file": "O_noTreatOnly_template.csv",
+    "prompt_file": "tcga_ki_prompt_O_noTreatOnly.csv",
+    "dirname": "O_noTreatOnly",
+    "template_cols": [
+      "SUBTYPE_TEMPLATE",
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "TUMORSTAGE_TEMPLATE",
+      "STAGEEDITION_TEMPLATE",
+      "RACE_TEMPLATE",
+      "PRIMARY_TEMPLATE",
+      "PIROR_TEMPLATE"
+    ],
+    "placeholders": [
+      "SUBTYPE",
+      "AGE",
+      "SEX",
+      "TUMORSTAGE",
+      "EDITION",
+      "RACE",
+      "DIAGNOSIS",
+      ""
+    ],
+    "output_cols": [
+      "subtype_template",
+      "age_template",
+      "sex_template",
+      "tumorstage_template",
+      "stageedition_template",
+      "race_template",
+      "primary_template",
+      "piror_template"
+    ]
+  },
+  "A": {
+    "description": "A 方案（A_profile）：年龄 / 性别 / 原发部位 / 诊断 / 形态学 / 侧别 / 诊断年份",
+    "template_file": "A_profile_template.csv",
+    "prompt_file": "tcga_ki_prompt_A.csv",
+    "dirname": "A_profile",
+    "template_cols": [
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "PRIMARY_SITE_TEMPLATE",
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "LATERALITY_TEMPLATE",
+      "YEAR_OF_DIAGNOSIS_TEMPLATE"
+    ],
+    "placeholders": [
+      "AGE",
+      "SEX",
+      "PRIMARY_SITE",
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "LATERALITY",
+      "YEAR_OF_DIAGNOSIS"
+    ],
+    "output_cols": [
+      "age_template",
+      "sex_template",
+      "primary_site_template",
+      "primary_diagnosis_template",
+      "morphology_template",
+      "laterality_template",
+      "year_of_diagnosis_template"
+    ]
+  },
+  "B": {
+    "description": "B 方案（B_staging）：诊断 / 形态学 / AJCC 分期（T/N/M/总分期）/ 肿瘤分级",
+    "template_file": "B_staging_template.csv",
+    "prompt_file": "tcga_ki_prompt_B.csv",
+    "dirname": "B_staging",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "T_STAGE_TEMPLATE",
+      "N_STAGE_TEMPLATE",
+      "M_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_T",
+      "AJCC_PATHOLOGIC_N",
+      "AJCC_PATHOLOGIC_M",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "t_stage_template",
+      "n_stage_template",
+      "m_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noT": {
+    "description": "B 去掉 T 分期（保留 N/M/总分期）",
+    "template_file": "B_noT_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noT.csv",
+    "dirname": "B_noT",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "N_STAGE_TEMPLATE",
+      "M_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_N",
+      "AJCC_PATHOLOGIC_M",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "n_stage_template",
+      "m_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noN": {
+    "description": "B 去掉 N 分期（保留 T/M/总分期）",
+    "template_file": "B_noN_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noN.csv",
+    "dirname": "B_noN",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "T_STAGE_TEMPLATE",
+      "M_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_T",
+      "AJCC_PATHOLOGIC_M",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "t_stage_template",
+      "m_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noM": {
+    "description": "B 去掉 M 分期（保留 T/N/总分期）",
+    "template_file": "B_noM_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noM.csv",
+    "dirname": "B_noM",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "T_STAGE_TEMPLATE",
+      "N_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_T",
+      "AJCC_PATHOLOGIC_N",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "t_stage_template",
+      "n_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noTN": {
+    "description": "B 去掉 T+N 分期（保留 M/总分期）",
+    "template_file": "B_noTN_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noTN.csv",
+    "dirname": "B_noTN",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "M_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_M",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "m_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noTM": {
+    "description": "B 去掉 T+M 分期（保留 N/总分期）",
+    "template_file": "B_noTM_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noTM.csv",
+    "dirname": "B_noTM",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "N_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_N",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "n_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noNM": {
+    "description": "B 去掉 N+M 分期（保留 T/总分期）",
+    "template_file": "B_noNM_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noNM.csv",
+    "dirname": "B_noNM",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "T_STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "AJCC_PATHOLOGIC_T",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "t_stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noTNM": {
+    "description": "B 去掉全部 T/N/M（仅保留 AJCC 总分期 + 诊断/形态/分级）",
+    "template_file": "B_noTNM_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noTNM.csv",
+    "dirname": "B_noTNM",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "stage_template",
+      "grade_template"
+    ]
+  },
+  "B_noStage": {
+    "description": "B 去掉所有分期字段（T/N/M + AJCC 总分期，仅诊断/形态/分级）",
+    "template_file": "B_noStage_template.csv",
+    "prompt_file": "tcga_ki_prompt_B_noStage.csv",
+    "dirname": "B_noStage",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "MORPHOLOGY",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "morphology_template",
+      "grade_template"
+    ]
+  },
+  "C": {
+    "description": "C 方案（C_treatment）：诊断 / 分期 / 分级 / 治疗类型 / 治疗状态 / 治疗意图 / 既往治疗",
+    "template_file": "C_treatment_template.csv",
+    "prompt_file": "tcga_ki_prompt_C.csv",
+    "dirname": "C_treatment",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE",
+      "TREATMENT_TYPE_TEMPLATE",
+      "TREATMENT_STATUS_TEMPLATE",
+      "TREATMENT_INTENT_TEMPLATE",
+      "PRIOR_TREATMENT_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE",
+      "TREATMENT_TYPE",
+      "TREATMENT_OR_THERAPY",
+      "TREATMENT_INTENT_TYPE",
+      "PRIOR_TREATMENT"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "stage_template",
+      "grade_template",
+      "treatment_type_template",
+      "treatment_status_template",
+      "treatment_intent_template",
+      "prior_treatment_template"
+    ]
+  },
+  "C_noIntent": {
+    "description": "C 去掉 treatment_intent_type（保留 diagnosis/stage/grade/treatment_type/treatment_status/prior_treatment）",
+    "template_file": "C_noIntent_template.csv",
+    "prompt_file": "tcga_ki_prompt_C_noIntent.csv",
+    "dirname": "C_noIntent",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE",
+      "TREATMENT_TYPE_TEMPLATE",
+      "TREATMENT_STATUS_TEMPLATE",
+      "PRIOR_TREATMENT_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE",
+      "TREATMENT_TYPE",
+      "TREATMENT_OR_THERAPY",
+      "PRIOR_TREATMENT"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "stage_template",
+      "grade_template",
+      "treatment_type_template",
+      "treatment_status_template",
+      "prior_treatment_template"
+    ]
+  },
+  "C_noTreat": {
+    "description": "C 仅保留 diagnosis+stage+grade（C 族下界，对齐 B_noTNM 的核心信息）",
+    "template_file": "C_noTreat_template.csv",
+    "prompt_file": "tcga_ki_prompt_C_noTreat.csv",
+    "dirname": "C_noTreat",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "stage_template",
+      "grade_template"
+    ]
+  },
+  "C_intentOnly": {
+    "description": "C 仅保留 diagnosis + treatment_intent_type（隔离 intent 信息贡献）",
+    "template_file": "C_intentOnly_template.csv",
+    "prompt_file": "tcga_ki_prompt_C_intentOnly.csv",
+    "dirname": "C_intentOnly",
+    "template_cols": [
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "TREATMENT_INTENT_TEMPLATE"
+    ],
+    "placeholders": [
+      "PRIMARY_DIAGNOSIS",
+      "TREATMENT_INTENT_TYPE"
+    ],
+    "output_cols": [
+      "primary_diagnosis_template",
+      "treatment_intent_template"
+    ]
+  },
+  "D": {
+    "description": "D 方案（D_clinical_summary）：年龄/性别/诊断/原发部位/侧别/形态/分期/分级/吸烟/治疗/进展",
+    "template_file": "D_clinical_summary_template.csv",
+    "prompt_file": "tcga_ki_prompt_D.csv",
+    "dirname": "D_clinical_summary",
+    "template_cols": [
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "PRIMARY_SITE_TEMPLATE",
+      "LATERALITY_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE",
+      "SMOKING_TEMPLATE",
+      "TREATMENT_TYPE_TEMPLATE",
+      "PROGRESSION_TEMPLATE"
+    ],
+    "placeholders": [
+      "AGE",
+      "SEX",
+      "PRIMARY_DIAGNOSIS",
+      "PRIMARY_SITE",
+      "LATERALITY",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE",
+      "TOBACCO_SMOKING_STATUS",
+      "TREATMENT_TYPE",
+      "PROGRESSION_OR_RECURRENCE"
+    ],
+    "output_cols": [
+      "age_template",
+      "sex_template",
+      "primary_diagnosis_template",
+      "primary_site_template",
+      "laterality_template",
+      "morphology_template",
+      "stage_template",
+      "grade_template",
+      "smoking_template",
+      "treatment_type_template",
+      "progression_template"
+    ]
+  },
+  "D_noProg": {
+    "description": "D 去掉 progression/recurrence 字段（保留其余所有临床信息）",
+    "template_file": "D_noProg_template.csv",
+    "prompt_file": "tcga_ki_prompt_D_noProg.csv",
+    "dirname": "D_noProg",
+    "template_cols": [
+      "AGE_TEMPLATE",
+      "SEX_TEMPLATE",
+      "PRIMARY_DIAGNOSIS_TEMPLATE",
+      "PRIMARY_SITE_TEMPLATE",
+      "LATERALITY_TEMPLATE",
+      "MORPHOLOGY_TEMPLATE",
+      "STAGE_TEMPLATE",
+      "GRADE_TEMPLATE",
+      "SMOKING_TEMPLATE",
+      "TREATMENT_TYPE_TEMPLATE"
+    ],
+    "placeholders": [
+      "AGE",
+      "SEX",
+      "PRIMARY_DIAGNOSIS",
+      "PRIMARY_SITE",
+      "LATERALITY",
+      "MORPHOLOGY",
+      "AJCC_PATHOLOGIC_STAGE",
+      "TUMOR_GRADE",
+      "TOBACCO_SMOKING_STATUS",
+      "TREATMENT_TYPE"
+    ],
+    "output_cols": [
+      "age_template",
+      "sex_template",
+      "primary_diagnosis_template",
+      "primary_site_template",
+      "laterality_template",
+      "morphology_template",
+      "stage_template",
+      "grade_template",
+      "smoking_template",
+      "treatment_type_template"
+    ]
+  }
+}
