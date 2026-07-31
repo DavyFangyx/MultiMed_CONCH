@@ -32,6 +32,7 @@ from pipeline import (
     dataset_prompt_dir,
     extract_values,
     get_dataset_clinic_files,
+    get_dataset_project_ids,
     load_clinical_cases,
     load_dataset_configs,
     load_custom_schemes,
@@ -120,13 +121,13 @@ def _str2bool(v):
 # ─────────────────────────────────────────────────────────
 # 2. 第一层：JSON 语义缺失率（extract_values 口径）
 # ─────────────────────────────────────────────────────────
-def analyze_json_layer(json_path) -> pd.DataFrame:
+def analyze_json_layer(json_path, project_ids: list | None = None) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【第一层】JSON 语义缺失率分析")
     print(f"  JSON       : {json_path}")
     print(f"{'='*60}")
 
-    cases = load_clinical_cases(json_path)
+    cases = load_clinical_cases(json_path, project_ids=project_ids)
     print(f"  JSON 总病例: {len(cases)}")
     if not cases:
         print("  ⚠️  JSON 中无病例，跳过分析。")
@@ -385,6 +386,7 @@ def _calc_variance(values: list) -> tuple:
 def analyze_json_all_fields(
     json_path,
     json_field_dict: str,
+    project_ids: list | None = None,
 ) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【第三层】JSON 全字段统计（字典驱动）")
@@ -392,7 +394,7 @@ def analyze_json_all_fields(
     print(f"  字段字典        : {json_field_dict}")
     print(f"{'='*60}")
 
-    cases = load_clinical_cases(json_path)
+    cases = load_clinical_cases(json_path, project_ids=project_ids)
 
     patient_total = len(cases)
     print(f"  纳入病例数      : {patient_total}")
@@ -480,7 +482,7 @@ def analyze_json_all_fields(
 # ─────────────────────────────────────────────────────────
 # 5. 汇总 + 输出
 # ─────────────────────────────────────────────────────────
-def run_one(args, json_paths, prompt_dir: str, output_dir: Path):
+def run_one(args, json_paths, prompt_dir: str, output_dir: Path, project_ids: list | None = None):
     load_custom_schemes(args.template_dir)
 
     if not SCHEME_CONFIG:
@@ -490,7 +492,7 @@ def run_one(args, json_paths, prompt_dir: str, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 第一层：JSON（extract_values 口径） ───────────────
-    df_json = analyze_json_layer(json_paths)
+    df_json = analyze_json_layer(json_paths, project_ids=project_ids)
     if not df_json.empty:
         out_path = output_dir / "json_layer_stats.csv"
         df_json.to_csv(out_path, index=False)
@@ -575,6 +577,7 @@ def run_one(args, json_paths, prompt_dir: str, output_dir: Path):
         df_json_all = analyze_json_all_fields(
             json_path=json_paths,
             json_field_dict=args.json_field_dict,
+            project_ids=project_ids,
         )
         if not df_json_all.empty:
             out_path = output_dir / "json_layer_stats_all.csv"
@@ -595,6 +598,7 @@ def run(args):
             json_paths=[args.json_path],
             prompt_dir=args.prompt_dir,
             output_dir=OUTPUT_DIR,
+            project_ids=[],
         )
         return
 
@@ -605,6 +609,7 @@ def run(args):
             json_paths=get_dataset_clinic_files(name, datasets),
             prompt_dir=dataset_prompt_dir(name),
             output_dir=PROJECT_ROOT / "outputs" / name / "stats",
+            project_ids=get_dataset_project_ids(name, datasets),
         )
 
 

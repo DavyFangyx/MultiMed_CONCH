@@ -36,5 +36,29 @@
       "/data/lizhe/Medteam_projects/TCGA-STAD/Bulk_RNA_cases/clinical.cart.2026-06-21.json",
       "/data/lizhe/Medteam_projects/TCGA-STAD/WSI_cases/clinical.cart.2026-06-21.json"
     ]
+  },
+  "TCGA-KICH": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
+    ],
+    "project_ids": [
+      "TCGA-KICH"
+    ]
+  },
+  "TCGA-KIRC": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
+    ],
+    "project_ids": [
+      "TCGA-KIRC"
+    ]
+  },
+  "TCGA-KIRP": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
+    ],
+    "project_ids": [
+      "TCGA-KIRP"
+    ]
   }
 }

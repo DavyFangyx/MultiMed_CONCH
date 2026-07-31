@@ -123,12 +123,21 @@ def dataset_embedding_dir(dataset_name: str) -> str:
     return str(PROJECT_ROOT / "outputs" / dataset_name / "embeddings")
 
 
+def get_dataset_config(dataset_name: str, datasets: dict) -> dict:
+    return dict(datasets[dataset_name])
+
+
 def get_dataset_clinic_files(dataset_name: str, datasets: dict) -> list:
     cfg = datasets[dataset_name]
     files = cfg.get("clinic_files", [])
     if not files:
         raise ValueError(f"dataset '{dataset_name}' 没有配置 clinic_files")
     return list(files)
+
+
+def get_dataset_project_ids(dataset_name: str, datasets: dict) -> list:
+    cfg = datasets[dataset_name]
+    return list(cfg.get("project_ids", []))
 
 
 # ─────────────────────────────────────────────────────────
@@ -340,10 +349,19 @@ def _normalize_json_paths(json_paths) -> list:
     return [str(x) for x in json_paths]
 
 
-def load_clinical_cases(json_paths) -> list:
+def _match_case_project(case: dict, project_ids: list) -> bool:
+    if not project_ids:
+        return True
+    project_id = str(case.get("project", {}).get("project_id", "")).strip()
+    return project_id in set(project_ids)
+
+
+def load_clinical_cases(json_paths, project_ids: list | None = None) -> list:
     paths = _normalize_json_paths(json_paths)
     cases_by_patient = {}
     total, skipped, duplicated = 0, 0, 0
+    project_filtered = 0
+    project_ids = list(project_ids or [])
 
     for path in paths:
         with open(path, "r", encoding="utf-8") as f:
@@ -356,12 +374,18 @@ def load_clinical_cases(json_paths) -> list:
             if not pid:
                 skipped += 1
                 continue
+            if not _match_case_project(case, project_ids):
+                project_filtered += 1
+                continue
             if pid in cases_by_patient:
                 duplicated += 1
                 continue
             cases_by_patient[pid] = case
 
     print(f"      合计病例数: {total}")
+    if project_ids:
+        print(f"      project_id 过滤: {project_ids}")
+        print(f"      project_id 过滤掉病例数: {project_filtered}")
     print(f"      去重后病例数: {len(cases_by_patient)}")
     if duplicated:
         print(f"      重复 submitter_id: {duplicated} 个，保留首次出现记录")
@@ -371,7 +395,8 @@ def load_clinical_cases(json_paths) -> list:
     return list(cases_by_patient.values())
 
 
-def run_json2prompt(json_path: str, scheme: str, template_dir: str, prompt_dir: str):
+def run_json2prompt(json_path: str, scheme: str, template_dir: str, prompt_dir: str,
+                    project_ids: list | None = None):
     cfg = SCHEME_CONFIG[scheme]
     template_file = Path(template_dir) / SCHEME_TEMPLATE[scheme]
     output_file   = Path(prompt_dir)   / SCHEME_PROMPT_FILE[scheme]
@@ -386,7 +411,7 @@ def run_json2prompt(json_path: str, scheme: str, template_dir: str, prompt_dir: 
 
     # 读取 JSON
     print(f"\n[1/3] 读取 JSON ...")
-    cases = load_clinical_cases(json_paths)
+    cases = load_clinical_cases(json_paths, project_ids=project_ids)
 
     # 读取模板
     print(f"[2/3] 读取模板 ...")
@@ -604,6 +629,7 @@ def main():
             {
                 "name": None,
                 "json_paths": [args.json_path],
+                "project_ids": [],
                 "prompt_dir": args.prompt_dir,
                 "out_dir": args.out,
             }
@@ -613,6 +639,7 @@ def main():
             {
                 "name": name,
                 "json_paths": get_dataset_clinic_files(name, datasets),
+                "project_ids": get_dataset_project_ids(name, datasets),
                 "prompt_dir": dataset_prompt_dir(name),
                 "out_dir": dataset_embedding_dir(name),
             }
@@ -630,6 +657,7 @@ def main():
                     scheme       = s,
                     template_dir = args.template_dir,
                     prompt_dir   = job["prompt_dir"],
+                    project_ids  = job["project_ids"],
                 )
 
         if args.cmd in ("encode", "pipeline"):
