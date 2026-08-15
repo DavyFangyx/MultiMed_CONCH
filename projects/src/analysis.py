@@ -16,6 +16,7 @@ python CONCH-main/projects/scripts/run_missing_rate_analysis.py --scheme all --j
 import argparse
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -41,6 +42,9 @@ from pipeline import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MPLCONFIGDIR = Path(os.environ.get("MPLCONFIGDIR", str(Path.home() / ".tmp" / "matplotlib")))
+MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
+os.environ["MPLCONFIGDIR"] = str(MPLCONFIGDIR)
 
 # ─────────────────────────────────────────────────────────
 # 1. 全局配置
@@ -116,6 +120,13 @@ def _str2bool(v):
     if s in {"0", "false", "f", "no", "n", "off"}:
         return False
     raise argparse.ArgumentTypeError(f"无法解析布尔值: {v}")
+
+
+def _pct_to_float(value):
+    try:
+        return float(str(value).replace("%", "")) / 100
+    except Exception:
+        return float("nan")
 
 
 # ─────────────────────────────────────────────────────────
@@ -482,6 +493,64 @@ def analyze_json_all_fields(
 # ─────────────────────────────────────────────────────────
 # 5. 汇总 + 输出
 # ─────────────────────────────────────────────────────────
+def _with_dataset_column(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    df_out = df.copy()
+    df_out.insert(0, "dataset", dataset_name)
+    return df_out
+
+
+def write_json_missing_rate_plot(df: pd.DataFrame, output_path: Path) -> None:
+    if df.empty:
+        return
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
+
+    field_order = list(FIELD_FALLBACKS.keys())
+    plot_df = df.copy()
+    plot_df["missing_rate_float"] = plot_df["missing_rate"].apply(_pct_to_float)
+
+    pivot = plot_df.pivot_table(index="field", columns="dataset", values="missing_rate_float", aggfunc="first")
+    ordered_fields = [field for field in field_order if field in pivot.index]
+    if not ordered_fields:
+        ordered_fields = list(pivot.index)
+    pivot = pivot.reindex(ordered_fields)
+
+    fig_width = max(16, len(ordered_fields) * 0.45)
+    fig, ax = plt.subplots(figsize=(fig_width, 8))
+
+    for dataset in pivot.columns:
+        ax.plot(
+            ordered_fields,
+            pivot[dataset].tolist(),
+            marker="o",
+            linewidth=1.8,
+            markersize=4,
+            label=dataset,
+        )
+
+    ax.set_title("Missing Rate by Semantic JSON Field Across Datasets")
+    ax.set_xlabel("Field")
+    ax.set_ylabel("Missing Rate")
+    ax.set_ylim(0, 1.02)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    ax.grid(True, axis="y", linestyle="--", alpha=0.35)
+    ax.tick_params(axis="x", rotation=55, labelsize=9)
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
+
+    ax.legend(title="Dataset", bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\n✅ 多数据集 JSON 缺失率折线图已保存: {output_path}")
+
+
 def run_one(args, json_paths, prompt_dir: str, output_dir: Path, project_ids: list | None = None):
     load_custom_schemes(args.template_dir)
 
@@ -536,12 +605,6 @@ def run_one(args, json_paths, prompt_dir: str, output_dir: Path, project_ids: li
         print("【并集汇总】所有字段跨方案统一视图  →  prompt_layer_stats.csv")
         print(f"{'='*60}")
 
-        def _pct_to_float(s):
-            try:
-                return float(str(s).replace("%", "")) / 100
-            except Exception:
-                return float("nan")
-
         merged["_ph_f"] = merged["placeholder_rate"].apply(_pct_to_float)
 
         stats_rows = []
@@ -586,6 +649,43 @@ def run_one(args, json_paths, prompt_dir: str, output_dir: Path, project_ids: li
             print(f"\n✅ JSON 全字段统计已保存: {out_path}")
 
     print(f"\n所有结果保存于: {output_dir}")
+    return {
+        "json_layer_stats": df_json,
+        "json_layer_stats_all": df_json_all if args.json_all_fields else pd.DataFrame(),
+    }
+
+
+def write_multi_dataset_json_summaries(dataset_results: list[dict], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_frames = []
+    json_all_frames = []
+    for item in dataset_results:
+        dataset_name = item["dataset"]
+        df_json = item.get("json_layer_stats", pd.DataFrame())
+        df_json_all = item.get("json_layer_stats_all", pd.DataFrame())
+
+        if not df_json.empty:
+            json_frames.append(_with_dataset_column(df_json, dataset_name))
+        if not df_json_all.empty:
+            json_all_frames.append(_with_dataset_column(df_json_all, dataset_name))
+
+    if json_frames:
+        merged_json = pd.concat(json_frames, ignore_index=True)
+        merged_json = merged_json.sort_values(["dataset", "missing", "field"], ascending=[True, False, True])
+        out_path = output_dir / "json_layer_stats_by_dataset.csv"
+        merged_json.to_csv(out_path, index=False)
+        print(f"\n✅ 多数据集 JSON 语义缺失统计已保存: {out_path}")
+        write_json_missing_rate_plot(merged_json, output_dir / "json_layer_stats_by_dataset.png")
+
+    if json_all_frames:
+        merged_json_all = pd.concat(json_all_frames, ignore_index=True)
+        merged_json_all = merged_json_all.sort_values(
+            ["dataset", "missing", "field_path"], ascending=[True, False, True]
+        )
+        out_path = output_dir / "json_layer_stats_all_by_dataset.csv"
+        merged_json_all.to_csv(out_path, index=False)
+        print(f"\n✅ 多数据集 JSON 全字段统计已保存: {out_path}")
 
 
 def run(args):
@@ -602,15 +702,20 @@ def run(args):
         )
         return
 
+    dataset_results = []
     for name in dataset_names:
         print(f"\n######## Dataset: {name} ########")
-        run_one(
+        result = run_one(
             args=args,
             json_paths=get_dataset_clinic_files(name, datasets),
             prompt_dir=dataset_prompt_dir(name),
             output_dir=PROJECT_ROOT / "outputs" / name / "stats",
             project_ids=get_dataset_project_ids(name, datasets),
         )
+        dataset_results.append({"dataset": name, **result})
+
+    if len(dataset_results) > 1:
+        write_multi_dataset_json_summaries(dataset_results, OUTPUT_DIR)
 
 
 # ─────────────────────────────────────────────────────────
