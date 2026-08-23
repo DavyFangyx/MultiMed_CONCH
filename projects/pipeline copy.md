@@ -312,10 +312,10 @@ d_ordinary(D0-D5) = [4, 10, 14, 19, 21, 23]
 当前实现默认保存格式（`ordinary` baseline）：
 
 ```text
-outputs/{dataset}/embeddings/D0/pt/TCGA-XX-XXXX.pt
-outputs/{dataset}/embeddings/D1/pt/TCGA-XX-XXXX.pt
+outputs/{dataset}/A_manual/D0/embeddings/pt/TCGA-XX-XXXX.pt
+outputs/{dataset}/A_manual/D1/embeddings/pt/TCGA-XX-XXXX.pt
 ...
-outputs/{dataset}/embeddings/D5/pt/TCGA-XX-XXXX.pt
+outputs/{dataset}/A_manual/D5/embeddings/pt/TCGA-XX-XXXX.pt
 ```
 
 同时保存对应的 `metadata/category_mapping.json`、`metadata/normalization_stats.json` 和 `metadata/feature_schema.json`，保证训练、验证和测试阶段的向量位置完全一致。

@@ -9,7 +9,7 @@ import pandas as pd
 
 from common.paths import DEFAULT_GPU, REPO_ROOT
 
-from .config import SCHEME_COLS, SCHEME_DIRNAME, SCHEME_PROMPT_FILE
+from .config import SCHEME_COLS, SCHEME_DIRNAME
 
 
 def _lazy_import_conch():
@@ -41,7 +41,7 @@ def run_encode(scheme: str, prompt_dir: str, ckpt: str, out_dir: str, batch_size
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
 
-    csv_path = Path(prompt_dir) / SCHEME_PROMPT_FILE[scheme]
+    csv_path = Path(prompt_dir) / scheme / "prompts.csv"
     out_subdir = Path(out_dir) / SCHEME_DIRNAME[scheme]
     prompt_cols = SCHEME_COLS[scheme]
 
@@ -98,7 +98,7 @@ def run_encode(scheme: str, prompt_dir: str, ckpt: str, out_dir: str, batch_size
     print(f"      Embedding shape: {embeddings.shape}")
 
     print(f"\n[3/3] 按患者 ID 保存文件 → {out_subdir}")
-    pt_dir = out_subdir / "pt"
+    pt_dir = out_subdir / "embeddings" / "pt"
     pt_dir.mkdir(parents=True, exist_ok=True)
     for pid, emb in tqdm(zip(patient_ids, embeddings), total=len(patient_ids), desc="保存每患者文件"):
         tensor = torch.from_numpy(emb)

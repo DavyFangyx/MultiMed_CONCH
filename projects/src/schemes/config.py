@@ -24,7 +24,10 @@ def reset_scheme_registry() -> None:
 
 
 def load_custom_schemes(template_dir: str) -> None:
-    cfg_file = Path(template_dir) / "custom_schemes.json"
+    template_path = Path(template_dir)
+    cfg_file = template_path / "schemes.json"
+    if not cfg_file.exists():
+        cfg_file = template_path / "custom_schemes.json"
     if not cfg_file.exists():
         return
 
@@ -48,7 +51,7 @@ def load_custom_schemes(template_dir: str) -> None:
             continue
         missing = required_keys - cfg.keys()
         if missing:
-            raise ValueError(f"custom_schemes.json 中方案 '{name}' 缺少必要字段: {missing}")
+            raise ValueError(f"{cfg_file.name} 中方案 '{name}' 缺少必要字段: {missing}")
         if not (len(cfg["template_cols"]) == len(cfg["placeholders"]) == len(cfg["output_cols"])):
             raise ValueError(
                 f"方案 '{name}' 的 template_cols / placeholders / output_cols 长度不一致。"

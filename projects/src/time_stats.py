@@ -9,7 +9,7 @@ Field updated_datetime values are converted to days from the patient's first upd
 then divided by last_time_days (days_to_death if Dead, else days_to_last_follow_up).
 Values may exceed 1 when a field is updated after that last time.
 
-Outputs in projects/outputs/time_stats/{dataset}/:
+Outputs in projects/rawdata_stats/{dataset}/time/:
   patient_time_stats.csv / patient_time_stats.png
   normalized_update_time.csv / normalized_update_time.png / normalized_update_time_boxplot.png
 
@@ -790,14 +790,15 @@ def run(args):
             df = analyze_dataset_times(
                 json_paths=get_dataset_clinic_files(name, datasets),
                 dataset_name=name,
-                output_dir=output_root / name,
+                output_dir=output_root / name / "time",
                 project_ids=get_dataset_project_ids(name, datasets),
             )
             frames.append((name, df))
 
-    output_root.mkdir(parents=True, exist_ok=True)
-    _cleanup_stale_outputs(output_root)
-    combined = plot_patient_time_stats_all(frames, output_root)
+    shared_dir = output_root / "_shared"
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_outputs(shared_dir)
+    combined = plot_patient_time_stats_all(frames, shared_dir)
     if combined is not None:
         print(f"patient_time_stats_all: {combined}")
 

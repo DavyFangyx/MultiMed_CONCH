@@ -17,7 +17,7 @@ def subset_scheme_name(subset_idx) -> str:
 
 
 def subset_embedding_dir(dataset: str, scheme: str, embeddings_root: Path) -> Path:
-    return Path(embeddings_root) / dataset / "embeddings" / scheme / "pt"
+    return Path(embeddings_root) / dataset / "B_scan" / "greedy" / "subsets" / scheme / "embeddings" / "pt"
 
 
 def _as_matrix(obj):
@@ -49,13 +49,18 @@ def materialize_subset_embeddings(
 ) -> dict:
     """Slice field-bank rows into a raw [n_subset, 512] .pt per patient.
 
-    Clinic_Analyzer expects the L0-L5 layout: embeddings/{scheme}/pt/{case_id}.pt
+    Clinic_Analyzer expects .../{scheme}/embeddings/pt/{case_id}.pt
     as a tensor, not the field-bank dict payload.
     """
     import torch
 
     bank = Path(field_bank_dir)
-    src_dir = bank / "pt" if (bank / "pt").is_dir() else bank
+    if (bank / "embeddings" / "pt").is_dir():
+        src_dir = bank / "embeddings" / "pt"
+    elif (bank / "pt").is_dir():
+        src_dir = bank / "pt"
+    else:
+        src_dir = bank
     paths = sorted(src_dir.glob("*.pt"))
     if not paths:
         raise FileNotFoundError(f"no field-bank .pt files under {src_dir}")

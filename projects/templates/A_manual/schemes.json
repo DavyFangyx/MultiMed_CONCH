@@ -27,8 +27,8 @@
   ],
   "L0": {
     "description": "L0：age_at_index + sex_at_birth + race + ethnicity",
-    "template_file": "L0_template.csv",
-    "prompt_file": "tcga_ki_prompt_L0.csv",
+    "template_file": "L0.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L0",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -51,8 +51,8 @@
   },
   "L1": {
     "description": "L1：L0 + primary_diagnosis + morphology + tissue_or_organ_of_origin + laterality + year_of_diagnosis + age_at_diagnosis",
-    "template_file": "L1_template.csv",
-    "prompt_file": "tcga_ki_prompt_L1.csv",
+    "template_file": "L1.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L1",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -93,8 +93,8 @@
   },
   "L2": {
     "description": "L2：L1 + tumor_grade + prior_malignancy + synchronous_malignancy + prior_treatment",
-    "template_file": "L2_template.csv",
-    "prompt_file": "tcga_ki_prompt_L2.csv",
+    "template_file": "L2.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L2",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -147,8 +147,8 @@
   },
   "L3": {
     "description": "L3：L2 + AJCC pathologic T/N/M/stage + AJCC edition",
-    "template_file": "L3_template.csv",
-    "prompt_file": "tcga_ki_prompt_L3.csv",
+    "template_file": "L3.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L3",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -216,8 +216,8 @@
   },
   "L4": {
     "description": "L4：L3 + lymph_nodes_tested + lymph_nodes_positive",
-    "template_file": "L4_template.csv",
-    "prompt_file": "tcga_ki_prompt_L4.csv",
+    "template_file": "L4.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L4",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -291,8 +291,8 @@
   },
   "L5": {
     "description": "L5：L4 + ecog_performance_status + bmi（baseline）",
-    "template_file": "L5_template.csv",
-    "prompt_file": "tcga_ki_prompt_L5.csv",
+    "template_file": "L5.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L5",
     "template_cols": [
       "AGE_TEMPLATE",

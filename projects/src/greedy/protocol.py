@@ -86,6 +86,8 @@ def run_nested_greedy(
     max_steps=None,
     patience: int = 3,
     seed: int = 0,
+    init_idx=None,
+    workers: int = 1,
 ):
 
     evaluator = _bind_shared_evaluator(evaluator_factory, splits, seed=seed, for_test=False)
@@ -97,6 +99,8 @@ def run_nested_greedy(
         candidate_idx=candidate_idx,
         max_steps=max_steps,
         patience=patience,
+        init_idx=init_idx,
+        workers=workers,
     )
 
     empty_result = cached.evaluate([])

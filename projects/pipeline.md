@@ -134,18 +134,18 @@
 
 ## 3. Prompt 生成
 
-### 3.1 `custom_schemes.json` 是干什么的
+### 3.1 `schemes.json` 是干什么的
 
-每个 scheme 对应一组模板和字段映射，定义在 `templates/*/custom_schemes.json`。
+每个 scheme 对应一组模板和字段映射，定义在 `templates/A_manual/schemes.json`。
 
-以 `templates/l0_l5/custom_schemes.json` 中的 `L0` 为例：
+以 `templates/A_manual/schemes.json` 中的 `L0` 为例：
 
 ```json
 {
   "L0": {
     "description": "L0：age_at_index + sex_at_birth + race + ethnicity",
     "template_file": "L0_template.csv",
-    "prompt_file": "tcga_ki_prompt_L0.csv",
+    "prompt_file": "prompts.csv",
     "dirname": "L0",
     "template_cols": [
       "AGE_TEMPLATE",
@@ -185,7 +185,7 @@
 
 ### 3.2 模板 CSV 长什么样
 
-以 `templates/l0_l5/L0_template.csv` 为例：
+以 `templates/A_manual/L0.csv` 为例：
 
 ```csv
 AGE_TEMPLATE,SEX_AT_BIRTH_TEMPLATE,RACE_TEMPLATE,ETHNICITY_TEMPLATE
@@ -239,7 +239,7 @@ TCGA-AB-1234,The patient is 63 years old at index.,Sex at birth is female.,Race 
 
 随后会拆开，按患者分别保存为：
 
-`outputs/{dataset}/embeddings/{scheme}/pt/{patient_id}.pt`
+`outputs/{dataset}/A_manual/{scheme}/embeddings/pt/{patient_id}.pt`
 
 ### 4.1 L0-L5 对应的 `nc`
 
@@ -342,7 +342,7 @@ embedding(TCGA-AB-1234) in L0 = [4, 768]
 保存路径类似：
 
 ```text
-outputs/TCGA-READ/embeddings/L0/pt/TCGA-AB-1234.pt
+outputs/TCGA-READ/A_manual/L0/embeddings/pt/TCGA-AB-1234.pt
 ```
 
 这个 `.pt` 文件里保存的是一个二维张量：

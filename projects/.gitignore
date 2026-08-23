@@ -6,6 +6,27 @@ __pycache__/
 *.log
 *.tmp
 *.temp
+*.png
 
-# Generated artifacts
-outputs/
+# Generated process / result artifacts
+outputs/**
+rawdata_stats/**
+Clinic_Analyzer/results/**
+Clinic_Analyzer/configs/queue/**
+Clinic_Analyzer/configs/done/**
+Clinic_Analyzer/configs/failed/**
+Clinic_Analyzer/configs/running/**
+
+# Intermediate and result data files
+*.csv
+*.json
+*.pt
+*.conf
+
+# Keep hand-written templates and dataset registry
+!datasets.json
+!templates/
+!templates/**/*.csv
+!templates/**/*.json
+!outputs/README.md
+!rawdata_stats/README.md

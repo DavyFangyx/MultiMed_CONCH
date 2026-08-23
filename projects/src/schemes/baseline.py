@@ -11,7 +11,7 @@ import numpy as np
 
 from common.clinical_io import load_clinical_cases, normalize_json_paths
 from common.missingness import is_missing_token
-from common.paths import PROJECT_ROOT
+from common.paths import global_mapping_dir as shared_global_mapping_dir
 
 from .extract import extract_values
 
@@ -545,7 +545,7 @@ def run_baseline_encode(
 
     print("\n[3/3] 逐患者写入 .pt ...")
     for scheme in schemes:
-        pt_dir = Path(out_root) / scheme / "pt"
+        pt_dir = Path(out_root) / scheme / "embeddings" / "pt"
         pt_dir.mkdir(parents=True, exist_ok=True)
         fields = BASELINE_SCHEME_FIELDS[scheme]
         for row in patient_rows:
@@ -566,4 +566,4 @@ def run_baseline_encode(
 
 
 def global_mapping_dir() -> Path:
-    return PROJECT_ROOT / "outputs" / "baseline_onehot_mapping_tables"
+    return shared_global_mapping_dir()

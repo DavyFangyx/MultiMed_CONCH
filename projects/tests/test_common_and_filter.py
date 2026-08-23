@@ -10,7 +10,8 @@ if str(SRC) not in sys.path:
 
 from common.fields import extract_path_values, get_primary_diagnosis
 from common.missingness import classify_raw_value
-from discovery.filter import apply_rules, temporal_flag
+from common.types import infer_type
+from discovery.filter import apply_rules, timepoint
 from schemes.config import load_custom_schemes, reset_scheme_registry, resolve_scheme_names
 
 
@@ -35,7 +36,7 @@ def test_extract_path_and_primary_diagnosis():
     assert get_primary_diagnosis(case["diagnoses"])["primary_diagnosis"] == "Adenocarcinoma"
 
 
-def test_missingness_four_state():
+def test_missingness_three_state():
     assert classify_raw_value(None) == "null"
     assert classify_raw_value("") == "null"
     assert classify_raw_value("not reported") == "sentinel"
@@ -75,14 +76,24 @@ def test_filter_rules():
     )
     rule, _ = apply_rules(keep, min_coverage=0.3)
     assert rule is None
-    assert temporal_flag("follow_ups[].ecog_performance_status") == "post_baseline"
+    assert timepoint("follow_ups[].ecog_performance_status") == "follow_up"
+    assert timepoint("diagnoses[].ajcc_pathologic_t") == "baseline"
+
+
+def test_infer_type_stage_vs_class():
+    assert infer_type("ajcc_pathologic_t", ["T1", "T2", "T3", "T4"], 4) == "ordinal_stage"
+    assert infer_type("ajcc_clinical_stage", ["Stage I", "Stage II", "Stage IIIA"], 3) == "ordinal_stage"
+    assert infer_type("race", ["white", "black", "asian"], 3) == "ordinal_class"
+    assert infer_type("gender", ["male", "female"], 2) == "ordinal_class"
+    assert infer_type("icd_10_code", ["C18.2", "C18.7", "C20"], 3) == "ordinal_class"
+    assert infer_type("age_at_diagnosis", [61, 62, 70], 3) == "numeric"
 
 
 def test_scheme_loader_skips_field_bank(tmp_path):
     cfg = {
         "L0": {
             "template_file": "L0_template.csv",
-            "prompt_file": "tcga_ki_prompt_L0.csv",
+            "prompt_file": "prompts.csv",
             "dirname": "L0",
             "template_cols": ["AGE_TEMPLATE"],
             "placeholders": ["AGE"],
@@ -97,7 +108,7 @@ def test_scheme_loader_skips_field_bank(tmp_path):
             "output_cols": ["age_template"],
         },
     }
-    path = tmp_path / "custom_schemes.json"
+    path = tmp_path / "schemes.json"
     path.write_text(json.dumps(cfg), encoding="utf-8")
     reset_scheme_registry()
     load_custom_schemes(str(tmp_path))
@@ -113,8 +124,9 @@ def test_scheme_loader_skips_field_bank(tmp_path):
 
 if __name__ == "__main__":
     test_extract_path_and_primary_diagnosis()
-    test_missingness_four_state()
+    test_missingness_three_state()
     test_filter_rules()
+    test_infer_type_stage_vs_class()
     from tempfile import TemporaryDirectory
 
     with TemporaryDirectory() as tmp:

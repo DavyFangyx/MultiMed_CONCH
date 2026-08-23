@@ -11,7 +11,7 @@ from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
 from common.fields import collapse_patient_values, extract_path_values, is_array_field
 from common.missingness import classify_raw_value
-from common.paths import REGISTRY_DIR, dataset_field_stats_path
+from common.paths import RAWDATA_STATS_SHARED_DIR, dataset_field_stats_path, shared_field_stats_path
 from common.types import infer_type, to_numeric
 from common.fields import L5_PLACEHOLDER_BY_FIELD_PATH
 
@@ -73,12 +73,12 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
         field_path = fd["field_path"]
         field_name = fd["field_name"]
         patient_values = []
-        valid_count = null_count = sentinel_count = absent_count = multi_record_count = 0
+        valid_count = null_count = sentinel_count = multi_record_count = 0
 
         for case in cases:
             raw_vals = extract_path_values(case, field_path)
             if not raw_vals:
-                absent_count += 1
+                null_count += 1
                 continue
             if len(raw_vals) > 1:
                 multi_record_count += 1
@@ -93,7 +93,7 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
                 null_count += 1
 
         total_count = patient_total
-        missing_count = total_count - valid_count
+        missing_count = null_count + sentinel_count
         missing_rate = missing_count / total_count if total_count else 0.0
         coverage = valid_count / total_count if total_count else 0.0
         null_rate = null_count / total_count if total_count else 0.0
@@ -136,7 +136,6 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
             {
                 "field_path": field_path,
                 "section": fd["section"],
-                "layer": field_path.split(".")[0].replace("[]", "") if "." in field_path else "case",
                 "total": total_count,
                 "missing": missing_count,
                 "valid": valid_count,
@@ -146,7 +145,6 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
                 "info_metric_type": info_metric_type,
                 "info_metric_value": info_metric_value,
                 "coverage": round(coverage, 6),
-                "absent_count": absent_count,
                 "null_count": null_count,
                 "sentinel_count": sentinel_count,
                 "null_rate": round(null_rate, 6),
@@ -171,7 +169,7 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
 def run_field_stats(args):
     datasets = load_dataset_configs(args.datasets_config)
     dataset_names = [] if not args.dataset else resolve_dataset_names(args.dataset, datasets)
-    REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    RAWDATA_STATS_SHARED_DIR.mkdir(parents=True, exist_ok=True)
 
     jobs = []
     if not dataset_names:
@@ -208,6 +206,6 @@ def run_field_stats(args):
         merged = pd.concat(frames, ignore_index=True)
         cols = ["dataset"] + [c for c in merged.columns if c != "dataset"]
         merged = merged[cols].sort_values(["dataset", "missing", "field_path"], ascending=[True, False, True])
-        out_path = REGISTRY_DIR / "field_stats_raw.csv"
+        out_path = shared_field_stats_path()
         merged.to_csv(out_path, index=False)
         print(f"\n✅ 跨数据集统计已保存: {out_path}")

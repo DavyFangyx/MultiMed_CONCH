@@ -39,7 +39,7 @@ def prompt_stats_main(argv=None):
     parser.add_argument("--json_path", default=DEFAULT_JSON_PATH)
     parser.add_argument("--template_dir", default=DEFAULT_TEMPLATE_DIR)
     parser.add_argument("--prompt_dir", default=DEFAULT_PROMPT_DIR)
-    parser.add_argument("--out", default=str(PROJECT_ROOT / "outputs" / "stats"))
+    parser.add_argument("--out", default=DEFAULT_PROMPT_DIR)
     run_prompt_stats(parser.parse_args(argv))
 
 

@@ -7,6 +7,7 @@ stopping rules can be applied afterwards.
 from __future__ import annotations
 
 from .evaluator import extract_c_index
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def _field_name(fields: list[str], idx: int) -> str:
@@ -21,6 +22,8 @@ def greedy_forward(
     max_steps=None,
     patience: int = 3,
     empty_score: float | None = None,
+    init_idx=None,
+    workers: int = 1,
 ):
     """Forward-select fields one at a time on the evaluator's current split.
 
@@ -55,25 +58,76 @@ def greedy_forward(
         max_steps = len(candidates)
     max_steps = min(int(max_steps), len(candidates))
 
-    selected: list[int] = []
-    if empty_score is None:
-        empty_result = evaluator.evaluate([])
-        current, _ = extract_c_index(empty_result)
-    else:
-        current = float(empty_score)
     path = []
-
+    selected: list[int] = []
     remaining = list(candidates)
-    for step in range(1, max_steps + 1):
+
+    init_selected = []
+    seen_init = set()
+    for idx in list(init_idx or []):
+        idx = int(idx)
+        if idx in seen_init:
+            continue
+        if idx not in remaining:
+            raise IndexError(f"init_idx out of remaining candidates: {idx}")
+        seen_init.add(idx)
+        init_selected.append(idx)
+
+    if init_selected:
+        init_result = evaluator.evaluate(init_selected)
+        current, current_std = extract_c_index(init_result)
+        selected = list(init_selected)
+        remaining = [idx for idx in remaining if idx not in seen_init]
+        path.append(
+            {
+                "step": 1,
+                "added": ",".join(_field_name(fields, i) for i in selected),
+                "added_idx": list(selected),
+                "delta_c": 0.0,
+                "c_index": float(current),
+                "c_index_std": float(current_std),
+                "subset": [_field_name(fields, i) for i in selected],
+                "subset_idx": list(selected),
+                "all_candidates": {},
+                "patience": int(patience),
+                "init": True,
+            }
+        )
+        start_step = 2
+        extra_steps = len(selected) - 1
+        max_steps = min(max_steps + extra_steps, len(selected) + len(remaining))
+    else:
+        if empty_score is None:
+            empty_result = evaluator.evaluate([])
+            current, _ = extract_c_index(empty_result)
+        else:
+            current = float(empty_score)
+        start_step = 1
+
+    for step in range(start_step, max_steps + 1):
         all_candidates = {}
         best_idx = None
         best_score = None
         best_std = 0.0
         best_name = None
-        for idx in remaining:
+        n_workers = max(int(workers or 1), 1)
+
+        def _eval_one(idx: int):
             name = _field_name(fields, idx)
             result = evaluator.evaluate(selected + [idx])
             score, std = extract_c_index(result)
+            return idx, name, score, std
+
+        scored = []
+        if n_workers == 1 or len(remaining) <= 1:
+            scored = [_eval_one(idx) for idx in remaining]
+        else:
+            with ThreadPoolExecutor(max_workers=min(n_workers, len(remaining))) as pool:
+                futures = [pool.submit(_eval_one, idx) for idx in remaining]
+                for fut in as_completed(futures):
+                    scored.append(fut.result())
+
+        for idx, name, score, std in scored:
             all_candidates[name] = {
                 "c_index": score,
                 "c_index_std": std,

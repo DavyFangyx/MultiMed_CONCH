@@ -1,238 +1,161 @@
 {
   "dataset": "TCGA-BRCA",
+  "note": "人工编辑 template.csv。先看 example 的原始取值，再裁定 convert/unit，最后填 template。convert 填 converters.py 清单中的函数名；空则原样填 {}。example 和 unit 不进入编码。本 JSON 只记录 field_path 到 prompts.csv 输出列名的对照。",
   "fields": [
     {
       "field_path": "demographic.country_of_residence_at_enrollment",
-      "template_col": "demographic.country_of_residence_at_enrollment",
-      "placeholder": "COUNTRY_OF_RESIDENCE_AT_ENROLLMENT",
       "output_col": "demographic_country_of_residence_at_enrollment_template"
     },
     {
       "field_path": "demographic.race",
-      "template_col": "demographic.race",
-      "placeholder": "RACE",
       "output_col": "demographic_race_template"
     },
     {
       "field_path": "diagnoses[].age_at_diagnosis",
-      "template_col": "diagnoses[].age_at_diagnosis",
-      "placeholder": "AGE_AT_DIAGNOSIS",
       "output_col": "diagnoses_age_at_diagnosis_template"
     },
     {
       "field_path": "diagnoses[].ajcc_pathologic_m",
-      "template_col": "diagnoses[].ajcc_pathologic_m",
-      "placeholder": "AJCC_PATHOLOGIC_M",
       "output_col": "diagnoses_ajcc_pathologic_m_template"
     },
     {
       "field_path": "diagnoses[].ajcc_pathologic_n",
-      "template_col": "diagnoses[].ajcc_pathologic_n",
-      "placeholder": "AJCC_PATHOLOGIC_N",
       "output_col": "diagnoses_ajcc_pathologic_n_template"
     },
     {
       "field_path": "diagnoses[].ajcc_pathologic_t",
-      "template_col": "diagnoses[].ajcc_pathologic_t",
-      "placeholder": "AJCC_PATHOLOGIC_T",
       "output_col": "diagnoses_ajcc_pathologic_t_template"
     },
     {
       "field_path": "diagnoses[].diagnosis_is_primary_disease",
-      "template_col": "diagnoses[].diagnosis_is_primary_disease",
-      "placeholder": "DIAGNOSIS_IS_PRIMARY_DISEASE",
       "output_col": "diagnoses_diagnosis_is_primary_disease_template"
     },
     {
       "field_path": "diagnoses[].laterality",
-      "template_col": "diagnoses[].laterality",
-      "placeholder": "LATERALITY",
       "output_col": "diagnoses_laterality_template"
     },
     {
       "field_path": "diagnoses[].metastasis_at_diagnosis",
-      "template_col": "diagnoses[].metastasis_at_diagnosis",
-      "placeholder": "METASTASIS_AT_DIAGNOSIS",
       "output_col": "diagnoses_metastasis_at_diagnosis_template"
     },
     {
       "field_path": "diagnoses[].method_of_diagnosis",
-      "template_col": "diagnoses[].method_of_diagnosis",
-      "placeholder": "METHOD_OF_DIAGNOSIS",
       "output_col": "diagnoses_method_of_diagnosis_template"
     },
     {
       "field_path": "diagnoses[].morphology",
-      "template_col": "diagnoses[].morphology",
-      "placeholder": "MORPHOLOGY",
       "output_col": "diagnoses_morphology_template"
     },
     {
       "field_path": "diagnoses[].pathology_details[].lymph_nodes_positive",
-      "template_col": "diagnoses[].pathology_details[].lymph_nodes_positive",
-      "placeholder": "LYMPH_NODES_POSITIVE",
       "output_col": "diagnoses_pathology_details_lymph_nodes_positive_template"
     },
     {
       "field_path": "diagnoses[].pathology_details[].lymph_nodes_tested",
-      "template_col": "diagnoses[].pathology_details[].lymph_nodes_tested",
-      "placeholder": "LYMPH_NODES_TESTED",
       "output_col": "diagnoses_pathology_details_lymph_nodes_tested_template"
     },
     {
       "field_path": "diagnoses[].primary_diagnosis",
-      "template_col": "diagnoses[].primary_diagnosis",
-      "placeholder": "PRIMARY_DIAGNOSIS",
       "output_col": "diagnoses_primary_diagnosis_template"
     },
     {
       "field_path": "diagnoses[].prior_treatment",
-      "template_col": "diagnoses[].prior_treatment",
-      "placeholder": "PRIOR_TREATMENT",
       "output_col": "diagnoses_prior_treatment_template"
     },
     {
       "field_path": "diagnoses[].sites_of_involvement",
-      "template_col": "diagnoses[].sites_of_involvement",
-      "placeholder": "SITES_OF_INVOLVEMENT",
       "output_col": "diagnoses_sites_of_involvement_template"
     },
     {
       "field_path": "diagnoses[].tissue_or_organ_of_origin",
-      "template_col": "diagnoses[].tissue_or_organ_of_origin",
-      "placeholder": "TISSUE_OR_ORGAN_OF_ORIGIN",
       "output_col": "diagnoses_tissue_or_organ_of_origin_template"
     },
     {
       "field_path": "diagnoses[].treatments[].clinical_trial_indicator",
-      "template_col": "diagnoses[].treatments[].clinical_trial_indicator",
-      "placeholder": "CLINICAL_TRIAL_INDICATOR",
       "output_col": "diagnoses_treatments_clinical_trial_indicator_template"
     },
     {
       "field_path": "diagnoses[].treatments[].initial_disease_status",
-      "template_col": "diagnoses[].treatments[].initial_disease_status",
-      "placeholder": "INITIAL_DISEASE_STATUS",
       "output_col": "diagnoses_treatments_initial_disease_status_template"
     },
     {
       "field_path": "diagnoses[].treatments[].margin_status",
-      "template_col": "diagnoses[].treatments[].margin_status",
-      "placeholder": "MARGIN_STATUS",
       "output_col": "diagnoses_treatments_margin_status_template"
     },
     {
       "field_path": "diagnoses[].treatments[].number_of_fractions",
-      "template_col": "diagnoses[].treatments[].number_of_fractions",
-      "placeholder": "NUMBER_OF_FRACTIONS",
       "output_col": "diagnoses_treatments_number_of_fractions_template"
     },
     {
       "field_path": "diagnoses[].treatments[].prescribed_dose",
-      "template_col": "diagnoses[].treatments[].prescribed_dose",
-      "placeholder": "PRESCRIBED_DOSE",
       "output_col": "diagnoses_treatments_prescribed_dose_template"
     },
     {
       "field_path": "diagnoses[].treatments[].prescribed_dose_units",
-      "template_col": "diagnoses[].treatments[].prescribed_dose_units",
-      "placeholder": "PRESCRIBED_DOSE_UNITS",
       "output_col": "diagnoses_treatments_prescribed_dose_units_template"
     },
     {
       "field_path": "diagnoses[].treatments[].route_of_administration",
-      "template_col": "diagnoses[].treatments[].route_of_administration",
-      "placeholder": "ROUTE_OF_ADMINISTRATION",
       "output_col": "diagnoses_treatments_route_of_administration_template"
     },
     {
       "field_path": "diagnoses[].treatments[].therapeutic_agents",
-      "template_col": "diagnoses[].treatments[].therapeutic_agents",
-      "placeholder": "THERAPEUTIC_AGENTS",
       "output_col": "diagnoses_treatments_therapeutic_agents_template"
     },
     {
       "field_path": "diagnoses[].treatments[].treatment_anatomic_sites",
-      "template_col": "diagnoses[].treatments[].treatment_anatomic_sites",
-      "placeholder": "TREATMENT_ANATOMIC_SITES",
       "output_col": "diagnoses_treatments_treatment_anatomic_sites_template"
     },
     {
       "field_path": "diagnoses[].treatments[].treatment_dose",
-      "template_col": "diagnoses[].treatments[].treatment_dose",
-      "placeholder": "TREATMENT_DOSE",
       "output_col": "diagnoses_treatments_treatment_dose_template"
     },
     {
       "field_path": "diagnoses[].treatments[].treatment_dose_units",
-      "template_col": "diagnoses[].treatments[].treatment_dose_units",
-      "placeholder": "TREATMENT_DOSE_UNITS",
       "output_col": "diagnoses_treatments_treatment_dose_units_template"
     },
     {
       "field_path": "diagnoses[].treatments[].treatment_intent_type",
-      "template_col": "diagnoses[].treatments[].treatment_intent_type",
-      "placeholder": "TREATMENT_INTENT_TYPE",
       "output_col": "diagnoses_treatments_treatment_intent_type_template"
     },
     {
       "field_path": "diagnoses[].treatments[].treatment_type",
-      "template_col": "diagnoses[].treatments[].treatment_type",
-      "placeholder": "TREATMENT_TYPE",
       "output_col": "diagnoses_treatments_treatment_type_template"
     },
     {
       "field_path": "follow_ups[].disease_response",
-      "template_col": "follow_ups[].disease_response",
-      "placeholder": "DISEASE_RESPONSE",
       "output_col": "follow_ups_disease_response_template"
     },
     {
       "field_path": "follow_ups[].molecular_tests[].gene_symbol",
-      "template_col": "follow_ups[].molecular_tests[].gene_symbol",
-      "placeholder": "GENE_SYMBOL",
       "output_col": "follow_ups_molecular_tests_gene_symbol_template"
     },
     {
       "field_path": "follow_ups[].molecular_tests[].molecular_analysis_method",
-      "template_col": "follow_ups[].molecular_tests[].molecular_analysis_method",
-      "placeholder": "MOLECULAR_ANALYSIS_METHOD",
       "output_col": "follow_ups_molecular_tests_molecular_analysis_method_template"
     },
     {
       "field_path": "follow_ups[].molecular_tests[].staining_intensity_value",
-      "template_col": "follow_ups[].molecular_tests[].staining_intensity_value",
-      "placeholder": "STAINING_INTENSITY_VALUE",
       "output_col": "follow_ups_molecular_tests_staining_intensity_value_template"
     },
     {
       "field_path": "follow_ups[].molecular_tests[].test_result",
-      "template_col": "follow_ups[].molecular_tests[].test_result",
-      "placeholder": "TEST_RESULT",
       "output_col": "follow_ups_molecular_tests_test_result_template"
     },
     {
       "field_path": "follow_ups[].molecular_tests[].test_value_range",
-      "template_col": "follow_ups[].molecular_tests[].test_value_range",
-      "placeholder": "TEST_VALUE_RANGE",
       "output_col": "follow_ups_molecular_tests_test_value_range_template"
     },
     {
       "field_path": "follow_ups[].other_clinical_attributes[].menopause_status",
-      "template_col": "follow_ups[].other_clinical_attributes[].menopause_status",
-      "placeholder": "MENOPAUSE_STATUS",
       "output_col": "follow_ups_other_clinical_attributes_menopause_status_template"
     },
     {
       "field_path": "follow_ups[].timepoint_category",
-      "template_col": "follow_ups[].timepoint_category",
-      "placeholder": "TIMEPOINT_CATEGORY",
       "output_col": "follow_ups_timepoint_category_template"
     },
     {
       "field_path": "lost_to_followup",
-      "template_col": "lost_to_followup",
-      "placeholder": "LOST_TO_FOLLOWUP",
       "output_col": "lost_to_followup_template"
     }
   ]

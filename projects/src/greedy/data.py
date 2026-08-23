@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.paths import REGISTRY_DIR, dataset_field_bank_dir
+from common.paths import dataset_active_fields_path, dataset_field_bank_dir
 
 
 STUDY_BY_DISPLAY = {
@@ -31,6 +31,11 @@ def display_to_study(dataset: str) -> str:
     return dataset.lower().replace("-", "_")
 
 
+def default_survpgc_split_dir(dataset: str, survpgc_root: Path | str | None = None) -> Path:
+    root = Path(survpgc_root or DEFAULT_SURVPGC_ROOT)
+    return root / "splits" / "5foldcv" / display_to_study(dataset)
+
+
 def load_json(path: Path | str):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -48,11 +53,13 @@ def load_candidate_fields(dataset: str, active_fields_path: Path | str | None = 
     if bank_index.exists():
         return load_candidate_fields(dataset, field_index_path=bank_index)
 
-    path = Path(active_fields_path or (REGISTRY_DIR / "active_fields.json"))
+    path = Path(active_fields_path or dataset_active_fields_path(dataset))
     payload = load_json(path)
-    if dataset not in payload:
-        raise KeyError(f"{dataset} not in {path}")
-    return list(payload[dataset]["fields"])
+    if isinstance(payload, dict) and "fields" in payload:
+        return list(payload["fields"])
+    if isinstance(payload, dict) and dataset in payload:
+        return list(payload[dataset]["fields"])
+    raise KeyError(f"{dataset} not in {path}")
 
 
 def unique_ids(values) -> list[str]:
@@ -67,6 +74,21 @@ def unique_ids(values) -> list[str]:
     return out
 
 
+def load_eligible_case_ids(dataset: str, survpgc_root: Path | str | None = None) -> list[str]:
+    split_dir = default_survpgc_split_dir(dataset, survpgc_root=survpgc_root)
+    eligibility = split_dir / "split_eligibility.csv"
+    if not eligibility.exists():
+        raise FileNotFoundError(
+            f"未找到 SurvPGC split_eligibility.csv: {eligibility}。"
+            "内部生成 fold 需要这份表来保证 WSI/clinic/gene 模态齐全。"
+        )
+    df = pd.read_csv(eligibility)
+    if "eligible_for_split" not in df.columns or "case_id" not in df.columns:
+        raise ValueError(f"{eligibility} 缺少 case_id / eligible_for_split")
+    keep = df["eligible_for_split"].astype(str).str.lower().isin({"true", "1"})
+    return unique_ids(df.loc[keep, "case_id"].tolist())
+
+
 def load_patient_ids_from_field_bank(dataset: str, field_bank_dir: Path | str | None = None) -> list[str]:
     bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset)
     prompt_path = bank / "prompts.csv"
@@ -74,7 +96,9 @@ def load_patient_ids_from_field_bank(dataset: str, field_bank_dir: Path | str | 
         df = pd.read_csv(prompt_path)
         col = "patient_id" if "patient_id" in df.columns else df.columns[0]
         return unique_ids(df[col].tolist())
-    pt_dir = bank / "pt"
+    pt_dir = bank / "embeddings" / "pt"
+    if not pt_dir.is_dir():
+        pt_dir = bank / "pt"
     if pt_dir.is_dir():
         return unique_ids(sorted(p.stem for p in pt_dir.glob("*.pt")))
     return []

@@ -26,8 +26,7 @@ class ClinicSubsetEvaluator:
         field_bank_dir: Path | str | None = None,
         embeddings_root: Path | str | None = None,
         work_dir: Path | str | None = None,
-        model: str = "mlp",
-        mode: str = "mean",
+        modality: str = "mlp_clinic_flatten",
         seed: int = 0,
         for_test: bool = False,
         max_epochs: int | None = None,
@@ -36,6 +35,7 @@ class ClinicSubsetEvaluator:
         analyzer_dir: Path | str | None = None,
         extra_args: list[str] | None = None,
         overwrite_embeddings: bool = False,
+        split_dir: Path | str | None = None,
     ):
         self.dataset = dataset
         self.fields = list(fields)
@@ -49,8 +49,7 @@ class ClinicSubsetEvaluator:
         self.field_bank_dir = Path(field_bank_dir or dataset_field_bank_dir(dataset))
         self.embeddings_root = Path(embeddings_root or (PROJECT_ROOT / "outputs"))
         self.work_dir = Path(work_dir or dataset_greedy_dir(dataset))
-        self.model = model
-        self.mode = mode
+        self.modality = modality
         self.seed = int(seed)
         self.for_test = bool(for_test)
         self.max_epochs = max_epochs
@@ -59,6 +58,7 @@ class ClinicSubsetEvaluator:
         self.analyzer_dir = analyzer_dir
         self.extra_args = list(extra_args or [])
         self.overwrite_embeddings = bool(overwrite_embeddings)
+        self.split_dir = Path(split_dir) if split_dir is not None else None
 
     def evaluate(self, subset_idx) -> dict:
         idx = [int(i) for i in list(subset_idx)]
@@ -86,15 +86,14 @@ class ClinicSubsetEvaluator:
         k = max(len(self.splits), 1)
         run_tag = scheme
         job_log = self.work_dir / "jobs" / f"{run_tag}.json"
-        split_dir = self.work_dir / "analyzer_splits"
-        if self.splits:
+        split_dir = self.split_dir or (self.work_dir / "analyzer_splits")
+        if self.split_dir is None and self.splits:
             write_analyzer_split_dir(split_dir, self.splits)
         payload = evaluate_clinic_dir(
             clinic_dir,
             dataset=self.dataset,
             scheme=run_tag,
-            model=self.model,
-            mode=self.mode,
+            modality=self.modality,
             exp_group="greedy",
             python_exe=self.analyzer_python,
             analyzer_dir=self.analyzer_dir,
@@ -121,12 +120,12 @@ def make_clinic_evaluator_factory(
     fields: list[str],
     field_bank_dir: Path | str,
     work_dir: Path | str,
-    model: str = "mlp",
-    mode: str = "mean",
+    modality: str = "mlp_clinic_flatten",
     max_epochs: int | None = None,
     conch_python: Path | str | None = None,
     analyzer_python: Path | str | None = None,
     extra_args: list[str] | None = None,
+    split_dir: Path | str | None = None,
 ):
     def factory(split, seed=0, for_test=False):
         return ClinicSubsetEvaluator(
@@ -135,14 +134,14 @@ def make_clinic_evaluator_factory(
             splits=split,
             field_bank_dir=field_bank_dir,
             work_dir=work_dir,
-            model=model,
-            mode=mode,
+            modality=modality,
             seed=seed,
             for_test=for_test,
             max_epochs=max_epochs,
             conch_python=conch_python,
             analyzer_python=analyzer_python,
             extra_args=extra_args,
+            split_dir=split_dir,
         )
 
     return factory

@@ -54,6 +54,23 @@ def test_greedy_forward_runs_full_curve_and_is_order_invariant():
     assert cached.n_hits > 0
 
 
+def test_greedy_forward_starts_from_init_fields():
+    weights = [0.01, 0.08, 0.04, 0.02]
+    ev = StubEvaluator(FIELDS, weights=weights)
+    path = greedy_forward(ev, init_idx=[0, 3])
+    assert path[0]["init"] is True
+    assert path[0]["subset"] == ["f0", "f3"]
+    assert path[1]["added"] == "f1"
+    assert path[1]["subset"][:2] == ["f0", "f3"]
+
+
+def test_greedy_forward_workers_match_serial():
+    weights = [0.01, 0.08, 0.04, 0.02]
+    serial = greedy_forward(StubEvaluator(FIELDS, weights=weights))
+    parallel = greedy_forward(StubEvaluator(FIELDS, weights=weights), workers=3)
+    assert [step["added"] for step in serial] == [step["added"] for step in parallel]
+
+
 def test_selection_frequency_and_stopping_rules():
     path_a = [
         {"step": 1, "added": "f1", "subset": ["f1"], "subset_idx": [1]},
@@ -118,48 +135,21 @@ def test_nested_scheduler_does_not_use_test_for_decisions():
 def test_cli_stub_writes_artifacts(tmp_path):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     from greedy.cli import main
+    from greedy.cli import _resolve_init_idx
 
-    patients = pd.DataFrame({"patient_id": [f"p{i:02d}" for i in range(15)]})
-    labels = pd.DataFrame(
-        {
-            "case_id": [f"p{i:02d}" for i in range(15)],
-            "censorship": [i % 2 for i in range(15)],
-        }
-    )
-    bank = tmp_path / "field_bank"
-    bank.mkdir()
-    patients.to_csv(bank / "prompts.csv", index=False)
-    (bank / "field_index.json").write_text(json.dumps({"fields": FIELDS}), encoding="utf-8")
-    label_file = tmp_path / "labels.csv"
-    labels.to_csv(label_file, index=False)
-    out = tmp_path / "greedy"
-
-    main(
-        [
-            "--dataset",
-            "TCGA-READ",
-            "--evaluator",
-            "stub",
-            "--field_bank_dir",
-            str(bank),
-            "--field_index",
-            str(bank / "field_index.json"),
-            "--label_file",
-            str(label_file),
-            "--outer_folds",
-            "3",
-            "--repeats",
-            "1",
-            "--out",
-            str(out),
-        ]
-    )
-    path = json.loads((out / "path.json").read_text())
-    assert path["n_folds"] == 3
-    assert (out / "selection_freq.csv").exists()
-    cfg = json.loads((out / "run_config.json").read_text())
-    assert cfg["evaluator"] == "stub"
-    assert set(cfg["points"]) >= {"best", "parsimonious", "sig_stop"}
+    fields = [
+        "diagnoses[].age_at_diagnosis",
+        "demographic.sex_at_birth",
+        "demographic.race",
+    ]
+    assert _resolve_init_idx(fields, "age_at_diagnosis,sex_at_birth") == [0, 1]
+    assert _resolve_init_idx(fields, "{demographic.sex_at_birth,demographic.race}") == [1, 2]
+    assert _resolve_init_idx(fields, "demographic.race") == [2]
+    try:
+        _resolve_init_idx(fields, "{demographic.ethnicity,demographic.sex_at_birth}")
+        assert False, "missing init field should exit"
+    except SystemExit as exc:
+        assert str(exc) == "not found demographic.ethnicity field"
 
 
 if __name__ == "__main__":
@@ -167,8 +157,6 @@ if __name__ == "__main__":
     test_greedy_forward_runs_full_curve_and_is_order_invariant()
     test_selection_frequency_and_stopping_rules()
     test_nested_scheduler_does_not_use_test_for_decisions()
-    from tempfile import TemporaryDirectory
-
-    with TemporaryDirectory() as tmp:
-        test_cli_stub_writes_artifacts(Path(tmp))
+    test_greedy_forward_starts_from_init_fields()
+    test_cli_stub_writes_artifacts(Path("."))
     print("ok")

@@ -7,7 +7,7 @@ from common.paths import (
     DEFAULT_DATASETS_CONFIG,
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
-    REGISTRY_DIR,
+    shared_field_stats_path,
     resolve_reference_dict_path,
 )
 
@@ -28,27 +28,27 @@ def scan_main(argv=None):
 
 
 def stats_main(argv=None):
-    parser = argparse.ArgumentParser(description="基于扫描字典统计 JSON 全字段覆盖率 / 四态缺失")
+    parser = argparse.ArgumentParser(description="基于扫描字典统计 JSON 全字段覆盖率 / 三态缺失")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
     parser.add_argument("--json_path", default=DEFAULT_JSON_PATH)
     parser.add_argument(
         "--json_field_dict",
         default=str(DEFAULT_JSON_FIELD_DICT),
-        help="覆盖字段字典路径。默认优先 outputs/registry/dicts/{dataset}_json_field_dict.json",
+        help="覆盖字段字典路径。默认优先 rawdata_stats/{dataset}/scanned_fields.json",
     )
     run_field_stats(parser.parse_args(argv))
 
 
 def filter_main(argv=None):
-    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，写出 field_registry、exclusion_log、active_fields")
+    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log、active_fields")
     parser.add_argument("--dataset", default="all")
-    parser.add_argument("--stats_csv", default=str(REGISTRY_DIR / "field_stats_raw.csv"))
+    parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
     parser.add_argument("--min_coverage", type=float, default=0.30)
     parser.add_argument(
         "--write_templates",
         action="store_true",
-        help="按 R0-R6 保留字段生成 templates/field_bank/{dataset}_FIELD_BANK_template.csv",
+        help="按 R0-R6 保留字段生成长表模板 templates/B_scan/{dataset}/FIELD_BANK.csv（field,example,convert,unit,template）",
     )
     run_field_filter(parser.parse_args(argv))
 
@@ -57,12 +57,16 @@ def field_bank_main(argv=None):
     parser = argparse.ArgumentParser(description="按 active_fields.json 生成 Field Bank prompts / embeddings")
     parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
-    parser.add_argument("--active_fields", default=str(REGISTRY_DIR / "active_fields.json"))
+    parser.add_argument(
+        "--active_fields",
+        default=None,
+        help="覆盖默认 rawdata_stats/{dataset}/fliter_log/active_fields.json",
+    )
     parser.add_argument("--ckpt", default=DEFAULT_CKPT)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument(
         "--prompts_only",
         action="store_true",
-        help="只生成 outputs/{dataset}/field_bank/prompts.csv，不调用 CONCH 编码",
+        help="只生成 outputs/{dataset}/B_scan/FIELD_BANK/prompts.csv，不调用 CONCH 编码",
     )
     run_field_bank(parser.parse_args(argv))

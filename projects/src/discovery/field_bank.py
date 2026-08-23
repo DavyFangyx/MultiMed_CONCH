@@ -15,120 +15,227 @@ from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
 from common.missingness import classify_raw_value, clean_value
+from .converters import convert_value, known_converters
 from common.paths import (
     DEFAULT_CKPT,
-    DEFAULT_FIELD_BANK_TEMPLATE_DIR,
     DEFAULT_GPU,
-    REGISTRY_DIR,
     REPO_ROOT,
+    dataset_active_fields_path,
     dataset_field_bank_dir,
+    dataset_field_bank_template_dir,
 )
-
-
-def field_bank_placeholder(field_path: str) -> str:
-    leaf = str(field_path).split(".")[-1].replace("[]", "")
-    return leaf.upper()
 
 
 def field_bank_output_col(field_path: str) -> str:
     return str(field_path).replace(".", "_").replace("[]", "") + "_template"
 
 
-def write_field_bank_template_skeleton(dataset_name: str, fields: list[str], out_dir: Path | None = None) -> Path:
-    out_dir = Path(out_dir or DEFAULT_FIELD_BANK_TEMPLATE_DIR)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{dataset_name}_FIELD_BANK_template.csv"
-    map_path = out_dir / f"{dataset_name}_FIELD_BANK_columns.json"
-    fields = sorted(fields)
+def _clean_text(value) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)) or pd.isna(value):
+        return ""
+    return str(value).strip()
 
+
+TEMPLATE_COLUMNS = ["field", "example", "convert", "unit", "template"]
+
+
+def _is_long_template(df: pd.DataFrame) -> bool:
+    cols = {str(c).strip().lower() for c in df.columns}
+    return {"field", "template"}.issubset(cols)
+
+
+def _row_attr(row, name: str) -> str:
+    mapping = {str(k).strip().lower(): k for k in getattr(row, "_fields", ())}
+    key = mapping.get(name)
+    if key is None:
+        return ""
+    return _clean_text(getattr(row, key, ""))
+
+
+def _read_existing_templates(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+    old = pd.read_csv(path)
+    if old.empty:
+        return {}
     preserved = {}
-    if out_path.exists():
-        old = pd.read_csv(out_path)
-        if len(old) >= 1:
-            preserved = {
-                col: ("" if pd.isna(old.iloc[0][col]) else str(old.iloc[0][col]))
-                for col in old.columns
-                if col in fields
+    if _is_long_template(old):
+        for row in old.itertuples(index=False):
+            field = _row_attr(row, "field")
+            if not field:
+                continue
+            preserved[field] = {
+                "example": _row_attr(row, "example"),
+                "convert": _row_attr(row, "convert"),
+                "unit": _row_attr(row, "unit"),
+                "template": _row_attr(row, "template"),
             }
+        return preserved
+    first = old.iloc[0]
+    for col in old.columns:
+        preserved[str(col)] = {"template": _clean_text(first[col])}
+    return preserved
 
-    sentence_row = {col: preserved.get(col, "") for col in fields}
-    pd.DataFrame([sentence_row], columns=fields).to_csv(out_path, index=False)
+
+def write_field_bank_template_skeleton(
+    dataset_name: str,
+    fields: list[str],
+    out_dir: Path | None = None,
+    examples: dict[str, str] | None = None,
+) -> Path:
+    out_dir = Path(out_dir or dataset_field_bank_template_dir(dataset_name))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "FIELD_BANK.csv"
+    map_path = out_dir / "FIELD_BANK_columns.json"
+    fields = sorted(fields)
+    preserved = _read_existing_templates(out_path)
+    examples = examples or {}
+
+    rows = []
+    for field in fields:
+        old = preserved.get(field, {})
+        rows.append(
+            {
+                "field": field,
+                "example": examples.get(field) or old.get("example", ""),
+                "convert": old.get("convert", ""),
+                "unit": old.get("unit", ""),
+                "template": old.get("template", ""),
+            }
+        )
+    pd.DataFrame(rows, columns=TEMPLATE_COLUMNS).to_csv(out_path, index=False)
     mapping = [
         {
             "field_path": field,
-            "template_col": field,
-            "placeholder": field_bank_placeholder(field),
             "output_col": field_bank_output_col(field),
         }
         for field in fields
     ]
     with open(map_path, "w", encoding="utf-8") as f:
-        json.dump({"dataset": dataset_name, "fields": mapping}, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {
+                "dataset": dataset_name,
+                "note": (
+                    "人工编辑 template.csv。先看 example 的原始取值，再裁定 convert/unit，最后填 template。"
+                    "convert 填 converters.py 清单中的函数名；空则原样填 {}。"
+                    "example 和 unit 不进入编码。"
+                    "本 JSON 只记录 field_path 到 prompts.csv 输出列名的对照。"
+                ),
+                "fields": mapping,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
         f.write("\n")
-    filled = sum(1 for v in sentence_row.values() if str(v).strip())
-    print(
-        f"✅ FIELD_BANK 模板: {out_path}  列数={len(fields)}，已填句子={filled}\n"
-        f"✅ FIELD_BANK 列对照: {map_path}"
-    )
+    print(f"✅ FIELD_BANK 模板: {out_path}  字段数={len(fields)}")
+    print(f"✅ FIELD_BANK 列对照: {map_path}")
     return out_path
 
 
-def load_active_fields(path: Path | None = None) -> dict:
-    path = Path(path or (REGISTRY_DIR / "active_fields.json"))
+
+def _normalize_active_payload(payload, dataset_name: str | None = None, path: Path | None = None) -> dict:
+    if isinstance(payload, dict) and "fields" in payload:
+        return payload
+    if isinstance(payload, dict) and dataset_name and dataset_name in payload:
+        return payload[dataset_name]
+    raise ValueError(f"无法从 {path} 读取 {dataset_name or 'dataset'} 的 active fields")
+
+
+def load_active_fields(dataset_name: str | None = None, path: Path | None = None) -> dict:
+    if path is not None:
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"未找到 {path}。请先运行 python projects/scripts/run_field_filter.py --dataset all"
+            )
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if dataset_name:
+            return {dataset_name: _normalize_active_payload(payload, dataset_name, path)}
+        if isinstance(payload, dict) and "fields" in payload:
+            raise ValueError(f"{path} 是单数据集 active_fields.json，请同时传入 dataset_name")
+        return payload
+
+    if not dataset_name:
+        raise ValueError("load_active_fields 需要 dataset_name 或显式 path")
+    path = dataset_active_fields_path(dataset_name)
     if not path.exists():
         raise FileNotFoundError(
-            f"未找到 {path}。请先运行 python projects/scripts/run_field_filter.py --dataset all"
+            f"未找到 {path}。请先运行 python projects/scripts/run_field_filter.py --dataset {dataset_name}"
         )
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        payload = json.load(f)
+    return {dataset_name: _normalize_active_payload(payload, dataset_name, path)}
+
+
+def _fill_template(template: str, value: str) -> str:
+    return str(template).replace("{}", str(value), 1)
 
 
 def load_field_bank_template(dataset_name: str) -> dict:
-    template_file = DEFAULT_FIELD_BANK_TEMPLATE_DIR / f"{dataset_name}_FIELD_BANK_template.csv"
-    map_path = DEFAULT_FIELD_BANK_TEMPLATE_DIR / f"{dataset_name}_FIELD_BANK_columns.json"
+    template_dir = dataset_field_bank_template_dir(dataset_name)
+    template_file = template_dir / "FIELD_BANK.csv"
+    map_path = template_dir / "FIELD_BANK_columns.json"
     if not template_file.exists():
         raise FileNotFoundError(
-            f"未找到 FIELD_BANK 模板: {template_file}。请先跑 run_field_filter.py --write_templates，再填写第二行句子。"
+            f"未找到 FIELD_BANK 模板: {template_file}。请先跑 run_field_filter.py --write_templates，再填写 template 列。"
         )
     tpl_df = pd.read_csv(template_file)
+    if tpl_df.empty:
+        raise ValueError(f"FIELD_BANK 模板为空: {template_file}")
+    if not _is_long_template(tpl_df):
+        raise ValueError(
+            f"FIELD_BANK 模板必须是长表，列为 field,example,convert,unit,template: {template_file}"
+        )
+
     col_map = {}
     if map_path.exists():
         with open(map_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
         for item in payload.get("fields", []):
-            col_map[str(item.get("template_col") or item.get("field_path"))] = item
+            field_path = str(item.get("field_path") or "")
+            if field_path:
+                col_map[field_path] = item
 
     fields = []
-    placeholders = []
     output_cols = []
     templates = {}
-    empty_cols = []
-    for col in tpl_df.columns:
-        item = col_map.get(col, {})
-        field_path = str(item.get("field_path") or col)
-        placeholder = str(item.get("placeholder") or field_bank_placeholder(field_path))
+    converts = {}
+    empty_fields = []
+    seen = set()
+    for row in tpl_df.itertuples(index=False):
+        field_path = _row_attr(row, "field")
+        sentence = _row_attr(row, "template")
+        convert = _row_attr(row, "convert")
+        if not field_path:
+            continue
+        if field_path in seen:
+            raise ValueError(f"FIELD_BANK 模板字段重复: {field_path} ({template_file})")
+        seen.add(field_path)
+        if convert.lower() not in known_converters():
+            known = ", ".join(sorted(x for x in known_converters() if x))
+            raise ValueError(
+                f"字段 {field_path} 的 convert={convert!r} 无效。允许值为空或 {known}"
+            )
+        item = col_map.get(field_path, {})
         output_col = str(item.get("output_col") or field_bank_output_col(field_path))
-        sentence = ""
-        if len(tpl_df):
-            raw = tpl_df.iloc[0][col]
-            sentence = "" if pd.isna(raw) else str(raw).strip()
         if not sentence:
-            empty_cols.append(col)
+            empty_fields.append(field_path)
         fields.append(field_path)
-        placeholders.append(placeholder)
         output_cols.append(output_col)
-        templates[col] = sentence
-    if empty_cols:
+        templates[field_path] = sentence
+        converts[field_path] = convert.lower()
+    if empty_fields:
         raise ValueError(
-            f"FIELD_BANK 模板第二行仍为空（{len(empty_cols)} 列），请先填写 {template_file} 后再编码。"
+            f"FIELD_BANK 模板 template 列仍为空（{len(empty_fields)} 个字段），请先填写 {template_file} 后再编码。"
         )
     return {
         "template_file": template_file,
-        "template_cols": list(tpl_df.columns),
         "fields": fields,
-        "placeholders": placeholders,
         "output_cols": output_cols,
         "templates": templates,
+        "converts": converts,
     }
 
 
@@ -153,12 +260,12 @@ def extract_field_bank_value(case: dict, field_path: str) -> tuple[str, bool]:
 def generate_field_bank_prompt_row(case: dict, cfg: dict) -> dict:
     row = {"patient_id": case["submitter_id"]}
     mask = {}
-    for tpl_col, placeholder, out_col, field_path in zip(
-        cfg["template_cols"], cfg["placeholders"], cfg["output_cols"], cfg["fields"]
-    ):
+    converts = cfg.get("converts") or {}
+    for out_col, field_path in zip(cfg["output_cols"], cfg["fields"]):
         value, valid = extract_field_bank_value(case, field_path)
-        tpl_str = cfg["templates"][tpl_col]
-        row[out_col] = tpl_str.replace(placeholder, value) if placeholder else tpl_str
+        if valid:
+            value = convert_value(value, converts.get(field_path, ""))
+        row[out_col] = _fill_template(cfg["templates"][field_path], value)
         mask[out_col] = valid
     row["_mask"] = mask
     return row
@@ -180,16 +287,18 @@ def run_field_bank(args):
     if not names:
         raise ValueError("FIELD_BANK 需要 --dataset，例如 --dataset TCGA-READ 或 --dataset all")
 
-    active = load_active_fields(Path(args.active_fields) if args.active_fields else None)
-
     for name in names:
         print(f"\n######## Dataset: {name} ########")
+        active = load_active_fields(
+            dataset_name=name,
+            path=Path(args.active_fields) if args.active_fields else None,
+        )
         if name not in active:
-            raise ValueError(f"{name} 不在 active_fields.json 中。请先跑 run_field_filter.py")
+            raise ValueError(f"{name} 不在 {args.active_fields or dataset_active_fields_path(name)} 中。请先跑 run_field_filter.py")
         cfg = load_field_bank_template(name)
         expected = list(active[name]["fields"])
         if cfg["fields"] != expected:
-            print("  ⚠️  模板字段与 active_fields.json 不完全一致，以模板当前列为准。")
+            print("  ⚠️  模板字段与 active_fields.json 不完全一致，以模板当前行为准。")
 
         cases = load_clinical_cases(
             get_dataset_clinic_files(name, datasets),
@@ -233,7 +342,7 @@ def run_field_bank(args):
                 all_embeddings.append(feats.cpu().float().numpy())
         embeddings = np.concatenate(all_embeddings, axis=0).reshape(len(patient_ids), len(cfg["fields"]), -1)
 
-        pt_dir = out_dir / "pt"
+        pt_dir = out_dir / "embeddings" / "pt"
         pt_dir.mkdir(parents=True, exist_ok=True)
         for rec, emb in zip(records, embeddings):
             mask = [bool(rec["_mask"][col]) for col in cfg["output_cols"]]

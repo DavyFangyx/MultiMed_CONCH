@@ -7,9 +7,9 @@ import re
 
 import pandas as pd
 
-from common.paths import dataset_prompt_dir, dataset_stats_dir
+from common.paths import dataset_prompt_dir
 
-from .config import SCHEME_CONFIG, SCHEME_PROMPT_FILE, load_custom_schemes, resolve_scheme_names
+from .config import SCHEME_CONFIG, load_custom_schemes, resolve_scheme_names
 
 
 FIELD_FALLBACKS = {
@@ -71,7 +71,7 @@ def _pct_to_float(value):
 
 
 def analyze_prompt_layer(scheme: str, prompt_dir: str) -> pd.DataFrame:
-    csv_file = Path(prompt_dir) / SCHEME_PROMPT_FILE[scheme]
+    csv_file = Path(prompt_dir) / scheme / "prompts.csv"
     if not csv_file.exists():
         print(f"  ⚠️  [{scheme}] prompt CSV 不存在: {csv_file}，请先运行 json2prompt")
         return pd.DataFrame()
@@ -129,8 +129,6 @@ def analyze_prompt_layer(scheme: str, prompt_dir: str) -> pd.DataFrame:
 def run_prompt_stats_one(scheme: str, prompt_dir: str, output_dir: Path, template_dir: str) -> pd.DataFrame:
     load_custom_schemes(template_dir)
     schemes = resolve_scheme_names(scheme)
-    prompt_stats_dir = output_dir / "l0_5"
-    prompt_stats_dir.mkdir(parents=True, exist_ok=True)
 
     all_prompt_stats = []
     for name in schemes:
@@ -141,7 +139,9 @@ def run_prompt_stats_one(scheme: str, prompt_dir: str, output_dir: Path, templat
         if df_p.empty:
             continue
         print(df_p.to_string(index=False))
-        out_path = prompt_stats_dir / f"prompt_layer_{name}.csv"
+        scheme_dir = Path(prompt_dir) / name
+        scheme_dir.mkdir(parents=True, exist_ok=True)
+        out_path = scheme_dir / "prompt_stats.csv"
         df_p.to_csv(out_path, index=False)
         print(f"\n✅ 已保存: {out_path}")
         all_prompt_stats.append(df_p)
@@ -150,10 +150,6 @@ def run_prompt_stats_one(scheme: str, prompt_dir: str, output_dir: Path, templat
         return pd.DataFrame()
 
     merged = pd.concat(all_prompt_stats, ignore_index=True)
-    merged_path = prompt_stats_dir / "prompt_layer_all_schemes.csv"
-    merged.to_csv(merged_path, index=False)
-    print(f"\n✅ 所有方案合并统计已保存: {merged_path}")
-
     merged["_ph_f"] = merged["placeholder_rate"].apply(_pct_to_float)
     stats_rows = []
     for col, grp in merged.groupby("column", sort=False):
@@ -176,9 +172,6 @@ def run_prompt_stats_one(scheme: str, prompt_dir: str, output_dir: Path, templat
         .drop(columns="_ph_max")
         .reset_index(drop=True)
     )
-    stats_path = prompt_stats_dir / "prompt_layer_stats.csv"
-    df_stats.to_csv(stats_path, index=False)
-    print(f"\n✅ 字段并集统计已保存: {stats_path}")
     return df_stats
 
 
@@ -197,6 +190,5 @@ def run_prompt_stats(args):
     for job in jobs:
         name = job["name"] or "custom"
         print(f"\n######## Dataset: {name} ########")
-        output_dir = dataset_stats_dir(name) if job["name"] else Path(args.out)
         prompt_dir = job["prompt_dir"] if job["name"] else (args.prompt_dir or dataset_prompt_dir(name))
-        run_prompt_stats_one(args.scheme, prompt_dir, output_dir, args.template_dir)
+        run_prompt_stats_one(args.scheme, prompt_dir, Path(prompt_dir), args.template_dir)

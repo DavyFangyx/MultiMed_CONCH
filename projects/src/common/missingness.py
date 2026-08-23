@@ -1,4 +1,4 @@
-"""Shared missingness vocabulary and four-state classification."""
+"""Shared missingness vocabulary and three-state classification."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def is_missing_token(value, extra: set[str] | None = None) -> bool:
 
 
 def classify_raw_value(value) -> str:
-    """Return one of: null, sentinel, valid. Absent is handled at the field-path level."""
+    """Return one of: null, sentinel, valid."""
     if value is None:
         return "null"
     if isinstance(value, str):

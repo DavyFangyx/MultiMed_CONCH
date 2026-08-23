@@ -6,7 +6,7 @@ import pandas as pd
 
 from common.clinical_io import load_clinical_cases, normalize_json_paths
 
-from .config import SCHEME_CONFIG, SCHEME_PROMPT_FILE, resolve_scheme_template_file
+from .config import SCHEME_CONFIG, resolve_scheme_template_file
 from .extract import extract_values
 
 
@@ -34,7 +34,7 @@ def run_json2prompt(
 ):
     cfg = SCHEME_CONFIG[scheme]
     template_file = resolve_scheme_template_file(scheme, template_dir)
-    output_file = Path(prompt_dir) / SCHEME_PROMPT_FILE[scheme]
+    output_file = Path(prompt_dir) / scheme / "prompts.csv"
     json_paths = normalize_json_paths(json_path)
 
     print(f"\n{'='*55}")

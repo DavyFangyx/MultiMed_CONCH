@@ -9,7 +9,7 @@ from pathlib import Path
 
 from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
-from common.paths import REGISTRY_DICTS_DIR, resolve_reference_dict_path
+from common.paths import RAWDATA_STATS_ROOT, dataset_field_dict_path, resolve_reference_dict_path
 
 
 SECTION_PREFIX_MAP = {
@@ -38,7 +38,7 @@ GENERIC_LABELS = {
 
 
 def dataset_json_field_dict_path(dataset_name: str) -> Path:
-    return REGISTRY_DICTS_DIR / f"{dataset_name}_json_field_dict.json"
+    return dataset_field_dict_path(dataset_name)
 
 
 def load_json_field_dictionary(path) -> dict:
@@ -200,7 +200,7 @@ def build_json_field_dict(
     n_cases = len(cases)
     out["说明"] = (
         f"由 {dataset_label} 的 clinical JSON 扫描生成的字段字典，"
-        f"共纳入 {n_cases} 个病例。结构与 templates/common/json_field_dictionary.json 对齐；"
+        f"共纳入 {n_cases} 个病例。结构与 templates/field_labels.json 对齐；"
         "不同病人出现的字段不完全一致，这里取并集。"
     )
     out["_meta"] = {
@@ -286,7 +286,7 @@ def run_scan(args):
     reference_dict = args.reference_dict
 
     if not dataset_names:
-        out = Path(args.out) if args.out else REGISTRY_DICTS_DIR / "custom_json_field_dict.json"
+        out = Path(args.out) if args.out else RAWDATA_STATS_ROOT / "custom" / "scanned_fields.json"
         print("######## Dataset: custom ########")
         scan_dataset_json_field_dict(
             json_paths=args.json_path,
