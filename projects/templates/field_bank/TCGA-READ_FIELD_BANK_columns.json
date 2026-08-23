@@ -1,0 +1,221 @@
+{
+  "dataset": "TCGA-READ",
+  "fields": [
+    {
+      "field_path": "demographic.country_of_residence_at_enrollment",
+      "template_col": "demographic.country_of_residence_at_enrollment",
+      "placeholder": "COUNTRY_OF_RESIDENCE_AT_ENROLLMENT",
+      "output_col": "demographic_country_of_residence_at_enrollment_template"
+    },
+    {
+      "field_path": "demographic.gender",
+      "template_col": "demographic.gender",
+      "placeholder": "GENDER",
+      "output_col": "demographic_gender_template"
+    },
+    {
+      "field_path": "demographic.race",
+      "template_col": "demographic.race",
+      "placeholder": "RACE",
+      "output_col": "demographic_race_template"
+    },
+    {
+      "field_path": "demographic.sex_at_birth",
+      "template_col": "demographic.sex_at_birth",
+      "placeholder": "SEX_AT_BIRTH",
+      "output_col": "demographic_sex_at_birth_template"
+    },
+    {
+      "field_path": "diagnoses[].age_at_diagnosis",
+      "template_col": "diagnoses[].age_at_diagnosis",
+      "placeholder": "AGE_AT_DIAGNOSIS",
+      "output_col": "diagnoses_age_at_diagnosis_template"
+    },
+    {
+      "field_path": "diagnoses[].ajcc_pathologic_m",
+      "template_col": "diagnoses[].ajcc_pathologic_m",
+      "placeholder": "AJCC_PATHOLOGIC_M",
+      "output_col": "diagnoses_ajcc_pathologic_m_template"
+    },
+    {
+      "field_path": "diagnoses[].ajcc_pathologic_n",
+      "template_col": "diagnoses[].ajcc_pathologic_n",
+      "placeholder": "AJCC_PATHOLOGIC_N",
+      "output_col": "diagnoses_ajcc_pathologic_n_template"
+    },
+    {
+      "field_path": "diagnoses[].ajcc_pathologic_t",
+      "template_col": "diagnoses[].ajcc_pathologic_t",
+      "placeholder": "AJCC_PATHOLOGIC_T",
+      "output_col": "diagnoses_ajcc_pathologic_t_template"
+    },
+    {
+      "field_path": "diagnoses[].diagnosis_is_primary_disease",
+      "template_col": "diagnoses[].diagnosis_is_primary_disease",
+      "placeholder": "DIAGNOSIS_IS_PRIMARY_DISEASE",
+      "output_col": "diagnoses_diagnosis_is_primary_disease_template"
+    },
+    {
+      "field_path": "diagnoses[].icd_10_code",
+      "template_col": "diagnoses[].icd_10_code",
+      "placeholder": "ICD_10_CODE",
+      "output_col": "diagnoses_icd_10_code_template"
+    },
+    {
+      "field_path": "diagnoses[].morphology",
+      "template_col": "diagnoses[].morphology",
+      "placeholder": "MORPHOLOGY",
+      "output_col": "diagnoses_morphology_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].circumferential_resection_margin",
+      "template_col": "diagnoses[].pathology_details[].circumferential_resection_margin",
+      "placeholder": "CIRCUMFERENTIAL_RESECTION_MARGIN",
+      "output_col": "diagnoses_pathology_details_circumferential_resection_margin_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].lymph_nodes_positive",
+      "template_col": "diagnoses[].pathology_details[].lymph_nodes_positive",
+      "placeholder": "LYMPH_NODES_POSITIVE",
+      "output_col": "diagnoses_pathology_details_lymph_nodes_positive_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].lymph_nodes_tested",
+      "template_col": "diagnoses[].pathology_details[].lymph_nodes_tested",
+      "placeholder": "LYMPH_NODES_TESTED",
+      "output_col": "diagnoses_pathology_details_lymph_nodes_tested_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].lymphatic_invasion_present",
+      "template_col": "diagnoses[].pathology_details[].lymphatic_invasion_present",
+      "placeholder": "LYMPHATIC_INVASION_PRESENT",
+      "output_col": "diagnoses_pathology_details_lymphatic_invasion_present_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].non_nodal_tumor_deposits",
+      "template_col": "diagnoses[].pathology_details[].non_nodal_tumor_deposits",
+      "placeholder": "NON_NODAL_TUMOR_DEPOSITS",
+      "output_col": "diagnoses_pathology_details_non_nodal_tumor_deposits_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].perineural_invasion_present",
+      "template_col": "diagnoses[].pathology_details[].perineural_invasion_present",
+      "placeholder": "PERINEURAL_INVASION_PRESENT",
+      "output_col": "diagnoses_pathology_details_perineural_invasion_present_template"
+    },
+    {
+      "field_path": "diagnoses[].pathology_details[].vascular_invasion_present",
+      "template_col": "diagnoses[].pathology_details[].vascular_invasion_present",
+      "placeholder": "VASCULAR_INVASION_PRESENT",
+      "output_col": "diagnoses_pathology_details_vascular_invasion_present_template"
+    },
+    {
+      "field_path": "diagnoses[].primary_diagnosis",
+      "template_col": "diagnoses[].primary_diagnosis",
+      "placeholder": "PRIMARY_DIAGNOSIS",
+      "output_col": "diagnoses_primary_diagnosis_template"
+    },
+    {
+      "field_path": "diagnoses[].prior_malignancy",
+      "template_col": "diagnoses[].prior_malignancy",
+      "placeholder": "PRIOR_MALIGNANCY",
+      "output_col": "diagnoses_prior_malignancy_template"
+    },
+    {
+      "field_path": "diagnoses[].prior_treatment",
+      "template_col": "diagnoses[].prior_treatment",
+      "placeholder": "PRIOR_TREATMENT",
+      "output_col": "diagnoses_prior_treatment_template"
+    },
+    {
+      "field_path": "diagnoses[].residual_disease",
+      "template_col": "diagnoses[].residual_disease",
+      "placeholder": "RESIDUAL_DISEASE",
+      "output_col": "diagnoses_residual_disease_template"
+    },
+    {
+      "field_path": "diagnoses[].site_of_resection_or_biopsy",
+      "template_col": "diagnoses[].site_of_resection_or_biopsy",
+      "placeholder": "SITE_OF_RESECTION_OR_BIOPSY",
+      "output_col": "diagnoses_site_of_resection_or_biopsy_template"
+    },
+    {
+      "field_path": "diagnoses[].tissue_or_organ_of_origin",
+      "template_col": "diagnoses[].tissue_or_organ_of_origin",
+      "placeholder": "TISSUE_OR_ORGAN_OF_ORIGIN",
+      "output_col": "diagnoses_tissue_or_organ_of_origin_template"
+    },
+    {
+      "field_path": "diagnoses[].treatments[].therapeutic_agents",
+      "template_col": "diagnoses[].treatments[].therapeutic_agents",
+      "placeholder": "THERAPEUTIC_AGENTS",
+      "output_col": "diagnoses_treatments_therapeutic_agents_template"
+    },
+    {
+      "field_path": "diagnoses[].treatments[].treatment_type",
+      "template_col": "diagnoses[].treatments[].treatment_type",
+      "placeholder": "TREATMENT_TYPE",
+      "output_col": "diagnoses_treatments_treatment_type_template"
+    },
+    {
+      "field_path": "family_histories[].relative_with_cancer_history",
+      "template_col": "family_histories[].relative_with_cancer_history",
+      "placeholder": "RELATIVE_WITH_CANCER_HISTORY",
+      "output_col": "family_histories_relative_with_cancer_history_template"
+    },
+    {
+      "field_path": "follow_ups[].disease_response",
+      "template_col": "follow_ups[].disease_response",
+      "placeholder": "DISEASE_RESPONSE",
+      "output_col": "follow_ups_disease_response_template"
+    },
+    {
+      "field_path": "follow_ups[].molecular_tests[].test_result",
+      "template_col": "follow_ups[].molecular_tests[].test_result",
+      "placeholder": "TEST_RESULT",
+      "output_col": "follow_ups_molecular_tests_test_result_template"
+    },
+    {
+      "field_path": "follow_ups[].molecular_tests[].test_value",
+      "template_col": "follow_ups[].molecular_tests[].test_value",
+      "placeholder": "TEST_VALUE",
+      "output_col": "follow_ups_molecular_tests_test_value_template"
+    },
+    {
+      "field_path": "follow_ups[].other_clinical_attributes[].bmi",
+      "template_col": "follow_ups[].other_clinical_attributes[].bmi",
+      "placeholder": "BMI",
+      "output_col": "follow_ups_other_clinical_attributes_bmi_template"
+    },
+    {
+      "field_path": "follow_ups[].other_clinical_attributes[].height",
+      "template_col": "follow_ups[].other_clinical_attributes[].height",
+      "placeholder": "HEIGHT",
+      "output_col": "follow_ups_other_clinical_attributes_height_template"
+    },
+    {
+      "field_path": "follow_ups[].other_clinical_attributes[].timepoint_category",
+      "template_col": "follow_ups[].other_clinical_attributes[].timepoint_category",
+      "placeholder": "TIMEPOINT_CATEGORY",
+      "output_col": "follow_ups_other_clinical_attributes_timepoint_category_template"
+    },
+    {
+      "field_path": "follow_ups[].other_clinical_attributes[].weight",
+      "template_col": "follow_ups[].other_clinical_attributes[].weight",
+      "placeholder": "WEIGHT",
+      "output_col": "follow_ups_other_clinical_attributes_weight_template"
+    },
+    {
+      "field_path": "follow_ups[].timepoint_category",
+      "template_col": "follow_ups[].timepoint_category",
+      "placeholder": "TIMEPOINT_CATEGORY",
+      "output_col": "follow_ups_timepoint_category_template"
+    },
+    {
+      "field_path": "lost_to_followup",
+      "template_col": "lost_to_followup",
+      "placeholder": "LOST_TO_FOLLOWUP",
+      "output_col": "lost_to_followup_template"
+    }
+  ]
+}

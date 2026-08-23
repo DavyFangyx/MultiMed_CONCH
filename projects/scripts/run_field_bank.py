@@ -10,7 +10,7 @@ for path in (REPO_ROOT, SRC):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from schemes.cli import main
+from discovery.cli import field_bank_main as main
 
 
 if __name__ == "__main__":

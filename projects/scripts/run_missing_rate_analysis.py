@@ -1,17 +1,10 @@
 import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = PROJECT_ROOT.parent
-SRC = PROJECT_ROOT / "src"
-
-for path in (REPO_ROOT, SRC):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
-
-from analysis import main
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(
+        "run_missing_rate_analysis.py 已拆分。\n"
+        "  Prompt 层对照: python projects/scripts/run_prompt_stats.py --dataset all --scheme all\n"
+        "  JSON 全字段统计: python projects/scripts/run_field_stats.py --dataset all\n"
+        "  R0-R6 筛选: python projects/scripts/run_field_filter.py --dataset all"
+    )

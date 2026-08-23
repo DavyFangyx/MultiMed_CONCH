@@ -1,2 +1,0 @@
-﻿AGE_TEMPLATE,SEX_TEMPLATE,PRIMARY_SITE_TEMPLATE,PRIMARY_DIAGNOSIS_TEMPLATE,MORPHOLOGY_TEMPLATE,LATERALITY_TEMPLATE,YEAR_OF_DIAGNOSIS_TEMPLATE
-The patient is AGE years old.,The patient is SEX.,The primary tumor site is PRIMARY_SITE.,The primary diagnosis is PRIMARY_DIAGNOSIS.,The tumor morphology is MORPHOLOGY.,The tumor laterality is LATERALITY.,The initial diagnosis was made in YEAR_OF_DIAGNOSIS.
