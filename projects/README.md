@@ -16,7 +16,7 @@ datasets.json + clinical JSON
 
 ## Layout
 
-- `datasets.json`：每个数据集的 clinical JSON 路径；肾癌三套数据共用一份 JSON，靠 `project_ids` 切开
+- `datasets.json`：33 个 TCGA 数据集的 clinical JSON 路径，全部指向 `ClinicDatasets/gdc_clinical/raw_json/{project}.json`
 - `src/common/`：两边共用的数据集注册、JSON 读取、字段路径、缺失三态
 - `src/schemes/`：人工 L0-L5 / D0-D5
 - `src/discovery/`：扫描、统计、筛选、Field Bank
@@ -37,17 +37,20 @@ conda activate conch
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main
 ```
 
-- `--dataset all` 跑 `datasets.json` 里全部数据集
+- `--dataset all` 跑 `datasets.json` 里全部 33 个 TCGA 数据集
 - 也可以写 `--dataset TCGA-READ` 或 `--dataset TCGA-BRCA,TCGA-READ`
-- 肾癌：`--dataset TCGA-KICH,TCGA-KIRC,TCGA-KIRP`
+- 肝细胞癌历史目录名仍是 `TCGA_LIHC`；`--dataset TCGA-LIHC` 会解析到同一份配置
 - 不传 `--dataset` 时，走 `--json_path` 单 JSON 模式
 - 患者级 `.pt` 统一命名为 `TCGA-XX-XXXX.pt`
 
 默认路径：
 
 - 数据集配置：`projects/datasets.json`
+- clinic JSON：`projects/ClinicDatasets/gdc_clinical/raw_json/{TCGA-XXXX}.json`
 - L0-L5 模板：`projects/templates/A_manual`
 - CONCH 权重：`/data/fangyuxuan/projects/medical_dl/trident_project/CONCH/pytorch_model.bin`
+
+`--dataset all` 覆盖 33 个 TCGA project：ACC, BLCA, BRCA, CESC, CHOL, COAD, DLBC, ESCA, GBM, HNSC, KICH, KIRC, KIRP, LAML, LGG, LIHC, LUAD, LUSC, MESO, OV, PAAD, PCPG, PRAD, READ, SARC, SKCM, STAD, TGCT, THCA, THYM, UCEC, UCS, UVM。其中 LIHC 在 pipeline 里仍写作 `TCGA_LIHC`，对应 `TCGA-LIHC.json`。
 
 ---
 
@@ -59,7 +62,7 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main
 # B组 step1 JSON -> template
 python projects/scripts/run_scan_fields.py --dataset all
 python projects/scripts/run_field_stats.py --dataset all
-python projects/scripts/run_field_filter.py --dataset all --write_templates
+python scripts/run_field_filter.py --dataset all --write_templates
 # 字段采集更新时间
 python projects/scripts/run_time_stats.py --dataset all
 ```
@@ -73,13 +76,15 @@ rawdata_stats/{dataset}/kept_fields.json
 rawdata_stats/{dataset}/fliter_log/
   exclusion_log.csv
   field_registry.csv
-  active_fields.json
 rawdata_stats/{dataset}/time/
   patient_time_stats.csv
   patient_time_stats.png
   normalized_update_time.csv
   normalized_update_time.png
   normalized_update_time_boxplot.png
+  sequences/
+    {family}.csv
+    {family}.png
 rawdata_stats/_shared/
   field_stats.csv
   patient_time_stats_all.png
@@ -216,11 +221,14 @@ B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串�
 conda activate conch
 cd CONCH-main
 
-CUDA_VISIBLE_DEVICES=N bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPUN.log --workers 4 \
+conda activate SurvPGC
+cd CONCH-main
+CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log \
+    --workers 8 \
     --dataset TCGA_LIHC \
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
-    --init_field '{demographic.ethnicity,demographic.sex_at_birth}' \
+    --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
     --splits_source external \
     --seed 0
 ```

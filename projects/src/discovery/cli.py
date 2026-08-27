@@ -41,7 +41,7 @@ def stats_main(argv=None):
 
 
 def filter_main(argv=None):
-    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log、active_fields")
+    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
     parser.add_argument("--min_coverage", type=float, default=0.30)
@@ -54,13 +54,13 @@ def filter_main(argv=None):
 
 
 def field_bank_main(argv=None):
-    parser = argparse.ArgumentParser(description="按 active_fields.json 生成 Field Bank prompts / embeddings")
+    parser = argparse.ArgumentParser(description="按 kept_fields.json 生成 Field Bank prompts / embeddings")
     parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
     parser.add_argument(
-        "--active_fields",
+        "--kept_fields",
         default=None,
-        help="覆盖默认 rawdata_stats/{dataset}/fliter_log/active_fields.json",
+        help="覆盖默认 rawdata_stats/{dataset}/kept_fields.json",
     )
     parser.add_argument("--ckpt", default=DEFAULT_CKPT)
     parser.add_argument("--batch_size", type=int, default=64)

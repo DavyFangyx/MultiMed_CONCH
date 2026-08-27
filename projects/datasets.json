@@ -1,64 +1,167 @@
 {
-  "TCGA-BRCA": {
+  "TCGA-ACC": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA-BRCA/Bulk_RNA_case/clinical.cart.2026-06-29.json",
-      "/data/lizhe/Medteam_projects/TCGA-BRCA/WSI_case/clinical.cart.2026-06-29.json",
-      "/data/lizhe/Medteam_projects/TCGA-BRCA/Mutation_case/clinical.cart.2026-06-29.json",
-      "/data/lizhe/Medteam_projects/TCGA-BRCA/Mythylation_case/clinical.cart.2026-06-29.json",
-      "/data/lizhe/Medteam_projects/TCGA-BRCA/RPPA_case/clinical.cart.2026-06-29.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-ACC.json"
     ]
   },
-  "TCGA_LIHC": {
+  "TCGA-BLCA": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA_LIHC/clinical/clinical.cart.2026-06-01.json",
-      "/data/lizhe/Medteam_projects/TCGA_LIHC/clinical.cart.2026-03-26.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-BLCA.json"
+    ]
+  },
+  "TCGA-BRCA": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-BRCA.json"
+    ]
+  },
+  "TCGA-CESC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-CESC.json"
+    ]
+  },
+  "TCGA-CHOL": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-CHOL.json"
     ]
   },
   "TCGA-COAD": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA-COAD/Bulk_RNA_cases/clinical.cart.2026-06-18.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-COAD.json"
     ]
   },
-  "TCGA-PRAD": {
+  "TCGA-DLBC": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA-PRAD/Bulk_RNA_cases/clinical.cart.2026-06-18.json",
-      "/data/lizhe/Medteam_projects/TCGA-PRAD/WSI_cases/clinical.cart.2026-06-18.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-DLBC.json"
     ]
   },
-  "TCGA-READ": {
+  "TCGA-ESCA": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA-READ/Bulk_RNA_cases/clinical.cart.2026-06-21.json",
-      "/data/lizhe/Medteam_projects/TCGA-READ/WSI_cases/clinical.cart.2026-06-21.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-ESCA.json"
     ]
   },
-  "TCGA-STAD": {
+  "TCGA-GBM": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/TCGA-STAD/Bulk_RNA_cases/clinical.cart.2026-06-21.json",
-      "/data/lizhe/Medteam_projects/TCGA-STAD/WSI_cases/clinical.cart.2026-06-21.json"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-GBM.json"
+    ]
+  },
+  "TCGA-HNSC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-HNSC.json"
     ]
   },
   "TCGA-KICH": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
-    ],
-    "project_ids": [
-      "TCGA-KICH"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-KICH.json"
     ]
   },
   "TCGA-KIRC": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
-    ],
-    "project_ids": [
-      "TCGA-KIRC"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-KIRC.json"
     ]
   },
   "TCGA-KIRP": {
     "clinic_files": [
-      "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
-    ],
-    "project_ids": [
-      "TCGA-KIRP"
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-KIRP.json"
+    ]
+  },
+  "TCGA-LAML": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-LAML.json"
+    ]
+  },
+  "TCGA-LGG": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-LGG.json"
+    ]
+  },
+  "TCGA_LIHC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-LIHC.json"
+    ]
+  },
+  "TCGA-LUAD": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-LUAD.json"
+    ]
+  },
+  "TCGA-LUSC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-LUSC.json"
+    ]
+  },
+  "TCGA-MESO": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-MESO.json"
+    ]
+  },
+  "TCGA-OV": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-OV.json"
+    ]
+  },
+  "TCGA-PAAD": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-PAAD.json"
+    ]
+  },
+  "TCGA-PCPG": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-PCPG.json"
+    ]
+  },
+  "TCGA-PRAD": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-PRAD.json"
+    ]
+  },
+  "TCGA-READ": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-READ.json"
+    ]
+  },
+  "TCGA-SARC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-SARC.json"
+    ]
+  },
+  "TCGA-SKCM": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-SKCM.json"
+    ]
+  },
+  "TCGA-STAD": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-STAD.json"
+    ]
+  },
+  "TCGA-TGCT": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-TGCT.json"
+    ]
+  },
+  "TCGA-THCA": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-THCA.json"
+    ]
+  },
+  "TCGA-THYM": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-THYM.json"
+    ]
+  },
+  "TCGA-UCEC": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-UCEC.json"
+    ]
+  },
+  "TCGA-UCS": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-UCS.json"
+    ]
+  },
+  "TCGA-UVM": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-UVM.json"
     ]
   }
 }

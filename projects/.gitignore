@@ -30,3 +30,9 @@ Clinic_Analyzer/configs/running/**
 !templates/**/*.json
 !outputs/README.md
 !rawdata_stats/README.md
+# Generated Field Bank tables, filled per dataset
+templates/B_scan/
+templates/B_scan/**
+# Downloaded raw clinical dumps; ignore folders, not *.txt
+ClinicDatasets/gdc_clinical/biotab/
+ClinicDatasets/gdc_clinical/raw_json/

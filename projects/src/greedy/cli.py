@@ -32,6 +32,7 @@ from .splits import (
     write_analyzer_split_dir,
 )
 from .stability import plot_selection_frequency, write_selection_frequency
+from .stability import cindex_curve_frame, plot_cindex_curve, write_cindex_curve
 
 
 def _json_dump(path: Path, payload) -> None:
@@ -274,6 +275,9 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
     _json_dump(out_dir / "path.json", path_payload)
     write_selection_frequency(result["selection_freq"], out_dir / "selection_freq.csv")
     heatmap = plot_selection_frequency(result["selection_freq"], out_dir / "selection_freq.png")
+    curve_df = cindex_curve_frame(result.get("path") or [], result.get("stopping", {}).get("curve") or [])
+    write_cindex_curve(curve_df, out_dir / "cindex_by_n_fields.csv")
+    curve_png = plot_cindex_curve(curve_df, out_dir / "cindex_by_n_fields.png", points=result.get("points"))
     config = {
         "dataset": dataset,
         "inner_modality": inner_modality,
@@ -291,7 +295,7 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
         "n_patients": len(patient_ids),
         "n_folds": result["n_folds"],
         "field_bank_dir": str(Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset)),
-        "active_fields": args.active_fields,
+        "kept_fields": args.kept_fields,
         "splits": split_source,
         "max_epochs": args.max_epochs,
         "conch_python": args.conch_python,
@@ -309,6 +313,9 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
     print(f"  wrote {out_dir / 'selection_freq.csv'}")
     if heatmap is not None:
         print(f"  wrote {heatmap}")
+    print(f"  wrote {out_dir / 'cindex_by_n_fields.csv'}")
+    if curve_png is not None:
+        print(f"  wrote {curve_png}")
     print(f"  elapsed={config['elapsed_sec']:.2f}s")
 
 
@@ -324,7 +331,7 @@ def run_one(args, dataset: str) -> Path:
 
     fields = load_candidate_fields(
         dataset,
-        active_fields_path=args.active_fields,
+        kept_fields_path=args.kept_fields,
         field_index_path=args.field_index,
     )
     if args.exclude_post_baseline:
@@ -379,9 +386,9 @@ def main(argv=None):
     parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
     parser.add_argument(
-        "--active_fields",
+        "--kept_fields",
         default=None,
-        help="覆盖默认 rawdata_stats/{dataset}/fliter_log/active_fields.json",
+        help="覆盖默认 rawdata_stats/{dataset}/kept_fields.json",
     )
     parser.add_argument("--field_index", default=None)
     parser.add_argument("--field_bank_dir", default=None)

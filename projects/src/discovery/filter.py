@@ -1,4 +1,4 @@
-"""R0-R6 field filtering and active Field Bank manifest generation."""
+"""R0-R6 field filtering and Field Bank manifest generation."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 
 from common.paths import (
-    dataset_active_fields_path,
     dataset_exclusion_log_path,
     dataset_field_bank_template_dir,
     dataset_field_registry_path,
@@ -311,15 +310,10 @@ def run_field_filter(args):
 
         exclusion_path = dataset_exclusion_log_path(dataset)
         registry_path = dataset_field_registry_path(dataset)
-        active_path = dataset_active_fields_path(dataset)
         ds_exclusion.to_csv(exclusion_path, index=False)
         ds_registry.to_csv(registry_path, index=False)
 
         payload = active.get(dataset, {"n_patients": 0, "fields": [], "coverage": {}})
-        with open(active_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-
         kept_path = dataset_kept_fields_path(dataset)
         kept_path.parent.mkdir(parents=True, exist_ok=True)
         with open(kept_path, "w", encoding="utf-8") as f:
@@ -327,7 +321,6 @@ def run_field_filter(args):
             f.write("\n")
         print(f"✅ exclusion_log : {exclusion_path}  ({len(ds_exclusion)} 行)")
         print(f"✅ field_registry: {registry_path}  ({len(ds_registry)} 行, keep={int(ds_registry['keep'].sum()) if not ds_registry.empty else 0})")
-        print(f"✅ active_fields : {active_path}  ({len(payload.get('fields', []))} 字段)")
         print(f"✅ kept_fields   : {kept_path}  ({len(payload.get('fields', []))} 字段)")
 
     if args.write_templates:

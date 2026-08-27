@@ -8,7 +8,7 @@ REPO_ROOT = PROJECT_ROOT.parent
 WORKSPACE_ROOT = REPO_ROOT.parent
 
 DEFAULT_JSON_PATH = (
-    "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
+    str(PROJECT_ROOT / "ClinicDatasets" / "gdc_clinical" / "raw_json" / "TCGA-BRCA.json")
 )
 DEFAULT_DATASETS_CONFIG = str(PROJECT_ROOT / "datasets.json")
 DEFAULT_TEMPLATE_DIR = str(PROJECT_ROOT / "templates/A_manual")
@@ -82,10 +82,6 @@ def shared_field_stats_path() -> Path:
 
 def dataset_filter_log_dir(dataset_name: str) -> Path:
     return RAWDATA_STATS_ROOT / dataset_name / "fliter_log"
-
-
-def dataset_active_fields_path(dataset_name: str) -> Path:
-    return dataset_filter_log_dir(dataset_name) / "active_fields.json"
 
 
 def dataset_exclusion_log_path(dataset_name: str) -> Path:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.paths import dataset_active_fields_path, dataset_field_bank_dir
+from common.paths import dataset_field_bank_dir, dataset_kept_fields_path
 
 
 STUDY_BY_DISPLAY = {
@@ -16,6 +16,7 @@ STUDY_BY_DISPLAY = {
     "TCGA-KICH": "tcga_kich",
     "TCGA-KIRC": "tcga_kirc",
     "TCGA-KIRP": "tcga_kirp",
+    "TCGA-LIHC": "tcga_lihc",
     "TCGA_LIHC": "tcga_lihc",
     "TCGA-PRAD": "tcga_prad",
     "TCGA-READ": "tcga_read",
@@ -41,7 +42,7 @@ def load_json(path: Path | str):
         return json.load(f)
 
 
-def load_candidate_fields(dataset: str, active_fields_path: Path | str | None = None, field_index_path: Path | str | None = None) -> list[str]:
+def load_candidate_fields(dataset: str, kept_fields_path: Path | str | None = None, field_index_path: Path | str | None = None) -> list[str]:
     if field_index_path:
         payload = load_json(field_index_path)
         fields = payload.get("fields")
@@ -53,7 +54,7 @@ def load_candidate_fields(dataset: str, active_fields_path: Path | str | None = 
     if bank_index.exists():
         return load_candidate_fields(dataset, field_index_path=bank_index)
 
-    path = Path(active_fields_path or dataset_active_fields_path(dataset))
+    path = Path(kept_fields_path or dataset_kept_fields_path(dataset))
     payload = load_json(path)
     if isinstance(payload, dict) and "fields" in payload:
         return list(payload["fields"])

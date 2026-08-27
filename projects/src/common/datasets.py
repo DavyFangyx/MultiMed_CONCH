@@ -12,6 +12,12 @@ from .paths import (
 )
 
 
+# Historical display name kept so existing outputs/templates/analyzer paths stay valid.
+DATASET_ALIASES = {
+    "TCGA-LIHC": "TCGA_LIHC",
+}
+
+
 def load_dataset_configs(config_path: str) -> dict:
     path = Path(config_path)
     if not path.exists():
@@ -23,6 +29,15 @@ def load_dataset_configs(config_path: str) -> dict:
     return data
 
 
+def canonical_dataset_name(dataset_name: str, datasets: dict) -> str:
+    if dataset_name in datasets:
+        return dataset_name
+    alias = DATASET_ALIASES.get(dataset_name)
+    if alias and alias in datasets:
+        return alias
+    return dataset_name
+
+
 def resolve_dataset_names(dataset_arg: str | None, datasets: dict) -> list[str]:
     if not dataset_arg:
         return []
@@ -30,18 +45,25 @@ def resolve_dataset_names(dataset_arg: str | None, datasets: dict) -> list[str]:
         return list(datasets.keys())
 
     names = [x.strip() for x in dataset_arg.split(",") if x.strip()]
-    unknown = [x for x in names if x not in datasets]
+    resolved = []
+    unknown = []
+    for name in names:
+        canonical = canonical_dataset_name(name, datasets)
+        if canonical in datasets:
+            resolved.append(canonical)
+        else:
+            unknown.append(name)
     if unknown:
         raise ValueError(f"未知 dataset: {unknown}; 可用: {sorted(datasets)}")
-    return names
+    return resolved
 
 
 def get_dataset_config(dataset_name: str, datasets: dict) -> dict:
-    return dict(datasets[dataset_name])
+    return dict(datasets[canonical_dataset_name(dataset_name, datasets)])
 
 
 def get_dataset_clinic_files(dataset_name: str, datasets: dict) -> list:
-    cfg = datasets[dataset_name]
+    cfg = datasets[canonical_dataset_name(dataset_name, datasets)]
     files = cfg.get("clinic_files", [])
     if not files:
         raise ValueError(f"dataset '{dataset_name}' 没有配置 clinic_files")
@@ -49,7 +71,7 @@ def get_dataset_clinic_files(dataset_name: str, datasets: dict) -> list:
 
 
 def get_dataset_project_ids(dataset_name: str, datasets: dict) -> list:
-    cfg = datasets[dataset_name]
+    cfg = datasets[canonical_dataset_name(dataset_name, datasets)]
     return list(cfg.get("project_ids", []))
 
 
@@ -85,3 +107,4 @@ def dataset_jobs(
         }
         for name in names
     ]
+

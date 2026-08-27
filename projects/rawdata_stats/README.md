@@ -37,9 +37,37 @@ field_stats.csv              覆盖率 / 缺失 / 类型 / 信息量
 kept_fields.json             每个数据集留下的字段
 {dataset}/fliter_log/field_registry.csv
 {dataset}/fliter_log/exclusion_log.csv
-{dataset}/fliter_log/active_fields.json
         |
         +-- time/            生存时间和字段更新早晚（并行，不依赖筛选）
+
+
+这套文件是 JSON 临床字段的扫描 → 统计 → 筛选产物，还没进后面的 Field Bank /prompt。链路是：
+
+scanned_fields.json → field_stats.csv → R0–R6 筛选 → kept_fields.json（以及
+fliter_log/ 里的两份日志）
+
+  各文件是什么：
+
+  CONCH-main/projects/rawdata_stats/TCGA-BRCA/scanned_fields.json
+  该数据集所有病例扫出来的字段并集字典，按分区组织（顶层、demographic对象、
+  diagnoses数组_每个对象 等）。它记录“这个数据集里出现过哪些路径、中文释义是什么”，
+  不是每个病人都有这些字段。BRCA 扫到 144 个路径。
+
+  CONCH-main/projects/rawdata_stats/TCGA-BRCA/field_stats.csv
+  对上面每个路径，按病人抽值后的全字段统计表（覆盖率、三态缺失、类型、信息量）。这
+  是筛选的唯一输入。
+
+  CONCH-main/projects/rawdata_stats/TCGA-BRCA/kept_fields.json
+  R0–R6 之后留下的字段。BRCA 是 1098 例、39 个字段，以及每个字段的 coverage。
+
+  fliter_log/ 是筛选过程日志，不是另一套结果：
+  - /fliter_log/exclusion_log.csv：被删
+    字段及触发规则。BRCA 105 行（R1 行政 48、R0 标签泄漏 26、R3 覆盖率 14、R4 退化
+    12、R5 可派生 5）。
+
+  - /fliter_log/field_registry.csv：该数
+    据集全部 144 个字段的去留总表，比 kept_fields 更完整。
+
 ```
 
 对应命令：
@@ -212,13 +240,15 @@ kept_fields.json        R0-R6 后留下的字段、覆盖率和 n_patients
 fliter_log/
   exclusion_log.csv     该数据集被删字段及触发规则
   field_registry.csv    该数据集字段路径的去留、可移植性、覆盖率
-  active_fields.json    该数据集保留字段清单，供 Field Bank 读取
 time/
   patient_time_stats.csv
   patient_time_stats.png
   normalized_update_time.csv
   normalized_update_time.png
   normalized_update_time_boxplot.png
+  sequences/
+    {family}.csv              该序列类型每次提交的 updated_datetime
+    {family}.png              每个 updated{i} 一个子图，横轴样本，纵轴归一化提交时间
 ```
 
 ### 跨数据集 `rawdata_stats/_shared/`
@@ -231,4 +261,4 @@ patient_time_stats_all.png   9 个数据集 ground-truth 时间叠图
 这些文件就是 JSON 预处理的终点。之后：
 
 - 人工方案继续走 `outputs/{dataset}/A_manual/`
-- Field Bank 读 `{dataset}/fliter_log/active_fields.json` 和 `templates/B_scan/{dataset}/FIELD_BANK.csv`，写出 `outputs/{dataset}/B_scan/`
+- Field Bank 读 `{dataset}/kept_fields.json` 和 `templates/B_scan/{dataset}/FIELD_BANK.csv`，写出 `outputs/{dataset}/B_scan/`

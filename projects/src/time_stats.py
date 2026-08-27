@@ -12,6 +12,7 @@ Values may exceed 1 when a field is updated after that last time.
 Outputs in projects/rawdata_stats/{dataset}/time/:
   patient_time_stats.csv / patient_time_stats.png
   normalized_update_time.csv / normalized_update_time.png / normalized_update_time_boxplot.png
+  sequences/{family}.csv / sequences/{family}.png
 
 conda activate conch
 cd CONCH-main
@@ -324,6 +325,45 @@ def _ordered_fields(fields: list[str]) -> list[str]:
     return known + extra
 
 
+SCALAR_UPDATE_FAMILIES = {"case", "demographic"}
+SEQUENCE_ID_COLS = ["dataset", "submitter_id", "case_id"]
+def _sequence_families(df: pd.DataFrame) -> OrderedDict:
+    families: OrderedDict[str, list[str]] = OrderedDict()
+    for col in _ordered_update_columns(df):
+        family = _field_family(col)
+        if family in SCALAR_UPDATE_FAMILIES:
+            continue
+        families.setdefault(family, []).append(col)
+    return families
+
+
+def _reset_sequence_dir(output_dir: Path) -> Path:
+    seq_dir = Path(output_dir) / "sequences"
+    seq_dir.mkdir(parents=True, exist_ok=True)
+    for path in seq_dir.glob("*.csv"):
+        path.unlink()
+    for path in seq_dir.glob("*.png"):
+        path.unlink()
+    return seq_dir
+
+
+def write_sequence_tables(
+    df: pd.DataFrame,
+    output_dir: Path,
+    id_cols: list[str],
+) -> list[Path]:
+    if df.empty:
+        return []
+    keep_ids = [c for c in id_cols if c in df.columns]
+    written = []
+    for family, cols in _sequence_families(df).items():
+        sub = df.loc[:, keep_ids + cols].copy()
+        path = Path(output_dir) / f"{family}.csv"
+        sub.to_csv(path, index=False)
+        written.append(path)
+    return written
+
+
 def _days_between(start: datetime, end: datetime) -> float:
     return (end - start).total_seconds() / 86400.0
 
@@ -592,6 +632,91 @@ def plot_normalized_update_time_boxplot(wide: pd.DataFrame, output_dir: Path, da
     return path
 
 
+def _subplot_grid(n_axes: int) -> tuple[int, int]:
+    if n_axes <= 1:
+        return 1, 1
+    if n_axes <= 3:
+        return 1, n_axes
+    if n_axes <= 12:
+        n_cols = 3
+    else:
+        n_cols = 4
+    n_rows = math.ceil(n_axes / n_cols)
+    return n_rows, n_cols
+
+
+def plot_sequence_family_times(wide: pd.DataFrame, output_dir: Path, dataset_name: str) -> list[Path]:
+    """One PNG per sequence family. Each updated slot is a subplot; x = sample index."""
+    if wide.empty:
+        return []
+
+    plt = _setup_matplotlib()
+    import numpy as np
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    plot_df = wide.reset_index(drop=True).copy()
+    plot_df["patient_index"] = range(1, len(plot_df) + 1)
+    x = plot_df["patient_index"].to_numpy()
+    n_patients = len(plot_df)
+    written = []
+
+    for family, cols in _sequence_families(plot_df).items():
+        plotted_cols = []
+        ys_all = []
+        for col in cols:
+            y = pd.to_numeric(plot_df[col], errors="coerce")
+            if y.notna().sum() == 0:
+                continue
+            plotted_cols.append(col)
+            ys_all.extend(y.dropna().tolist())
+        if not plotted_cols:
+            continue
+
+        n_rows, n_cols = _subplot_grid(len(plotted_cols))
+        fig_w = max(8.0, 4.2 * n_cols)
+        fig_h = max(3.2, 2.4 * n_rows)
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(fig_w, fig_h),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+        )
+        flat = axes.ravel()
+        data_max = max(ys_all) if ys_all else 1.0
+        use_decade = data_max > 2.0
+        for i, col in enumerate(plotted_cols):
+            ax = flat[i]
+            y = pd.to_numeric(plot_df[col], errors="coerce")
+            ax.plot(x, y, color="#4C78A8", linewidth=0.9, alpha=0.9)
+            slot = col.rsplit("_updated", 1)[-1]
+            ax.set_title(f"updated{slot}", fontsize=9)
+            ax.axhline(1.0, color="#444444", linestyle="--", linewidth=0.9, alpha=0.8)
+            ax.set_xlim(1, max(n_patients, 1))
+            if use_decade:
+                _apply_decade_yaxis(ax, ys_all)
+            else:
+                ax.set_ylim(min(0.0, min(ys_all)), max(1.05, data_max * 1.08))
+            if n_patients > 40:
+                ax.set_xticks([1, n_patients])
+                ax.set_xticklabels(["1", str(n_patients)])
+        for j in range(len(plotted_cols), len(flat)):
+            flat[j].set_visible(False)
+        fig.suptitle(
+            f"{dataset_name} {family}: normalized update time by sample",
+            fontsize=11,
+        )
+        fig.supxlabel("Patients")
+        fig.supylabel("Normalized update time (1 = clinical end)")
+        fig.tight_layout()
+        path = Path(output_dir) / f"{family}.png"
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        written.append(path)
+    return written
+
+
 def plot_patient_time_stats_all(dataset_frames: list[tuple[str, pd.DataFrame]], output_dir: Path) -> Path | None:
     if len(dataset_frames) < 2:
         return None
@@ -646,6 +771,10 @@ def analyze_dataset_times(
     print(f"  patient_time_stats: {csv_path}")
     print(f"  patient_time_stats: {png_path}")
 
+    seq_dir = _reset_sequence_dir(output_dir)
+    for path in write_sequence_tables(df, seq_dir, SEQUENCE_ID_COLS):
+        print(f"  sequence table: {path}")
+
     wide = build_normalized_update_frame(df)
     if not wide.empty:
         norm_csv = output_dir / "normalized_update_time.csv"
@@ -657,6 +786,8 @@ def analyze_dataset_times(
             print(f"  normalized_update_time: {norm_png}")
         if box_png is not None:
             print(f"  normalized_update_time: {box_png}")
+        for path in plot_sequence_family_times(wide, seq_dir, dataset_name):
+            print(f"  sequence plot: {path}")
     return df
 
 
@@ -761,6 +892,33 @@ def run_self_test() -> None:
     assert (out_dir / "patient_time_stats.png").exists()
     assert (out_dir / "normalized_update_time.png").exists()
     assert (out_dir / "normalized_update_time_boxplot.png").exists()
+
+    seq_dir = _reset_sequence_dir(out_dir)
+    raw_paths = write_sequence_tables(df, seq_dir, SEQUENCE_ID_COLS)
+    plot_paths = plot_sequence_family_times(wide, seq_dir, "synthetic")
+    raw_names = {path.name for path in raw_paths}
+    plot_names = {path.name for path in plot_paths}
+    assert raw_names == {"diagnoses.csv", "diagnoses_treatments.csv", "follow_ups.csv"}
+    assert plot_names == {"diagnoses.png", "diagnoses_treatments.png", "follow_ups.png"}
+    assert not any(path.name.endswith("_normalized.csv") for path in seq_dir.glob("*.csv"))
+    diagnoses = pd.read_csv(seq_dir / "diagnoses.csv")
+    assert list(diagnoses.columns) == [
+        "dataset",
+        "submitter_id",
+        "case_id",
+        "diagnoses_updated1",
+    ]
+    assert "follow_ups_updated1" not in diagnoses.columns
+    treatments = pd.read_csv(seq_dir / "diagnoses_treatments.csv")
+    assert list(treatments.columns) == [
+        "dataset",
+        "submitter_id",
+        "case_id",
+        "diagnoses_treatments_updated1",
+        "diagnoses_treatments_updated2",
+    ]
+    treat2 = treatments.loc[treatments["submitter_id"] == "TCGA-AA-0002", "diagnoses_treatments_updated2"].iloc[0]
+    assert pd.isna(treat2) or treat2 == ""
     print(f"self-test passed: {len(df)} rows, {len(_update_columns(wide))} submission columns")
 
 

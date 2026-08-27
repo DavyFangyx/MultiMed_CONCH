@@ -20,9 +20,9 @@ from common.paths import (
     DEFAULT_CKPT,
     DEFAULT_GPU,
     REPO_ROOT,
-    dataset_active_fields_path,
     dataset_field_bank_dir,
     dataset_field_bank_template_dir,
+    dataset_kept_fields_path,
 )
 
 
@@ -134,15 +134,15 @@ def write_field_bank_template_skeleton(
 
 
 
-def _normalize_active_payload(payload, dataset_name: str | None = None, path: Path | None = None) -> dict:
+def _normalize_kept_payload(payload, dataset_name: str | None = None, path: Path | None = None) -> dict:
     if isinstance(payload, dict) and "fields" in payload:
         return payload
     if isinstance(payload, dict) and dataset_name and dataset_name in payload:
         return payload[dataset_name]
-    raise ValueError(f"无法从 {path} 读取 {dataset_name or 'dataset'} 的 active fields")
+    raise ValueError(f"无法从 {path} 读取 {dataset_name or 'dataset'} 的 kept fields")
 
 
-def load_active_fields(dataset_name: str | None = None, path: Path | None = None) -> dict:
+def load_kept_fields(dataset_name: str | None = None, path: Path | None = None) -> dict:
     if path is not None:
         path = Path(path)
         if not path.exists():
@@ -152,21 +152,21 @@ def load_active_fields(dataset_name: str | None = None, path: Path | None = None
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
         if dataset_name:
-            return {dataset_name: _normalize_active_payload(payload, dataset_name, path)}
+            return {dataset_name: _normalize_kept_payload(payload, dataset_name, path)}
         if isinstance(payload, dict) and "fields" in payload:
-            raise ValueError(f"{path} 是单数据集 active_fields.json，请同时传入 dataset_name")
+            raise ValueError(f"{path} 是单数据集 kept_fields.json，请同时传入 dataset_name")
         return payload
 
     if not dataset_name:
-        raise ValueError("load_active_fields 需要 dataset_name 或显式 path")
-    path = dataset_active_fields_path(dataset_name)
+        raise ValueError("load_kept_fields 需要 dataset_name 或显式 path")
+    path = dataset_kept_fields_path(dataset_name)
     if not path.exists():
         raise FileNotFoundError(
             f"未找到 {path}。请先运行 python projects/scripts/run_field_filter.py --dataset {dataset_name}"
         )
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
-    return {dataset_name: _normalize_active_payload(payload, dataset_name, path)}
+    return {dataset_name: _normalize_kept_payload(payload, dataset_name, path)}
 
 
 def _fill_template(template: str, value: str) -> str:
@@ -289,16 +289,16 @@ def run_field_bank(args):
 
     for name in names:
         print(f"\n######## Dataset: {name} ########")
-        active = load_active_fields(
+        kept = load_kept_fields(
             dataset_name=name,
-            path=Path(args.active_fields) if args.active_fields else None,
+            path=Path(args.kept_fields) if args.kept_fields else None,
         )
-        if name not in active:
-            raise ValueError(f"{name} 不在 {args.active_fields or dataset_active_fields_path(name)} 中。请先跑 run_field_filter.py")
+        if name not in kept:
+            raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name)} 中。请先跑 run_field_filter.py")
         cfg = load_field_bank_template(name)
-        expected = list(active[name]["fields"])
+        expected = list(kept[name]["fields"])
         if cfg["fields"] != expected:
-            print("  ⚠️  模板字段与 active_fields.json 不完全一致，以模板当前行为准。")
+            print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
 
         cases = load_clinical_cases(
             get_dataset_clinic_files(name, datasets),
