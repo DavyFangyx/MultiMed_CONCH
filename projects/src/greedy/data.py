@@ -11,30 +11,59 @@ from common.paths import dataset_field_bank_dir, dataset_kept_fields_path
 
 
 STUDY_BY_DISPLAY = {
+    "TCGA-ACC": "tcga_acc",
+    "TCGA-BLCA": "tcga_blca",
     "TCGA-BRCA": "tcga_brca",
+    "TCGA-CESC": "tcga_cesc",
+    "TCGA-CHOL": "tcga_chol",
     "TCGA-COAD": "tcga_coad",
+    "TCGA-DLBC": "tcga_dlbc",
+    "TCGA-ESCA": "tcga_esca",
+    "TCGA-GBM": "tcga_gbm",
+    "TCGA-HNSC": "tcga_hnsc",
     "TCGA-KICH": "tcga_kich",
     "TCGA-KIRC": "tcga_kirc",
     "TCGA-KIRP": "tcga_kirp",
+    "TCGA-LAML": "tcga_laml",
+    "TCGA-LGG": "tcga_lgg",
     "TCGA-LIHC": "tcga_lihc",
     "TCGA_LIHC": "tcga_lihc",
+    "TCGA-LUAD": "tcga_luad",
+    "TCGA-LUSC": "tcga_lusc",
+    "TCGA-MESO": "tcga_meso",
+    "TCGA-OV": "tcga_ov",
+    "TCGA-PAAD": "tcga_paad",
+    "TCGA-PCPG": "tcga_pcpg",
     "TCGA-PRAD": "tcga_prad",
     "TCGA-READ": "tcga_read",
+    "TCGA-SARC": "tcga_sarc",
+    "TCGA-SKCM": "tcga_skcm",
     "TCGA-STAD": "tcga_stad",
+    "TCGA-TGCT": "tcga_tgct",
+    "TCGA-THCA": "tcga_thca",
+    "TCGA-THYM": "tcga_thym",
+    "TCGA-UCEC": "tcga_ucec",
+    "TCGA-UCS": "tcga_ucs",
+    "TCGA-UVM": "tcga_uvm",
 }
 
 DEFAULT_SURVPGC_ROOT = Path("/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init")
+DEFAULT_ANALYZER_SPLIT_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "splits" / "5foldcv"
+DEFAULT_ANALYZER_LABEL_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "datasets_csv" / "metadata"
 
 
 def display_to_study(dataset: str) -> str:
     if dataset in STUDY_BY_DISPLAY:
         return STUDY_BY_DISPLAY[dataset]
-    return dataset.lower().replace("-", "_")
+    return str(dataset).strip().lower().replace("-", "_")
+
+
+def default_analyzer_split_dir(dataset: str) -> Path:
+    return DEFAULT_ANALYZER_SPLIT_ROOT / display_to_study(dataset)
 
 
 def default_survpgc_split_dir(dataset: str, survpgc_root: Path | str | None = None) -> Path:
-    root = Path(survpgc_root or DEFAULT_SURVPGC_ROOT)
-    return root / "splits" / "5foldcv" / display_to_study(dataset)
+    return default_analyzer_split_dir(dataset)
 
 
 def load_json(path: Path | str):
@@ -80,8 +109,8 @@ def load_eligible_case_ids(dataset: str, survpgc_root: Path | str | None = None)
     eligibility = split_dir / "split_eligibility.csv"
     if not eligibility.exists():
         raise FileNotFoundError(
-            f"未找到 SurvPGC split_eligibility.csv: {eligibility}。"
-            "内部生成 fold 需要这份表来保证 WSI/clinic/gene 模态齐全。"
+            f"未找到 split_eligibility.csv: {eligibility}。"
+            "内部生成 fold 需要这份表；单模态数据集可直接使用本地 5foldcv splits。"
         )
     df = pd.read_csv(eligibility)
     if "eligible_for_split" not in df.columns or "case_id" not in df.columns:
@@ -109,9 +138,13 @@ def load_survival_table(dataset: str, label_file: Path | str | None = None, surv
     if label_file:
         path = Path(label_file)
     else:
-        root = Path(survpgc_root or DEFAULT_SURVPGC_ROOT)
         study = display_to_study(dataset)
-        path = root / "datasets_csv" / "metadata" / f"{study}.csv"
+        local = DEFAULT_ANALYZER_LABEL_ROOT / f"{study}.csv"
+        if local.exists():
+            path = local
+        else:
+            root = Path(survpgc_root or DEFAULT_SURVPGC_ROOT)
+            path = root / "datasets_csv" / "metadata" / f"{study}.csv"
     if not path.exists():
         raise FileNotFoundError(f"label file not found: {path}")
     df = pd.read_csv(path)

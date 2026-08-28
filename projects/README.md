@@ -87,6 +87,7 @@ rawdata_stats/{dataset}/time/
     {family}.png
 rawdata_stats/_shared/
   field_stats.csv
+  kept_fields.json
   patient_time_stats_all.png
 ```
 
@@ -217,6 +218,20 @@ CUDA_VISIBLE_DEVICES=N bash bg.sh GPUN.log
 
 B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串行跑调度器。它会当场切子集 embedding，并调用 `Clinic_Analyzer/evaluate.py`。不能拆成 A 组那种 conf 队列，因为下一步字段取决于当前 5-fold mean c-index。
 
+`survgc_f` / `survpgc_f` 只允许 BRCA、COAD、KIRC、KIRP、LIHC。KICH、PRAD、READ、STAD 以及其余 ClinicDatasets 都按 clinic 单模态评估；选多模态模型会直接报错。
+
+多模态模型：
+
+- `survgc_f`
+- `survpgc_f`
+
+单模态模型：
+
+- `mlp_clinic_mean`
+- `mlp_clinic_flatten`
+- `snn_clinic_mean`
+- `snn_clinic_flatten`
+
 ```bash
 conda activate conch
 cd CONCH-main
@@ -234,3 +249,9 @@ CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log
 ```
 
 单数据集把 `--dataset all` 换成 `TCGA-READ`。`run.sh` 会接入 config 快照并调用 `evaluate.py`，不再走 `main.py`。详见 [Clinic_Analyzer/TEST_main_and_runsh.md](Clinic_Analyzer/TEST_main_and_runsh.md)。
+
+## 还要注意
+
+- Field Bank embedding 目前只有 `TCGA_LIHC`。其余 32 个数据集能选、能解析、能读 5-fold，但 greedy 切子集 embedding 时会缺文件。
+- `Clinic_Analyzer/data/splits/5foldcv/summary.csv` 只记了 LIHC，没有 33 套 split 的完整清单。
+- `--splits_source internal` 仍要 `split_eligibility.csv`，新 split 目录里没有。默认 `external` 不受影响。

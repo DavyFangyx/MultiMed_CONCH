@@ -14,6 +14,7 @@ from common.paths import (
     dataset_filter_log_dir,
     dataset_kept_fields_path,
     shared_field_stats_path,
+    shared_kept_fields_path,
 )
 
 
@@ -322,6 +323,21 @@ def run_field_filter(args):
         print(f"✅ exclusion_log : {exclusion_path}  ({len(ds_exclusion)} 行)")
         print(f"✅ field_registry: {registry_path}  ({len(ds_registry)} 行, keep={int(ds_registry['keep'].sum()) if not ds_registry.empty else 0})")
         print(f"✅ kept_fields   : {kept_path}  ({len(payload.get('fields', []))} 字段)")
+
+    if str(getattr(args, "dataset", "all") or "all") == "all":
+        summary = {}
+        for dataset in datasets:
+            payload = active.get(dataset, {"n_patients": 0, "fields": []})
+            summary[dataset] = {
+                "n_patients": payload.get("n_patients", 0),
+                "fields": list(payload.get("fields", [])),
+            }
+        summary_path = shared_kept_fields_path()
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        print(f"✅ kept_fields 总表: {summary_path}  ({len(summary)} 个数据集)")
 
     if args.write_templates:
         from .field_bank import write_field_bank_template_skeleton

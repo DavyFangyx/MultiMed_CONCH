@@ -76,6 +76,10 @@ def dataset_kept_fields_path(dataset_name: str) -> Path:
     return RAWDATA_STATS_ROOT / dataset_name / "kept_fields.json"
 
 
+def shared_kept_fields_path() -> Path:
+    return RAWDATA_STATS_SHARED_DIR / "kept_fields.json"
+
+
 def shared_field_stats_path() -> Path:
     return RAWDATA_STATS_SHARED_DIR / "field_stats.csv"
 

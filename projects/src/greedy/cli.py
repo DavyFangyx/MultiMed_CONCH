@@ -13,12 +13,13 @@ from common.paths import DEFAULT_DATASETS_CONFIG, dataset_field_bank_dir, datase
 
 from .clinic import (
     DEFAULT_INNER_MODALITY,
-    DEFAULT_OUTER_MODALITIES,
+    default_outer_modalities_for,
     evaluate_clinic_dir,
+    ensure_modalities_allowed,
     parse_modalities,
     parse_one_modality,
 )
-from .data import default_survpgc_split_dir, load_candidate_fields, load_eligible_case_ids, resolve_patient_universe
+from .data import default_analyzer_split_dir, load_candidate_fields, load_eligible_case_ids, resolve_patient_universe
 from .embeddings import subset_embedding_dir, subset_scheme_name
 from .protocol import run_nested_greedy
 
@@ -236,11 +237,11 @@ def _load_splits(args, dataset: str, patient_ids, events, out_dir: Path):
         return splits, split_source
     if source != "external":
         raise ValueError(f"--splits_source 只支持 external / internal，收到: {source}")
-    split_path = default_survpgc_split_dir(dataset)
+    split_path = default_analyzer_split_dir(dataset)
     if not split_path.exists():
         raise FileNotFoundError(
-            f"未找到 SurvPGC 5-fold splits: {split_path}。"
-            "请确认 SurvPGC_github_init/splits/5foldcv/{study} 存在，或改用 --splits_source internal。"
+            f"未找到本地 5-fold splits: {split_path}。"
+            "请确认 Clinic_Analyzer/data/splits/5foldcv 下对应 study 目录存在，或改用 --splits_source internal。"
         )
     splits = load_analyzer_split_dir(split_path)
     return splits, str(split_path.resolve())
@@ -348,7 +349,12 @@ def run_one(args, dataset: str) -> Path:
     split_dir = Path(split_source)
 
     inner_modality = parse_one_modality(args.inner_modality)
-    outer_modalities = parse_modalities(args.outer_modalities)
+    raw_outer = getattr(args, "outer_modalities", None)
+    if raw_outer in (None, ""):
+        outer_modalities = list(default_outer_modalities_for(dataset))
+    else:
+        outer_modalities = parse_modalities(raw_outer)
+    ensure_modalities_allowed(dataset, [inner_modality, *outer_modalities])
     args.inner_modality = inner_modality
     factory = make_clinic_factory(dataset, field_bank_dir, out_dir, args, split_dir)
     init_idx = _resolve_init_idx(fields, getattr(args, "init_field", None))
@@ -397,7 +403,7 @@ def main(argv=None):
         "--splits_source",
         choices=("external", "internal"),
         default="external",
-        help="external=读取 SurvPGC 5foldcv；internal=按 SurvPGC split_eligibility.csv 的齐全患者内部划 fold",
+        help="external=读取 Clinic_Analyzer/data/splits/5foldcv；internal=内部划 fold",
     )
     parser.add_argument(
         "--splits",
@@ -418,8 +424,8 @@ def main(argv=None):
     )
     parser.add_argument(
         "--outer_modalities",
-        default=",".join(DEFAULT_OUTER_MODALITIES),
-        help="外层复评 greedy 路径的 modality 列表，逗号分隔；默认 mlp/snn 的 mean 与 flatten",
+        default=None,
+        help="外层复评 greedy 路径的 modality 列表，逗号分隔；单模态默认 mlp/snn，多模态默认全部 Analyzer 模型",
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--outer_folds", type=int, default=5)

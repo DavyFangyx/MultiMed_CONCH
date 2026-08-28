@@ -41,7 +41,7 @@ def stats_main(argv=None):
 
 
 def filter_main(argv=None):
-    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json")
+    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；--dataset all 时额外写出 rawdata_stats/_shared/kept_fields.json 总表")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
     parser.add_argument("--min_coverage", type=float, default=0.30)

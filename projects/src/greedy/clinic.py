@@ -24,6 +24,15 @@ ANALYZER_MODALITIES = (
     "survgc_f",
     "survpgc_f",
 )
+MULTIMODAL_MODALITIES = ("survgc_f", "survpgc_f")
+MULTIMODAL_STUDIES = (
+    "tcga_brca",
+    "tcga_coad",
+    "tcga_kirc",
+    "tcga_kirp",
+    "tcga_lihc",
+)
+MULTIMODAL_DISPLAY = "BRCA, COAD, KIRC, KIRP, LIHC"
 DEFAULT_INNER_MODALITY = "mlp_clinic_flatten"
 DEFAULT_OUTER_MODALITIES = (
     "mlp_clinic_mean",
@@ -31,6 +40,13 @@ DEFAULT_OUTER_MODALITIES = (
     "snn_clinic_mean",
     "snn_clinic_flatten",
 )
+
+
+def default_outer_modalities_for(dataset: str) -> tuple[str, ...]:
+    study = display_to_study(dataset)
+    if study in MULTIMODAL_STUDIES:
+        return ANALYZER_MODALITIES
+    return DEFAULT_OUTER_MODALITIES
 
 _WORKER_COUNTER = count(1)
 
@@ -67,6 +83,24 @@ def parse_one_modality(raw: str | None) -> str:
     if len(modalities) != 1:
         raise ValueError(f"inner modality must be exactly one model, got: {modalities}")
     return modalities[0]
+
+
+def ensure_modalities_allowed(dataset: str, modalities: list[str] | tuple[str, ...] | str) -> None:
+    if isinstance(modalities, str):
+        items = [modalities]
+    else:
+        items = [item for item in modalities if item]
+    blocked = [item for item in items if item in MULTIMODAL_MODALITIES]
+    if not blocked:
+        return
+    study = display_to_study(dataset)
+    if study in MULTIMODAL_STUDIES:
+        return
+    blocked_text = ", ".join(dict.fromkeys(blocked))
+    raise ValueError(
+        f"{blocked_text} 只支持 {MULTIMODAL_DISPLAY}；"
+        f"{dataset} 只能用 clinic 单模态 (mlp/snn clinic)"
+    )
 
 
 def results_dir(analyzer_dir: Path, exp_group: str, run_name: str, modality: str) -> Path:
@@ -156,6 +190,7 @@ def evaluate_clinic_dir(
     analyzer_dir = Path(analyzer_dir or DEFAULT_ANALYZER_DIR)
     python_exe = Path(python_exe or DEFAULT_SURVPGC_PYTHON)
     study = display_to_study(dataset)
+    ensure_modalities_allowed(dataset, modality)
     run_name = f"{study}__{scheme}"
     out_dir = results_dir(analyzer_dir, exp_group, run_name, modality)
     existing = list(out_dir.glob("test_result*.csv")) + list(out_dir.glob("val_result_fold*.csv"))

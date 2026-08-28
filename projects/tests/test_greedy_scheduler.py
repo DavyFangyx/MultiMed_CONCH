@@ -132,6 +132,25 @@ def test_nested_scheduler_does_not_use_test_for_decisions():
     assert list(result["selection_freq"]["field"]) == FIELDS
 
 
+
+def test_multimodal_modalities_are_restricted():
+    from greedy.clinic import ensure_modalities_allowed
+
+    ensure_modalities_allowed("TCGA-BRCA", "survgc_f")
+    ensure_modalities_allowed("TCGA_LIHC", ["mlp_clinic_flatten", "survpgc_f"])
+    try:
+        ensure_modalities_allowed("TCGA-READ", "survgc_f")
+        assert False, "READ should reject survgc_f"
+    except ValueError as exc:
+        assert "BRCA, COAD, KIRC, KIRP, LIHC" in str(exc)
+    try:
+        ensure_modalities_allowed("TCGA-KICH", ["mlp_clinic_mean", "survpgc_f"])
+        assert False, "KICH should reject survpgc_f"
+    except ValueError as exc:
+        assert "只能用 clinic 单模态" in str(exc)
+    ensure_modalities_allowed("TCGA-READ", "mlp_clinic_flatten")
+
+
 def test_cli_stub_writes_artifacts(tmp_path):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     from greedy.cli import main
@@ -158,5 +177,6 @@ if __name__ == "__main__":
     test_selection_frequency_and_stopping_rules()
     test_nested_scheduler_does_not_use_test_for_decisions()
     test_greedy_forward_starts_from_init_fields()
+    test_multimodal_modalities_are_restricted()
     test_cli_stub_writes_artifacts(Path("."))
     print("ok")

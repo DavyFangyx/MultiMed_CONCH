@@ -35,6 +35,7 @@ field_stats.csv              覆盖率 / 缺失 / 类型 / 信息量
         |  R0-R6 筛选
         v
 kept_fields.json             每个数据集留下的字段
+_shared/kept_fields.json     --dataset all 时写出的跨数据集总表（n_patients + fields）
 {dataset}/fliter_log/field_registry.csv
 {dataset}/fliter_log/exclusion_log.csv
         |
@@ -255,6 +256,7 @@ time/
 
 ```text
 field_stats.csv              9 个数据集 field_stats 纵向合并，1227 行
+kept_fields.json             --dataset all 时写出：数据集名 -> {n_patients, fields}
 patient_time_stats_all.png   9 个数据集 ground-truth 时间叠图
 ```
 
