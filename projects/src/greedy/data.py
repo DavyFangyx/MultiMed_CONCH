@@ -62,10 +62,6 @@ def default_analyzer_split_dir(dataset: str) -> Path:
     return DEFAULT_ANALYZER_SPLIT_ROOT / display_to_study(dataset)
 
 
-def default_survpgc_split_dir(dataset: str, survpgc_root: Path | str | None = None) -> Path:
-    return default_analyzer_split_dir(dataset)
-
-
 def load_json(path: Path | str):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -102,21 +98,6 @@ def unique_ids(values) -> list[str]:
         seen.add(pid)
         out.append(pid)
     return out
-
-
-def load_eligible_case_ids(dataset: str, survpgc_root: Path | str | None = None) -> list[str]:
-    split_dir = default_survpgc_split_dir(dataset, survpgc_root=survpgc_root)
-    eligibility = split_dir / "split_eligibility.csv"
-    if not eligibility.exists():
-        raise FileNotFoundError(
-            f"未找到 split_eligibility.csv: {eligibility}。"
-            "内部生成 fold 需要这份表；单模态数据集可直接使用本地 5foldcv splits。"
-        )
-    df = pd.read_csv(eligibility)
-    if "eligible_for_split" not in df.columns or "case_id" not in df.columns:
-        raise ValueError(f"{eligibility} 缺少 case_id / eligible_for_split")
-    keep = df["eligible_for_split"].astype(str).str.lower().isin({"true", "1"})
-    return unique_ids(df.loc[keep, "case_id"].tolist())
 
 
 def load_patient_ids_from_field_bank(dataset: str, field_bank_dir: Path | str | None = None) -> list[str]:

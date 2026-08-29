@@ -8,17 +8,11 @@
 
 `survgc_f` / `survpgc_f` 只允许 BRCA、COAD、KIRC、KIRP、LIHC。KICH、PRAD、READ、STAD 以及其余 ClinicDatasets 都按 clinic 单模态评估；选多模态模型会直接报错。
 
-多模态模型：
+多模态数据集：BRCA、COAD、KIRC、KIRP、LIHC
+单模态数据集：ACC、BLCA、CESC、CHOL、DLBC、ESCA、GBM、HNSC、KICH、LAML、LGG、LUAD、LUSC、MESO、OV、PAAD、PCPG、PRAD、READ、SARC、SKCM、STAD、TGCT、THCA、THYM、UCEC、UCS、UVM
 
-- `survgc_f`
-- `survpgc_f`
-
-单模态模型：
-
-- `mlp_clinic_mean`
-- `mlp_clinic_flatten`
-- `snn_clinic_mean`
-- `snn_clinic_flatten`
+多模态模型：`survgc_f`、`survpgc_f`
+单模态模型：`mlp_clinic_mean`、`mlp_clinic_flatten`、`snn_clinic_mean`、`snn_clinic_flatten`
 
 这 5 个多模态数据集按 P、C、G 齐全处理；其余 28 个只跑单模态模型。
 

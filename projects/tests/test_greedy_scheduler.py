@@ -11,7 +11,7 @@ if str(SRC) not in sys.path:
 from greedy.evaluator import CachedEvaluator, StubEvaluator
 from greedy.protocol import run_nested_greedy
 from greedy.search import greedy_forward
-from greedy.splits import NestedSplitConfig, build_nested_splits, load_nested_splits, save_nested_splits
+from greedy.splits import load_analyzer_split_dir
 from greedy.stability import selection_frequency
 from greedy.stopping import apply_stopping_rules, one_se_k, sig_stop_k
 
@@ -19,30 +19,21 @@ from greedy.stopping import apply_stopping_rules, one_se_k, sig_stop_k
 FIELDS = ["f0", "f1", "f2", "f3"]
 
 
-def test_nested_splits_are_disjoint_and_reproducible():
-    ids = [f"p{i:02d}" for i in range(20)]
-    events = {pid: int(i % 2 == 0) for i, pid in enumerate(ids)}
-    cfg = NestedSplitConfig(outer_folds=5, repeats=2, seed=7)
-    a = build_nested_splits(ids, events=events, config=cfg)
-    b = build_nested_splits(ids, events=events, config=cfg)
-    assert len(a) == 10
-    assert [s.fold_id for s in a] == [s.fold_id for s in b]
-    assert a[0].train == b[0].train
-
-    split = a[0]
+def test_load_existing_analyzer_splits():
+    split_dir = Path(__file__).resolve().parents[1] / "Clinic_Analyzer/data/splits/5foldcv/tcga_chol"
+    splits = load_analyzer_split_dir(split_dir)
+    assert [s.fold for s in splits] == [0, 1, 2, 3, 4]
+    split = splits[1]
+    assert split.val
+    assert split.val == split.test
     assert set(split.train) & set(split.val) == set()
-    assert set(split.train) & set(split.test) == set()
-    assert set(split.val) == set(split.test)
-    assert set(split.train) | set(split.val) | set(split.test) == set(ids)
-
-    other_seed = build_nested_splits(ids, events=events, config=NestedSplitConfig(outer_folds=5, repeats=2, seed=8))
-    assert other_seed[0].test != a[0].test or other_seed[0].train != a[0].train
+    assert "TCGA-W5-AA2M" in split.val
 
 
 def test_greedy_forward_runs_full_curve_and_is_order_invariant():
     weights = [0.01, 0.08, 0.04, 0.02]
     ev = StubEvaluator(FIELDS, weights=weights)
-    path = greedy_forward(ev, candidate_idx=[3, 0, 2, 1], patience=1)
+    path = greedy_forward(ev, candidate_idx=[3, 0, 2, 1], patience=1, min_delta=None)
     assert [step["added"] for step in path] == ["f1", "f2", "f3", "f0"]
     assert len(path) == 4
     assert path[0]["all_candidates"]["f1"]["c_index"] > path[0]["all_candidates"]["f0"]["c_index"]
@@ -62,6 +53,14 @@ def test_greedy_forward_starts_from_init_fields():
     assert path[0]["subset"] == ["f0", "f3"]
     assert path[1]["added"] == "f1"
     assert path[1]["subset"][:2] == ["f0", "f3"]
+
+
+def test_greedy_forward_stops_when_gain_below_min_delta():
+    weights = [0.01, 0.08, 0.04, 0.02]
+    ev = StubEvaluator(FIELDS, weights=weights)
+    path = greedy_forward(ev, min_delta=0.01)
+    assert [step["added"] for step in path] == ["f1", "f2"]
+    assert all(step["delta_c"] + 1e-12 >= 0.01 for step in path)
 
 
 def test_greedy_forward_workers_match_serial():
@@ -104,9 +103,8 @@ def test_selection_frequency_and_stopping_rules():
 
 
 def test_nested_scheduler_does_not_use_test_for_decisions():
-    ids = [f"p{i:02d}" for i in range(12)]
-    events = {pid: int(i < 6) for i, pid in enumerate(ids)}
-    splits = build_nested_splits(ids, events=events, config=NestedSplitConfig(outer_folds=3, repeats=1, seed=0))
+    split_dir = Path(__file__).resolve().parents[1] / "Clinic_Analyzer/data/splits/5foldcv/tcga_chol"
+    splits = load_analyzer_split_dir(split_dir)
 
     seen = {"inner": [], "outer": []}
 
@@ -127,7 +125,7 @@ def test_nested_scheduler_does_not_use_test_for_decisions():
         return Probe(split, for_test=for_test)
 
     result = run_nested_greedy(factory, splits, fields=FIELDS, patience=3)
-    assert result["n_folds"] == 3
+    assert result["n_folds"] == 5
     assert result["points"]["best"]["k"] >= 1
     assert list(result["selection_freq"]["field"]) == FIELDS
 
@@ -172,11 +170,12 @@ def test_cli_stub_writes_artifacts(tmp_path):
 
 
 if __name__ == "__main__":
-    test_nested_splits_are_disjoint_and_reproducible()
+    test_load_existing_analyzer_splits()
     test_greedy_forward_runs_full_curve_and_is_order_invariant()
     test_selection_frequency_and_stopping_rules()
     test_nested_scheduler_does_not_use_test_for_decisions()
     test_greedy_forward_starts_from_init_fields()
+    test_greedy_forward_stops_when_gain_below_min_delta()
     test_multimodal_modalities_are_restricted()
     test_cli_stub_writes_artifacts(Path("."))
     print("ok")

@@ -179,8 +179,8 @@ CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
-    --splits_source external \
-    --seed 0
+    --seed 0 \
+    --min_delta 0.01
 ```
 
 产物：
@@ -195,7 +195,6 @@ outputs/{dataset}/B_scan/greedy/
   run_config.json
   selection_freq.csv
   selection_freq.png
-  analyzer_splits/splits_{0-4}.csv
   jobs/{scheme}.json
   subsets/G{k}_{hash}/embeddings/pt/{patient_id}.pt
 ```
@@ -216,21 +215,15 @@ bash configs/z_exp_gen/gen_D0_6_L0_6_clinic_unimodal.sh
 CUDA_VISIBLE_DEVICES=N bash bg.sh GPUN.log
 ```
 
-B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串行跑调度器。它会当场切子集 embedding，并调用 `Clinic_Analyzer/evaluate.py`。不能拆成 A 组那种 conf 队列，因为下一步字段取决于当前 5-fold mean c-index。
+B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串行跑调度器。它会当场切子集 embedding，并调用 `Clinic_Analyzer/evaluate.py`。不能拆成 A 组那种 conf 队列，因为下一步字段取决于当前 5-fold mean c-index。内层 `greedy_forward` 每一步只加增益最大的字段；如果最好候选的 c-index 增益小于 `--min_delta`（默认 0），则不加该字段并早停。`patience` 仍只用于事后 Wilcoxon 停点，不打断搜索。
 
 `survgc_f` / `survpgc_f` 只允许 BRCA、COAD、KIRC、KIRP、LIHC。KICH、PRAD、READ、STAD 以及其余 ClinicDatasets 都按 clinic 单模态评估；选多模态模型会直接报错。
 
-多模态模型：
+多模态数据集：BRCA、COAD、KIRC、KIRP、LIHC
+单模态数据集：ACC、BLCA、CESC、CHOL、DLBC、ESCA、GBM、HNSC、KICH、LAML、LGG、LUAD、LUSC、MESO、OV、PAAD、PCPG、PRAD、READ、SARC、SKCM、STAD、TGCT、THCA、THYM、UCEC、UCS、UVM
 
-- `survgc_f`
-- `survpgc_f`
-
-单模态模型：
-
-- `mlp_clinic_mean`
-- `mlp_clinic_flatten`
-- `snn_clinic_mean`
-- `snn_clinic_flatten`
+多模态模型：`survgc_f`、`survpgc_f`
+单模态模型：`mlp_clinic_mean`、`mlp_clinic_flatten`、`snn_clinic_mean`、`snn_clinic_flatten`
 
 ```bash
 conda activate conch
@@ -244,8 +237,8 @@ CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
-    --splits_source external \
-    --seed 0
+    --seed 0 \
+    --min_delta 0
 ```
 
 单数据集把 `--dataset all` 换成 `TCGA-READ`。`run.sh` 会接入 config 快照并调用 `evaluate.py`，不再走 `main.py`。详见 [Clinic_Analyzer/TEST_main_and_runsh.md](Clinic_Analyzer/TEST_main_and_runsh.md)。
@@ -254,4 +247,3 @@ CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log
 
 - Field Bank embedding 目前只有 `TCGA_LIHC`。其余 32 个数据集能选、能解析、能读 5-fold，但 greedy 切子集 embedding 时会缺文件。
 - `Clinic_Analyzer/data/splits/5foldcv/summary.csv` 只记了 LIHC，没有 33 套 split 的完整清单。
-- `--splits_source internal` 仍要 `split_eligibility.csv`，新 split 目录里没有。默认 `external` 不受影响。

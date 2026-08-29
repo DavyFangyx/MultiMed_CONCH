@@ -231,3 +231,25 @@ python ClinicDatasets/gdc_clinical_batch.py --projects TCGA-KIRP --skip-biotab
 python ClinicDatasets/gdc_clinical_batch.py --skip-indexed
 python ClinicDatasets/gdc_clinical_batch.py --projects TCGA-KIRP --skip-indexed
 ```
+
+
+## 导出 clinic 字段表
+
+脚本：[gdc_field_tables.py](gdc_field_tables.py)。只拉 schema，不下病例。对应已经落在 `gdc_clinical/raw_json/` 里的门户 clinical JSON。
+
+两张表：
+
+1. Data Dictionary，Clinical 类别下的实体（case / demographic / diagnosis / treatment / exposure / follow_up / family_history / pathology_detail / molecular_test，以及 category=clinical 的其它实体）
+   `GET /v0/submission/_dictionary/_all`
+   -> `gdc_clinical/field_tables/gdc_clinical_dictionary.csv`
+2. `/cases/_mapping` 里 clinical JSON 用得到的字段（field / type / description）
+   `GET /cases/_mapping`
+   -> `gdc_clinical/field_tables/gdc_cases_mapping.csv`
+
+```bash
+python ClinicDatasets/gdc_field_tables.py
+python ClinicDatasets/gdc_field_tables.py --timeout 180
+python ClinicDatasets/gdc_field_tables.py --include-nonclinical-mapping
+```
+
+`--include-nonclinical-mapping` 会把 `/cases` 全部可查询字段都留下，默认只留 demographic / diagnoses / exposures / family_histories / follow_ups 和病例根字段。

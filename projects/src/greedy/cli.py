@@ -19,19 +19,12 @@ from .clinic import (
     parse_modalities,
     parse_one_modality,
 )
-from .data import default_analyzer_split_dir, load_candidate_fields, load_eligible_case_ids, resolve_patient_universe
+from .data import default_analyzer_split_dir, load_candidate_fields, resolve_patient_universe
 from .embeddings import subset_embedding_dir, subset_scheme_name
 from .protocol import run_nested_greedy
 
 from .clinic_evaluator import make_clinic_evaluator_factory
-from .splits import (
-    NestedSplitConfig,
-    build_nested_splits,
-    load_analyzer_split_dir,
-    load_nested_splits,
-    save_nested_splits,
-    write_analyzer_split_dir,
-)
+from .splits import load_analyzer_split_dir
 from .stability import plot_selection_frequency, write_selection_frequency
 from .stability import cindex_curve_frame, plot_cindex_curve, write_cindex_curve
 
@@ -208,41 +201,18 @@ def _parse_init_fields(raw: str | None) -> list[str]:
     return _parse_csv_list(text)
 
 
-def _load_splits(args, dataset: str, patient_ids, events, out_dir: Path):
-    source = str(getattr(args, "splits_source", "external") or "external").lower()
+def _load_splits(args, dataset: str):
     if args.splits:
         split_path = Path(args.splits)
-        if split_path.is_dir():
-            splits = load_analyzer_split_dir(split_path)
-        else:
-            splits = load_nested_splits(split_path)
-        return splits, str(split_path.resolve())
-    if source == "internal":
-        eligible = set(load_eligible_case_ids(dataset))
-        keep_ids = [pid for pid in patient_ids if pid in eligible]
-        if len(keep_ids) < int(args.outer_folds):
-            raise ValueError(
-                f"内部生成 fold 时，模态齐全患者不足 {args.outer_folds} 人：dataset={dataset}, n={len(keep_ids)}"
-            )
-        keep_events = {pid: events.get(pid, 0) for pid in keep_ids}
-        split_cfg = NestedSplitConfig(
-            outer_folds=args.outer_folds,
-            repeats=args.repeats,
-            seed=args.seed,
-        )
-        splits = build_nested_splits(keep_ids, events=keep_events, config=split_cfg)
-        split_source = str(out_dir / "splits.json")
-        save_nested_splits(split_source, splits, config=split_cfg)
-        write_analyzer_split_dir(out_dir / "analyzer_splits", splits)
-        return splits, split_source
-    if source != "external":
-        raise ValueError(f"--splits_source 只支持 external / internal，收到: {source}")
-    split_path = default_analyzer_split_dir(dataset)
+    else:
+        split_path = default_analyzer_split_dir(dataset)
     if not split_path.exists():
         raise FileNotFoundError(
             f"未找到本地 5-fold splits: {split_path}。"
-            "请确认 Clinic_Analyzer/data/splits/5foldcv 下对应 study 目录存在，或改用 --splits_source internal。"
+            "请确认 Clinic_Analyzer/data/splits/5foldcv 下对应 study 目录存在。"
         )
+    if not split_path.is_dir():
+        raise ValueError(f"--splits 必须是含 splits_*.csv 的目录，收到: {split_path}")
     splits = load_analyzer_split_dir(split_path)
     return splits, str(split_path.resolve())
 
@@ -284,12 +254,10 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
         "inner_modality": inner_modality,
         "outer_modalities": list(outer_modalities),
         "init_field": getattr(args, "init_field", None),
-        "splits_source": getattr(args, "splits_source", "external"),
         "outer_scores": result.get("outer_scores", {}),
-        "outer_folds": args.outer_folds,
-        "repeats": args.repeats,
         "seed": args.seed,
         "patience": args.patience,
+        "min_delta": args.min_delta,
         "max_steps": args.max_steps,
         "exclude_post_baseline": bool(args.exclude_post_baseline),
         "n_fields": len(fields),
@@ -345,7 +313,7 @@ def run_one(args, dataset: str) -> Path:
         dataset, field_bank_dir=field_bank_dir, label_file=args.label_file
     )
 
-    splits, split_source = _load_splits(args, dataset, patient_ids, events, out_dir)
+    splits, split_source = _load_splits(args, dataset)
     split_dir = Path(split_source)
 
     inner_modality = parse_one_modality(args.inner_modality)
@@ -367,6 +335,7 @@ def run_one(args, dataset: str) -> Path:
         seed=args.seed,
         init_idx=init_idx,
         workers=args.workers,
+        min_delta=args.min_delta,
     )
     result["outer_scores"] = _score_outer_modalities(
         dataset=dataset,
@@ -400,15 +369,9 @@ def main(argv=None):
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument("--label_file", default=None)
     parser.add_argument(
-        "--splits_source",
-        choices=("external", "internal"),
-        default="external",
-        help="external=读取 Clinic_Analyzer/data/splits/5foldcv；internal=内部划 fold",
-    )
-    parser.add_argument(
         "--splits",
         default=None,
-        help="覆盖 splits 目录或 splits.json；提供后不再使用 --splits_source",
+        help="覆盖现成 splits 目录；默认读 Clinic_Analyzer/data/splits/5foldcv/{study}",
     )
     parser.add_argument("--out", default=None)
     parser.add_argument(
@@ -428,10 +391,14 @@ def main(argv=None):
         help="外层复评 greedy 路径的 modality 列表，逗号分隔；单模态默认 mlp/snn，多模态默认全部 Analyzer 模型",
     )
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--outer_folds", type=int, default=5)
-    parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--patience", type=int, default=3)
+    parser.add_argument(
+        "--min_delta",
+        type=float,
+        default=0.0,
+        help="内层 greedy 早停阈值：下一步最好字段的 c-index 增益小于该值时，不加该字段并停止。默认 0，即负增益就停。设为负数可接近关闭。",
+    )
     parser.add_argument(
         "--workers",
         type=int,

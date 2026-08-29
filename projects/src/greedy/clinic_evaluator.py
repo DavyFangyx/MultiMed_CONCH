@@ -9,9 +9,6 @@ from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_di
 from .clinic import evaluate_clinic_dir
 from .embeddings import materialize_subset_embeddings_with_python, subset_embedding_dir, subset_scheme_name
 
-from .splits import write_analyzer_split_dir
-
-
 DEFAULT_CONCH_PYTHON = Path("/data/fangyuxuan/miniconda3/envs/conch/bin/python")
 DEFAULT_SURVPGC_PYTHON = Path("/data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python")
 
@@ -86,9 +83,9 @@ class ClinicSubsetEvaluator:
         k = max(len(self.splits), 1)
         run_tag = scheme
         job_log = self.work_dir / "jobs" / f"{run_tag}.json"
-        split_dir = self.split_dir or (self.work_dir / "analyzer_splits")
-        if self.split_dir is None and self.splits:
-            write_analyzer_split_dir(split_dir, self.splits)
+        if self.split_dir is None:
+            raise ValueError("ClinicSubsetEvaluator requires an existing split_dir of splits_*.csv")
+        split_dir = Path(self.split_dir)
         payload = evaluate_clinic_dir(
             clinic_dir,
             dataset=self.dataset,

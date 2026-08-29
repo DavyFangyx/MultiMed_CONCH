@@ -1,7 +1,8 @@
 """Greedy forward selection (section 4.3).
 
-The inner loop never early-stops. Run the full accumulation curve so 4.5
-stopping rules can be applied afterwards.
+The inner loop adds the best remaining field while its c-index gain is at
+least min_delta. After that, 4.5 stopping rules are applied to the
+truncated curve.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ def greedy_forward(
     empty_score: float | None = None,
     init_idx=None,
     workers: int = 1,
+    min_delta: float | None = 0.0,
 ):
     """Forward-select fields one at a time on the evaluator's current split.
 
@@ -34,8 +36,10 @@ def greedy_forward(
       ...
     ]
 
-    `patience` is recorded but not used to break. The search always runs to
-    max_steps or until every candidate is consumed.
+    Search stops at max_steps, when candidates run out, or when the best
+    remaining field would raise c-index by less than min_delta. That field
+    is not added. patience is still only recorded here; Wilcoxon patience
+    is applied afterwards. min_delta=None disables the gain check.
     """
     fields = list(getattr(evaluator, "fields", []))
     if candidate_idx is None:
@@ -90,6 +94,7 @@ def greedy_forward(
                 "subset_idx": list(selected),
                 "all_candidates": {},
                 "patience": int(patience),
+                "min_delta": None if min_delta is None else float(min_delta),
                 "init": True,
             }
         )
@@ -144,9 +149,12 @@ def greedy_forward(
         if best_idx is None:
             break
 
+        delta = float(best_score) - current
+        if min_delta is not None and delta + 1e-12 < float(min_delta):
+            break
+
         selected.append(best_idx)
         remaining.remove(best_idx)
-        delta = float(best_score) - current
         path.append(
             {
                 "step": step,
@@ -159,6 +167,7 @@ def greedy_forward(
                 "subset_idx": list(selected),
                 "all_candidates": all_candidates,
                 "patience": int(patience),
+                "min_delta": None if min_delta is None else float(min_delta),
             }
         )
         current = float(best_score)
