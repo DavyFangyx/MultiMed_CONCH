@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_dir
+from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_dir, validate_encoding
 
 from .clinic import evaluate_clinic_dir
+from .data import load_field_bank
 from .embeddings import materialize_subset_embeddings_with_python, subset_embedding_dir, subset_scheme_name
 
 DEFAULT_CONCH_PYTHON = Path("/data/fangyuxuan/miniconda3/envs/conch/bin/python")
@@ -43,9 +44,14 @@ class ClinicSubsetEvaluator:
         else:
             self.splits = [splits]
         self.split = self.splits[0] if self.splits else splits
-        self.field_bank_dir = Path(field_bank_dir or dataset_field_bank_dir(dataset))
+        bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset)
+        self.field_bank_dir = bank
+        if bank.exists():
+            self.encoding = load_field_bank(bank)["encoding"]
+        else:
+            self.encoding = validate_encoding(bank.name if bank.name in {"prompt", "onehot"} else "prompt")
         self.embeddings_root = Path(embeddings_root or (PROJECT_ROOT / "outputs"))
-        self.work_dir = Path(work_dir or dataset_greedy_dir(dataset))
+        self.work_dir = Path(work_dir or dataset_greedy_dir(dataset, self.encoding))
         self.modality = modality
         self.seed = int(seed)
         self.for_test = bool(for_test)
@@ -70,7 +76,7 @@ class ClinicSubsetEvaluator:
             }
 
         scheme = subset_scheme_name(idx)
-        clinic_dir = subset_embedding_dir(self.dataset, scheme, self.embeddings_root)
+        clinic_dir = subset_embedding_dir(self.dataset, scheme, self.embeddings_root, encoding=self.encoding)
         materialize_subset_embeddings_with_python(
             self.conch_python,
             self.field_bank_dir,

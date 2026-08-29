@@ -16,6 +16,7 @@ from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, l
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
 from common.missingness import classify_raw_value, clean_value
 from .converters import convert_value, known_converters
+from .field_bank_spec import SHARED_SPEC_PATH, fill_from_spec, load_shared_spec
 from common.paths import (
     DEFAULT_CKPT,
     DEFAULT_GPU,
@@ -23,6 +24,7 @@ from common.paths import (
     dataset_field_bank_dir,
     dataset_field_bank_template_dir,
     dataset_kept_fields_path,
+    validate_encoding,
 )
 
 
@@ -90,17 +92,25 @@ def write_field_bank_template_skeleton(
     fields = sorted(fields)
     preserved = _read_existing_templates(out_path)
     examples = examples or {}
+    spec = load_shared_spec() if SHARED_SPEC_PATH.exists() else {}
 
     rows = []
     for field in fields:
         old = preserved.get(field, {})
+        filled = fill_from_spec(
+            field,
+            old,
+            spec,
+            overwrite_convert_unit=False,
+            overwrite_template=False,
+        )
         rows.append(
             {
                 "field": field,
                 "example": examples.get(field) or old.get("example", ""),
-                "convert": old.get("convert", ""),
-                "unit": old.get("unit", ""),
-                "template": old.get("template", ""),
+                "convert": filled["convert"],
+                "unit": filled["unit"],
+                "template": filled["template"],
             }
         )
     pd.DataFrame(rows, columns=TEMPLATE_COLUMNS).to_csv(out_path, index=False)
@@ -173,7 +183,7 @@ def _fill_template(template: str, value: str) -> str:
     return str(template).replace("{}", str(value), 1)
 
 
-def load_field_bank_template(dataset_name: str) -> dict:
+def load_field_bank_template(dataset_name: str, *, require_templates: bool = True) -> dict:
     template_dir = dataset_field_bank_template_dir(dataset_name)
     template_file = template_dir / "FIELD_BANK.csv"
     map_path = template_dir / "FIELD_BANK_columns.json"
@@ -226,7 +236,7 @@ def load_field_bank_template(dataset_name: str) -> dict:
         output_cols.append(output_col)
         templates[field_path] = sentence
         converts[field_path] = convert.lower()
-    if empty_fields:
+    if require_templates and empty_fields:
         raise ValueError(
             f"FIELD_BANK 模板 template 列仍为空（{len(empty_fields)} 个字段），请先填写 {template_file} 后再编码。"
         )
@@ -237,6 +247,22 @@ def load_field_bank_template(dataset_name: str) -> dict:
         "templates": templates,
         "converts": converts,
     }
+
+
+
+def extract_field_bank_raw_values(case: dict, field_path: str) -> list:
+    """Return valid raw JSON values using the same Field Bank extract rules."""
+    raw_vals = extract_path_values(case, field_path)
+    if not raw_vals:
+        return []
+    if field_path.startswith("diagnoses[]") and isinstance(case.get("diagnoses"), list):
+        primary = get_primary_diagnosis(case.get("diagnoses", []))
+        remainder = field_path[len("diagnoses[]"):].lstrip(".")
+        leaf = field_path.split(".")[-1].replace("[]", "")
+        if primary and "." not in remainder and leaf in primary:
+            value = primary.get(leaf)
+            return [value] if classify_raw_value(value) == "valid" else []
+    return [value for value in raw_vals if classify_raw_value(value) == "valid"]
 
 
 def extract_field_bank_value(case: dict, field_path: str) -> tuple[str, bool]:
@@ -281,7 +307,23 @@ def _lazy_import_conch():
     return torch, create_model_from_pretrained, get_tokenizer
 
 
+def load_onehot_encoder():
+    """CODEX_3 fills discovery.onehot.encode_onehot. This step only wires the import."""
+    try:
+        from .onehot import encode_onehot  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "onehot encoding is not implemented yet; finish CODEX_3"
+        ) from exc
+    return encode_onehot
+
+
 def run_field_bank(args):
+    encoding = validate_encoding(getattr(args, "encoding", "prompt"))
+    if encoding == "onehot" and getattr(args, "prompts_only", False):
+        raise ValueError("--prompts_only is only valid with --encoding prompt")
+    onehot_encoder = load_onehot_encoder() if encoding == "onehot" else None
+
     datasets = load_dataset_configs(args.datasets_config)
     names = resolve_dataset_names(args.dataset, datasets)
     if not names:
@@ -295,7 +337,10 @@ def run_field_bank(args):
         )
         if name not in kept:
             raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name)} 中。请先跑 run_field_filter.py")
-        cfg = load_field_bank_template(name)
+        cfg = load_field_bank_template(
+            name,
+            require_templates=(encoding != "onehot"),
+        )
         expected = list(kept[name]["fields"])
         if cfg["fields"] != expected:
             print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
@@ -304,8 +349,18 @@ def run_field_bank(args):
             get_dataset_clinic_files(name, datasets),
             project_ids=get_dataset_project_ids(name, datasets),
         )
+        if encoding == "onehot":
+            onehot_encoder(
+                dataset_name=name,
+                cfg=cfg,
+                cases=cases,
+                out_dir=dataset_field_bank_dir(name, encoding),
+                rare_threshold=int(getattr(args, "rare_freq_threshold", 5)),
+            )
+            continue
+
         records = [generate_field_bank_prompt_row(case, cfg) for case in cases if "submitter_id" in case]
-        out_dir = dataset_field_bank_dir(name)
+        out_dir = dataset_field_bank_dir(name, encoding)
         out_dir.mkdir(parents=True, exist_ok=True)
         prompt_path = out_dir / "prompts.csv"
         prompt_rows = []

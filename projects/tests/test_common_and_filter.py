@@ -1,8 +1,8 @@
 from pathlib import Path
-import json
 import sys
 
 import pandas as pd
+import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
@@ -10,9 +10,10 @@ if str(SRC) not in sys.path:
 
 from common.fields import extract_path_values, get_primary_diagnosis
 from common.missingness import classify_raw_value
+from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_dir, validate_encoding
 from common.types import infer_type
+from discovery.cli import build_field_bank_parser, field_bank_main
 from discovery.filter import apply_rules, timepoint
-from schemes.config import load_custom_schemes, reset_scheme_registry, resolve_scheme_names
 
 
 def _case():
@@ -89,37 +90,33 @@ def test_infer_type_stage_vs_class():
     assert infer_type("age_at_diagnosis", [61, 62, 70], 3) == "numeric"
 
 
-def test_scheme_loader_skips_field_bank(tmp_path):
-    cfg = {
-        "L0": {
-            "template_file": "L0_template.csv",
-            "prompt_file": "prompts.csv",
-            "dirname": "L0",
-            "template_cols": ["AGE_TEMPLATE"],
-            "placeholders": ["AGE"],
-            "output_cols": ["age_template"],
-        },
-        "FIELD_BANK": {
-            "template_file": "x.csv",
-            "prompt_file": "y.csv",
-            "dirname": "FIELD_BANK",
-            "template_cols": ["AGE_TEMPLATE"],
-            "placeholders": ["AGE"],
-            "output_cols": ["age_template"],
-        },
-    }
-    path = tmp_path / "schemes.json"
-    path.write_text(json.dumps(cfg), encoding="utf-8")
-    reset_scheme_registry()
-    load_custom_schemes(str(tmp_path))
-    assert resolve_scheme_names("all") == ["L0"]
-    try:
-        resolve_scheme_names("FIELD_BANK")
-        assert False, "FIELD_BANK should raise"
-    except ValueError as exc:
-        assert "run_field_bank.py" in str(exc)
+def test_dataset_field_bank_dir_defaults_to_prompt():
+    assert dataset_field_bank_dir("TCGA-BRCA") == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "field_bank" / "prompt"
 
 
+def test_dataset_field_bank_dir_onehot():
+    assert dataset_field_bank_dir("TCGA-BRCA", "onehot") == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "field_bank" / "onehot"
+
+
+def test_dataset_greedy_dir_onehot():
+    assert dataset_greedy_dir("TCGA-BRCA", "onehot") == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "greedy" / "onehot"
+
+
+def test_invalid_encoding_raises():
+    with pytest.raises(ValueError, match="unsupported encoding"):
+        validate_encoding("hash")
+    with pytest.raises(ValueError, match="unsupported encoding"):
+        dataset_field_bank_dir("TCGA-BRCA", "hash")
+    with pytest.raises(ValueError, match="unsupported encoding"):
+        dataset_greedy_dir("TCGA-BRCA", "hash")
+
+
+def test_field_bank_main_rejects_unknown_encoding():
+    parser = build_field_bank_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--dataset", "TCGA-BRCA", "--encoding", "hash"])
+    with pytest.raises(SystemExit):
+        field_bank_main(["--dataset", "TCGA-BRCA", "--encoding", "hash"])
 
 
 if __name__ == "__main__":
@@ -127,8 +124,9 @@ if __name__ == "__main__":
     test_missingness_three_state()
     test_filter_rules()
     test_infer_type_stage_vs_class()
-    from tempfile import TemporaryDirectory
-
-    with TemporaryDirectory() as tmp:
-        test_scheme_loader_skips_field_bank(Path(tmp))
+    test_dataset_field_bank_dir_defaults_to_prompt()
+    test_dataset_field_bank_dir_onehot()
+    test_dataset_greedy_dir_onehot()
+    test_invalid_encoding_raises()
+    test_field_bank_main_rejects_unknown_encoding()
     print("ok")

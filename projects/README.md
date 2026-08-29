@@ -2,32 +2,32 @@
 
 临床 JSON 相关流程都在 `projects/`，和上游 `conch/` 分开。
 
-`A_manual` 是人工定义的 L0-L5 / D0-D5。扫描、筛选、Field Bank、贪心是同一条自动链的多个阶段，不要再写成并列的 B / C。
+剩下一条链：scan → stats → filter → Field Bank → greedy。两种编码走同一个 `--encoding`：`prompt`（CONCH 句向量，默认）和 `onehot`。
 
 ```text
 datasets.json + clinical JSON
         |
         +-- rawdata_stats/     JSON 字典、三态缺失、时间、筛选
         |
-        +-- A_manual           人工 L0-L5 prompt/embedding，D0-D5 数值编码
+        +-- templates/field_bank/{dataset}/
         |
-        +-- B_scan             筛后 Field Bank -> greedy
+        +-- outputs/{dataset}/field_bank/{prompt|onehot}/
+        |
+        +-- outputs/{dataset}/greedy/{prompt|onehot}/
 ```
 
 ## Layout
 
 - `datasets.json`：33 个 TCGA 数据集的 clinical JSON 路径，全部指向 `ClinicDatasets/gdc_clinical/raw_json/{project}.json`
-- `src/common/`：两边共用的数据集注册、JSON 读取、字段路径、缺失三态
-- `src/schemes/`：人工 L0-L5 / D0-D5
+- `src/common/`：共用的数据集注册、JSON 读取、字段路径、缺失三态
 - `src/discovery/`：扫描、统计、筛选、Field Bank
 - `src/time_stats.py`：生存/随访时间统计
 - `src/greedy/`：Field Bank 之后的贪心调度
 - `scripts/`：命令行入口
 - `templates/field_labels.json`：扫 JSON 时的候选字段路径和中文释义
-- `templates/A_manual/`：人工句模和 `schemes.json`
-- `templates/B_scan/{dataset}/`：筛完后待填的 Field Bank 长表
+- `templates/field_bank/{dataset}/`：筛完后待填的 Field Bank 长表
 - `rawdata_stats/`：JSON 测量和筛选结果，不进 `outputs/`
-- `outputs/`：只放 prompt 和 embedding
+- `outputs/`：只放 Field Bank prompt / embedding 和 greedy 产物
 - `Clinic_Analyzer/`：clinic embedding 评估
 
 ## 公共约定
@@ -47,7 +47,7 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main
 
 - 数据集配置：`projects/datasets.json`
 - clinic JSON：`projects/ClinicDatasets/gdc_clinical/raw_json/{TCGA-XXXX}.json`
-- L0-L5 模板：`projects/templates/A_manual`
+- Field Bank 模板：`projects/templates/field_bank/{dataset}`
 - CONCH 权重：`/data/fangyuxuan/projects/medical_dl/trident_project/CONCH/pytorch_model.bin`
 
 `--dataset all` 覆盖 33 个 TCGA project：ACC, BLCA, BRCA, CESC, CHOL, COAD, DLBC, ESCA, GBM, HNSC, KICH, KIRC, KIRP, LAML, LGG, LIHC, LUAD, LUSC, MESO, OV, PAAD, PCPG, PRAD, READ, SARC, SKCM, STAD, TGCT, THCA, THYM, UCEC, UCS, UVM。其中 LIHC 在 pipeline 里仍写作 `TCGA_LIHC`，对应 `TCGA-LIHC.json`。
@@ -59,11 +59,9 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main
 统计表只有 `null` / `sentinel` / `valid`。路径抽不到值记入 `null`。`missing = null + sentinel`。
 
 ```bash
-# B组 step1 JSON -> template
 python projects/scripts/run_scan_fields.py --dataset all
 python projects/scripts/run_field_stats.py --dataset all
-python scripts/run_field_filter.py --dataset all --write_templates
-# 字段采集更新时间
+python projects/scripts/run_field_filter.py --dataset all --write_templates
 python projects/scripts/run_time_stats.py --dataset all
 ```
 
@@ -95,87 +93,29 @@ Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_fo
 
 ---
 
-## A_manual：人工方案 L0-L5 / D0-D5
-
-字段已知，模板固定。详细字段说明见 `pipeline.md`（L0-L5）和 `pipeline copy.md`（D0-D5）。
-
-### 1. JSON -> prompt -> CONCH embedding
-
-```bash
-# 全流程
-python projects/scripts/run_pipeline.py pipeline --dataset all --scheme all
-# step1 JSON -> prompt
-python projects/scripts/run_pipeline.py json2prompt --dataset TCGA-READ --scheme all
-# step2 prompt -> CONCH embedding
-python projects/scripts/run_pipeline.py encode --dataset TCGA-READ --scheme all
-
-```
-
-产物：
-
-```text
-outputs/{dataset}/A_manual/L{0-5}/prompts.csv
-outputs/{dataset}/A_manual/L{0-5}/embeddings/pt/{patient_id}.pt
-```
-
-`json2prompt` 只写 prompt CSV；`encode` 读已有 CSV 做 CONCH 编码；`pipeline` 是两者串联。`--scheme all` 只跑 L0-L5，不会带上 Field Bank。
-
-### 2. D0-D5 baseline
-
-D 组没有 prompt，直接用字段数值编码。
-
-```bash
-python projects/scripts/run_pipeline.py baseline --dataset all --scheme all
-```
-
-产物：
-
-```text
-outputs/{dataset}/A_manual/D{0-5}/embeddings/pt/{patient_id}.pt
-outputs/{dataset}/A_manual/metadata/
-outputs/_shared/A_manual/baseline_onehot_mapping_tables/
-```
-
-连续值 Min-Max，序数字段整数编码，名义字段 one-hot。多数据集一起跑时，名义词表按全部选中数据集拟合一份。
-
-### 3. Prompt 层占位率对照（通常不用——目标是各个数据集的字段统计不相同）
-
-读的是已经生成的 L0-L5 prompt CSV，不读原始 JSON 全字段。
-
-```bash
-python projects/scripts/run_prompt_stats.py --dataset all --scheme all
-python projects/scripts/run_prompt_stats.py --dataset TCGA-READ --scheme L0
-```
-
-产物：
-
-```text
-outputs/{dataset}/A_manual/L{0-5}/prompt_stats.csv
-```
-
----
-
-## B_scan：Field Bank / greedy
+## Field Bank / greedy
 
 先完成上面的扫描、统计、筛选。筛选后按数据集填写 Field Bank 长表，再编码；greedy 是 Field Bank 之后的阶段。
 
 ```bash
-# 人工填写 templates/B_scan/{dataset}/FIELD_BANK.csv
+# 人工填写 templates/field_bank/{dataset}/FIELD_BANK.csv
 # 先看 example 的原始取值，再裁定 convert/unit，最后填 template。
 # convert 允许：空（不换算）、days_to_years、int。
 
 # JSON -> prompt.csv -> CONCH emb
-python projects/scripts/run_field_bank.py --dataset TCGA_LIHC
+python projects/scripts/run_field_bank.py --dataset TCGA_LIHC --encoding prompt
+python projects/scripts/run_field_bank.py --dataset TCGA_LIHC --encoding onehot
 
-# step1 JSON -> prompt.csv
-python projects/scripts/run_field_bank.py --dataset TCGA_LIHC --prompts_only
+# step1 JSON -> prompt.csv（仅 prompt）
+python projects/scripts/run_field_bank.py --dataset TCGA_LIHC --encoding prompt --prompts_only
 
-# greedy 必须串行，不能拆成 A 组那种 conf 队列。后台跑：
+# greedy 必须串行。后台跑：
 conda activate SurvPGC
 cd CONCH-main
 CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log \
     --workers 8 \
     --dataset TCGA_LIHC \
+    --encoding prompt \
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
@@ -186,12 +126,15 @@ CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log
 产物：
 
 ```text
-templates/B_scan/{dataset}/FIELD_BANK.csv
-templates/B_scan/{dataset}/FIELD_BANK_columns.json
-outputs/{dataset}/B_scan/FIELD_BANK/prompts.csv
-outputs/{dataset}/B_scan/FIELD_BANK/field_index.json
-outputs/{dataset}/B_scan/FIELD_BANK/embeddings/pt/{patient_id}.pt
-outputs/{dataset}/B_scan/greedy/
+templates/field_bank/{dataset}/FIELD_BANK.csv
+templates/field_bank/{dataset}/FIELD_BANK_columns.json
+outputs/{dataset}/field_bank/prompt/prompts.csv
+outputs/{dataset}/field_bank/prompt/field_index.json
+outputs/{dataset}/field_bank/prompt/embeddings/pt/{patient_id}.pt
+outputs/{dataset}/field_bank/onehot/field_index.json
+outputs/{dataset}/field_bank/onehot/embeddings/pt/{patient_id}.pt
+outputs/{dataset}/field_bank/onehot/metadata/
+outputs/{dataset}/greedy/{prompt|onehot}/
   run_config.json
   selection_freq.csv
   selection_freq.png
@@ -199,23 +142,13 @@ outputs/{dataset}/B_scan/greedy/
   subsets/G{k}_{hash}/embeddings/pt/{patient_id}.pt
 ```
 
-`FIELD_BANK.csv` 按数据集各自填写。`example` 是原始取值，只给人判断单位；看完后再填 `convert` / `unit` / `template`。`convert` 为空则原样填 `{}`。`example`、`unit` 不进入 prompts / embedding。
+`FIELD_BANK.csv` 按数据集各自填写。`example` 是原始取值，只给人判断单位；看完后再填 `convert` / `unit` / `template`。`convert` 为空则原样填 `{}`。`example`、`unit` 不进入 prompts / embedding。prompt 是 `[n_fields, 512]`；onehot 是 `[n_fields, max_width]`，短字段右侧 0 pad。
 
 ---
 
 ## 评估
 
-A 组是离线评估：embedding 已经全部生成，先扫目录写出 conf，再后台串行跑 queue。
-
-```bash
-conda activate SurvPGC
-cd CONCH-main/projects/Clinic_Analyzer
-
-bash configs/z_exp_gen/gen_D0_6_L0_6_clinic_unimodal.sh
-CUDA_VISIBLE_DEVICES=N bash bg.sh GPUN.log
-```
-
-B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串行跑调度器。它会当场切子集 embedding，并调用 `Clinic_Analyzer/evaluate.py`。不能拆成 A 组那种 conf 队列，因为下一步字段取决于当前 5-fold mean c-index。内层 `greedy_forward` 每一步只加增益最大的字段；如果最好候选的 c-index 增益小于 `--min_delta`（默认 0），则不加该字段并早停。`patience` 仍只用于事后 Wilcoxon 停点，不打断搜索。
+只保留 greedy 在线评估：Field Bank embedding 先编好，然后后台串行跑调度器。它会当场切子集 embedding，并调用 `Clinic_Analyzer/evaluate.py`。不能拆成 conf 队列，因为下一步字段取决于当前 5-fold mean c-index。内层 `greedy_forward` 每一步只加增益最大的字段；如果最好候选的 c-index 增益小于 `--min_delta`（默认 0），则不加该字段并早停。`patience` 仍只用于事后 Wilcoxon 停点，不打断搜索。
 
 `survgc_f` / `survpgc_f` 只允许 BRCA、COAD、KIRC、KIRP、LIHC。KICH、PRAD、READ、STAD 以及其余 ClinicDatasets 都按 clinic 单模态评估；选多模态模型会直接报错。
 
@@ -226,19 +159,17 @@ B 组 greedy 是在线评估：Field Bank embedding 先编好，然后后台串�
 单模态模型：`mlp_clinic_mean`、`mlp_clinic_flatten`、`snn_clinic_mean`、`snn_clinic_flatten`
 
 ```bash
-conda activate conch
-cd CONCH-main
-
 conda activate SurvPGC
 cd CONCH-main
 CUDA_VISIBLE_DEVICES=6 bash projects/Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log \
     --workers 8 \
     --dataset TCGA_LIHC \
+    --encoding prompt \
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
     --seed 0 \
-    --min_delta 0
+    --min_delta 0.01
 ```
 
 单数据集把 `--dataset all` 换成 `TCGA-READ`。`run.sh` 会接入 config 快照并调用 `evaluate.py`，不再走 `main.py`。详见 [Clinic_Analyzer/TEST_main_and_runsh.md](Clinic_Analyzer/TEST_main_and_runsh.md)。

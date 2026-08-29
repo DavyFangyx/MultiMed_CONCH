@@ -8,8 +8,10 @@ from common.paths import (
     DEFAULT_GDC_CASES_MAPPING,
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
+    VALID_ENCODINGS,
     shared_field_stats_path,
     resolve_reference_dict_path,
+    validate_encoding,
 )
 
 from .field_bank import run_field_bank
@@ -50,12 +52,12 @@ def filter_main(argv=None):
     parser.add_argument(
         "--write_templates",
         action="store_true",
-        help="按 R0-R6 保留字段生成长表模板 templates/B_scan/{dataset}/FIELD_BANK.csv（field,example,convert,unit,template）",
+        help="按 R0-R6 保留字段生成长表模板 templates/field_bank/{dataset}/FIELD_BANK.csv（field,example,convert,unit,template）",
     )
     run_field_filter(parser.parse_args(argv))
 
 
-def field_bank_main(argv=None):
+def build_field_bank_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="按 kept_fields.json 生成 Field Bank prompts / embeddings")
     parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
@@ -64,14 +66,31 @@ def field_bank_main(argv=None):
         default=None,
         help="覆盖默认 rawdata_stats/{dataset}/kept_fields.json",
     )
+    parser.add_argument(
+        "--encoding",
+        default="prompt",
+        choices=list(VALID_ENCODINGS),
+    )
     parser.add_argument("--ckpt", default=DEFAULT_CKPT)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument(
         "--prompts_only",
         action="store_true",
-        help="只生成 outputs/{dataset}/B_scan/FIELD_BANK/prompts.csv，不调用 CONCH 编码",
+        help="只生成 outputs/{dataset}/field_bank/prompt/prompts.csv，不调用 CONCH 编码",
     )
-    run_field_bank(parser.parse_args(argv))
+    parser.add_argument(
+        "--rare_freq_threshold",
+        type=int,
+        default=5,
+    )
+    return parser
+
+
+def field_bank_main(argv=None):
+    parser = build_field_bank_parser()
+    args = parser.parse_args(argv)
+    args.encoding = validate_encoding(args.encoding)
+    run_field_bank(args)
 
 
 def presence_main(argv=None):

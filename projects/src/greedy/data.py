@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.paths import dataset_field_bank_dir, dataset_kept_fields_path
+from common.paths import dataset_field_bank_dir, dataset_kept_fields_path, validate_encoding
 
 
 STUDY_BY_DISPLAY = {
@@ -67,7 +67,65 @@ def load_json(path: Path | str):
         return json.load(f)
 
 
-def load_candidate_fields(dataset: str, kept_fields_path: Path | str | None = None, field_index_path: Path | str | None = None) -> list[str]:
+def _encoding_from_dirname(path: Path) -> str | None:
+    for part in reversed(Path(path).parts):
+        name = part.lower()
+        if name in {"prompt", "onehot"}:
+            return name
+    return None
+
+
+def load_field_bank(field_bank_dir: Path | str, encoding: str | None = None) -> dict:
+    bank = Path(field_bank_dir)
+    if not bank.exists():
+        raise FileNotFoundError(f"field bank not found: {bank}")
+
+    index_path = bank / "field_index.json"
+    payload = load_json(index_path) if index_path.exists() else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    raw_encoding = payload.get("encoding")
+    if raw_encoding:
+        detected = validate_encoding(raw_encoding)
+    else:
+        detected = _encoding_from_dirname(bank)
+        if detected is None and encoding is not None:
+            detected = validate_encoding(encoding)
+        elif detected is None:
+            raise ValueError(
+                f"cannot infer encoding for {bank}; expected field_index.json['encoding'] "
+                "or a prompt/onehot directory name"
+            )
+        else:
+            detected = validate_encoding(detected)
+
+    if encoding is not None and validate_encoding(encoding) != detected:
+        raise ValueError(f"encoding mismatch for {bank}: expected {encoding}, found {detected}")
+
+    pt_dir = bank / "embeddings" / "pt"
+    if not pt_dir.is_dir():
+        pt_dir = bank / "pt"
+    if not pt_dir.is_dir():
+        pt_dir = bank
+
+    fields = list(payload.get("fields") or [])
+    return {
+        "dir": bank,
+        "pt_dir": pt_dir,
+        "encoding": detected,
+        "fields": fields,
+        "index": payload,
+        "n_fields": int(payload.get("n_fields") or len(fields) or 0),
+    }
+
+
+def load_candidate_fields(
+    dataset: str,
+    kept_fields_path: Path | str | None = None,
+    field_index_path: Path | str | None = None,
+    encoding: str = "prompt",
+) -> list[str]:
     if field_index_path:
         payload = load_json(field_index_path)
         fields = payload.get("fields")
@@ -75,7 +133,7 @@ def load_candidate_fields(dataset: str, kept_fields_path: Path | str | None = No
             raise ValueError(f"field_index has no fields: {field_index_path}")
         return list(fields)
 
-    bank_index = dataset_field_bank_dir(dataset) / "field_index.json"
+    bank_index = dataset_field_bank_dir(dataset, encoding) / "field_index.json"
     if bank_index.exists():
         return load_candidate_fields(dataset, field_index_path=bank_index)
 
@@ -100,16 +158,23 @@ def unique_ids(values) -> list[str]:
     return out
 
 
-def load_patient_ids_from_field_bank(dataset: str, field_bank_dir: Path | str | None = None) -> list[str]:
-    bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset)
+def load_patient_ids_from_field_bank(
+    dataset: str,
+    field_bank_dir: Path | str | None = None,
+    encoding: str = "prompt",
+) -> list[str]:
+    bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset, encoding)
+    if bank.exists():
+        loaded = load_field_bank(bank, encoding=encoding)
+        bank = loaded["dir"]
+        pt_dir = loaded["pt_dir"]
+    else:
+        pt_dir = bank / "embeddings" / "pt"
     prompt_path = bank / "prompts.csv"
     if prompt_path.exists():
         df = pd.read_csv(prompt_path)
         col = "patient_id" if "patient_id" in df.columns else df.columns[0]
         return unique_ids(df[col].tolist())
-    pt_dir = bank / "embeddings" / "pt"
-    if not pt_dir.is_dir():
-        pt_dir = bank / "pt"
     if pt_dir.is_dir():
         return unique_ids(sorted(p.stem for p in pt_dir.glob("*.pt")))
     return []
@@ -147,8 +212,13 @@ def load_events(dataset: str, patient_ids: list[str], label_file: Path | str | N
     return {pid: int(events.get(pid, 0)) for pid in patient_ids}
 
 
-def resolve_patient_universe(dataset: str, field_bank_dir: Path | str | None = None, label_file: Path | str | None = None) -> tuple[list[str], dict[str, int]]:
-    bank_ids = load_patient_ids_from_field_bank(dataset, field_bank_dir=field_bank_dir)
+def resolve_patient_universe(
+    dataset: str,
+    field_bank_dir: Path | str | None = None,
+    label_file: Path | str | None = None,
+    encoding: str = "prompt",
+) -> tuple[list[str], dict[str, int]]:
+    bank_ids = load_patient_ids_from_field_bank(dataset, field_bank_dir=field_bank_dir, encoding=encoding)
     try:
         labels = load_survival_table(dataset, label_file=label_file)
         label_ids = unique_ids(labels["case_id"].tolist())

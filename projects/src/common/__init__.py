@@ -2,7 +2,6 @@
 
 from .clinical_io import load_clinical_cases, normalize_json_paths
 from .datasets import (
-    dataset_jobs,
     get_dataset_clinic_files,
     get_dataset_config,
     get_dataset_project_ids,
@@ -34,16 +33,15 @@ from .paths import (
     DEFAULT_DATASETS_CONFIG,
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
-    DEFAULT_PROMPT_DIR,
-    DEFAULT_TEMPLATE_DIR,
     PROJECT_ROOT,
     REGISTRY_DIR,
     REPO_ROOT,
-    dataset_embedding_dir,
+    VALID_ENCODINGS,
     dataset_field_bank_dir,
-    dataset_prompt_dir,
+    dataset_field_bank_template_dir,
     dataset_stats_dir,
     dataset_greedy_dir,
+    validate_encoding,
 )
 from .types import infer_type, to_numeric
 
@@ -52,19 +50,16 @@ __all__ = [
     "DEFAULT_DATASETS_CONFIG",
     "DEFAULT_JSON_FIELD_DICT",
     "DEFAULT_JSON_PATH",
-    "DEFAULT_PROMPT_DIR",
-    "DEFAULT_TEMPLATE_DIR",
     "PROJECT_ROOT",
     "REGISTRY_DIR",
     "REPO_ROOT",
     "SENTINEL_VALUES",
+    "VALID_ENCODINGS",
     "classify_raw_value",
     "clean_value",
     "collapse_patient_values",
-    "dataset_embedding_dir",
     "dataset_field_bank_dir",
-    "dataset_jobs",
-    "dataset_prompt_dir",
+    "dataset_field_bank_template_dir",
     "dataset_stats_dir",
     "dataset_greedy_dir",
     "extract_path_values",
@@ -88,4 +83,5 @@ __all__ = [
     "resolve_dataset_names",
     "to_numeric",
     "unique_join",
+    "validate_encoding",
 ]

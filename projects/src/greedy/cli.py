@@ -9,7 +9,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 
 from common.datasets import load_dataset_configs, resolve_dataset_names
-from common.paths import DEFAULT_DATASETS_CONFIG, dataset_field_bank_dir, dataset_greedy_dir
+from common.paths import DEFAULT_DATASETS_CONFIG, VALID_ENCODINGS, dataset_field_bank_dir, dataset_greedy_dir, validate_encoding
 
 from .clinic import (
     DEFAULT_INNER_MODALITY,
@@ -133,7 +133,8 @@ def _score_outer_modalities(
     subset_idx = list(last.get("subset_idx") or [])
     scheme = subset_scheme_name(subset_idx)
     from common.paths import PROJECT_ROOT
-    clinic_dir = subset_embedding_dir(dataset, scheme, PROJECT_ROOT / "outputs")
+    encoding = validate_encoding(getattr(args, "encoding", "prompt"))
+    clinic_dir = subset_embedding_dir(dataset, scheme, PROJECT_ROOT / "outputs", encoding=encoding)
     for modality in outer_modalities:
         if modality == inner_modality and last.get("c_index") is not None:
             scores[modality] = {
@@ -220,6 +221,7 @@ def _load_splits(args, dataset: str):
 def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits, result, args, split_source, started, inner_modality: str, outer_modalities: list[str]):
     path_payload = {
         "dataset": dataset,
+        "encoding": getattr(args, "encoding", "prompt"),
         "inner_modality": inner_modality,
         "outer_modalities": list(outer_modalities),
         "n_fields": len(fields),
@@ -263,7 +265,8 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
         "n_fields": len(fields),
         "n_patients": len(patient_ids),
         "n_folds": result["n_folds"],
-        "field_bank_dir": str(Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset)),
+        "encoding": getattr(args, "encoding", "prompt"),
+        "field_bank_dir": str(Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, getattr(args, "encoding", "prompt"))),
         "kept_fields": args.kept_fields,
         "splits": split_source,
         "max_epochs": args.max_epochs,
@@ -294,23 +297,26 @@ def run_one(args, dataset: str) -> Path:
         if getattr(args, "_multi_dataset", False):
             out_dir = out_dir / dataset
     else:
-        out_dir = dataset_greedy_dir(dataset)
+        out_dir = dataset_greedy_dir(dataset, getattr(args, "encoding", "prompt"))
     out_dir.mkdir(parents=True, exist_ok=True)
     started = timer()
 
+    encoding = validate_encoding(getattr(args, "encoding", "prompt"))
+    args.encoding = encoding
     fields = load_candidate_fields(
         dataset,
         kept_fields_path=args.kept_fields,
         field_index_path=args.field_index,
+        encoding=encoding,
     )
     if args.exclude_post_baseline:
         fields = [f for f in fields if "follow_ups" not in f and "other_clinical_attributes" not in f]
 
     args._fields = fields
 
-    field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset)
+    field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding)
     patient_ids, events = resolve_patient_universe(
-        dataset, field_bank_dir=field_bank_dir, label_file=args.label_file
+        dataset, field_bank_dir=field_bank_dir, label_file=args.label_file, encoding=encoding
     )
 
     splits, split_source = _load_splits(args, dataset)
@@ -366,6 +372,11 @@ def main(argv=None):
         help="覆盖默认 rawdata_stats/{dataset}/kept_fields.json",
     )
     parser.add_argument("--field_index", default=None)
+    parser.add_argument(
+        "--encoding",
+        default="prompt",
+        choices=list(VALID_ENCODINGS),
+    )
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument("--label_file", default=None)
     parser.add_argument(

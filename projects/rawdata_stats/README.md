@@ -191,7 +191,7 @@ python projects/scripts/run_time_stats.py --dataset all
 
 筛后各数据集保留字段数：LIHC 40，BRCA 39，READ 36，COAD 35，KIRP 32，PRAD 28，KICH 26，STAD 25，KIRC 22。
 
-加 `--write_templates` 时，还会按保留字段生成 `templates/B_scan/{dataset}/FIELD_BANK.csv` 长表骨架（`field,example,convert,unit,template`）。`example` 只给人看原始取值和单位，不进 prompt。
+加 `--write_templates` 时，还会按保留字段生成 `templates/field_bank/{dataset}/FIELD_BANK.csv` 长表骨架（`field,example,convert,unit,template`）。`example` 只给人看原始取值和单位，不进 prompt。
 
 ---
 
@@ -263,8 +263,8 @@ patient_time_stats_all.png   9 个数据集 ground-truth 时间叠图
 
 这些文件就是 JSON 预处理的终点。之后：
 
-- 人工方案继续走 `outputs/{dataset}/A_manual/`
-- Field Bank 读 `{dataset}/kept_fields.json` 和 `templates/B_scan/{dataset}/FIELD_BANK.csv`，写出 `outputs/{dataset}/B_scan/`
+- Field Bank 读 `{dataset}/kept_fields.json` 和 `templates/field_bank/{dataset}/FIELD_BANK.csv`，写出 `outputs/{dataset}/field_bank/{prompt|onehot}/`
+- greedy 再从 Field Bank embedding 切子集到 `outputs/{dataset}/greedy/{prompt|onehot}/`
 
 ## 官方总表出现情况
 

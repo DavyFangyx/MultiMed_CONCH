@@ -16,8 +16,11 @@ def subset_scheme_name(subset_idx) -> str:
     return f"G{len(idx)}_{digest}"
 
 
-def subset_embedding_dir(dataset: str, scheme: str, embeddings_root: Path) -> Path:
-    return Path(embeddings_root) / dataset / "B_scan" / "greedy" / "subsets" / scheme / "embeddings" / "pt"
+def subset_embedding_dir(dataset: str, scheme: str, embeddings_root: Path, encoding: str = "prompt") -> Path:
+    from common.paths import validate_encoding
+
+    encoding = validate_encoding(encoding)
+    return Path(embeddings_root) / dataset / "greedy" / encoding / "subsets" / scheme / "embeddings" / "pt"
 
 
 def _as_matrix(obj):

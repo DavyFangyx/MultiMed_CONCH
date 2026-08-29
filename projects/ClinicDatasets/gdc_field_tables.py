@@ -32,14 +32,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
-import requests
-from requests.adapters import HTTPAdapter
+def _import_requests():
+    import requests
+    from requests.adapters import HTTPAdapter
 
-try:
-    from urllib3.util.retry import Retry
-except ImportError:
-    from requests.packages.urllib3.util.retry import Retry
+    try:
+        from urllib3.util.retry import Retry
+    except ImportError:
+        from requests.packages.urllib3.util.retry import Retry
+    return requests, HTTPAdapter, Retry
 
 
 API = "https://api.gdc.cancer.gov"
@@ -120,6 +121,7 @@ OUT_DIR = ROOT / "gdc_clinical" / "field_tables"
 
 
 def make_session(retries=5, timeout=120):
+    requests, HTTPAdapter, Retry = _import_requests()
     s = requests.Session()
     retry = Retry(
         total=retries, connect=retries, read=retries,
@@ -134,7 +136,7 @@ def make_session(retries=5, timeout=120):
 
 
 def api_get(sess, path):
-    url = path if path.startswith("http") else f"{API}/{path.lstrip("/")}"
+    url = path if path.startswith("http") else f"{API}/{path.lstrip('/')}"
     r = sess.get(url, timeout=sess.request_timeout)
     r.raise_for_status()
     return r.json()
@@ -296,6 +298,8 @@ def flatten_mapping(payload, clinical_only=True):
 
 
 def write_csv(path, rows, columns):
+    import pandas as pd
+
     path.parent.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows, columns=columns)
     df.to_csv(path, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
