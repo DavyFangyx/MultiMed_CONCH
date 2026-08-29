@@ -78,6 +78,7 @@ conda activate conch
 cd CONCH-main
 
 python projects/scripts/run_scan_fields.py --dataset all
+python projects/scripts/run_field_presence.py --dataset all
 python projects/scripts/run_field_stats.py --dataset all
 python projects/scripts/run_field_filter.py --dataset all --write_templates
 python projects/scripts/run_time_stats.py --dataset all
@@ -264,3 +265,19 @@ patient_time_stats_all.png   9 个数据集 ground-truth 时间叠图
 
 - 人工方案继续走 `outputs/{dataset}/A_manual/`
 - Field Bank 读 `{dataset}/kept_fields.json` 和 `templates/B_scan/{dataset}/FIELD_BANK.csv`，写出 `outputs/{dataset}/B_scan/`
+
+## 官方总表出现情况
+
+对照 `ClinicDatasets/gdc_clinical/field_tables/gdc_cases_mapping.csv`，只统计官方路径有没有在该数据集 JSON 里出现过，不看取值是否缺失。
+
+```text
+{dataset}/field_presence.csv
+{dataset}/field_presence_summary.json
+_shared/field_presence.csv
+_shared/field_presence_summary.csv
+_shared/field_presence_mapping_census.csv
+_shared/field_presence_not_in_table.csv
+```
+
+三态：`in_table_and_data` / `in_table_not_data` / `not_in_table`。容器叶子（如 `diagnoses`、`project`）记为 `not_in_table`。
+`field_presence_not_in_table.csv` 按字段名汇总这些扫描到、但不在官方 mapping 里的路径。

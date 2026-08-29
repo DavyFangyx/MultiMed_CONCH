@@ -5,6 +5,7 @@ import argparse
 from common.paths import (
     DEFAULT_CKPT,
     DEFAULT_DATASETS_CONFIG,
+    DEFAULT_GDC_CASES_MAPPING,
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
     shared_field_stats_path,
@@ -13,6 +14,7 @@ from common.paths import (
 
 from .field_bank import run_field_bank
 from .filter import run_field_filter
+from .presence import run_field_presence
 from .scan import run_scan
 from .stats import run_field_stats
 
@@ -70,3 +72,15 @@ def field_bank_main(argv=None):
         help="只生成 outputs/{dataset}/B_scan/FIELD_BANK/prompts.csv，不调用 CONCH 编码",
     )
     run_field_bank(parser.parse_args(argv))
+
+
+def presence_main(argv=None):
+    parser = argparse.ArgumentParser(description="对照官方 mapping 统计 clinical JSON 字段是否出现")
+    parser.add_argument("--dataset", default="all")
+    parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
+    parser.add_argument(
+        "--mapping_csv",
+        default=str(DEFAULT_GDC_CASES_MAPPING),
+        help="官方 clinical JSON 字段总表，默认 ClinicDatasets/gdc_clinical/field_tables/gdc_cases_mapping.csv",
+    )
+    run_field_presence(parser.parse_args(argv))

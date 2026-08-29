@@ -21,6 +21,9 @@ DEFAULT_JSON_FIELD_DICT = PROJECT_ROOT / "templates" / "field_labels.json"
 LEGACY_JSON_FIELD_DICT = PROJECT_ROOT / "templates" / "common" / "json_field_dictionary.json"
 RAWDATA_STATS_ROOT = PROJECT_ROOT / "rawdata_stats"
 RAWDATA_STATS_SHARED_DIR = RAWDATA_STATS_ROOT / "_shared"
+DEFAULT_GDC_CASES_MAPPING = (
+    PROJECT_ROOT / "ClinicDatasets" / "gdc_clinical" / "field_tables" / "gdc_cases_mapping.csv"
+)
 REGISTRY_DIR = RAWDATA_STATS_SHARED_DIR
 REGISTRY_DICTS_DIR = RAWDATA_STATS_ROOT
 TIME_STATS_ROOT = RAWDATA_STATS_ROOT
@@ -66,6 +69,30 @@ def dataset_field_bank_template_dir(dataset_name: str) -> Path:
 
 def dataset_field_dict_path(dataset_name: str) -> Path:
     return RAWDATA_STATS_ROOT / dataset_name / "scanned_fields.json"
+
+
+def dataset_field_presence_path(dataset_name: str) -> Path:
+    return RAWDATA_STATS_ROOT / dataset_name / "field_presence.csv"
+
+
+def dataset_field_presence_summary_path(dataset_name: str) -> Path:
+    return RAWDATA_STATS_ROOT / dataset_name / "field_presence_summary.json"
+
+
+def shared_field_presence_path() -> Path:
+    return RAWDATA_STATS_SHARED_DIR / "field_presence.csv"
+
+
+def shared_field_presence_summary_path() -> Path:
+    return RAWDATA_STATS_SHARED_DIR / "field_presence_summary.csv"
+
+
+def shared_field_presence_mapping_census_path() -> Path:
+    return RAWDATA_STATS_SHARED_DIR / "field_presence_mapping_census.csv"
+
+
+def shared_field_presence_not_in_table_path() -> Path:
+    return RAWDATA_STATS_SHARED_DIR / "field_presence_not_in_table.csv"
 
 
 def dataset_field_stats_path(dataset_name: str) -> Path:
