@@ -91,7 +91,7 @@ Clinic_Analyzer 是从 `/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init
 
 负责 greedy 选数据集之后，真的能切子集 embedding 并调用 Analyzer。
 
-改这些文件：
+改这些文件0：
 
 - `src/greedy/data.py`
 - `src/greedy/cli.py`
