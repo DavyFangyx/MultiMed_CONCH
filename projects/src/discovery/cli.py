@@ -5,6 +5,7 @@ import argparse
 from common.paths import (
     DEFAULT_CKPT,
     DEFAULT_DATASETS_CONFIG,
+    DEFAULT_FIELD_FILTER_RULES,
     DEFAULT_GDC_CASES_MAPPING,
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
@@ -48,7 +49,34 @@ def filter_main(argv=None):
     parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按数据集写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；--dataset all 时额外写出 rawdata_stats/_shared/kept_fields.json 总表")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
-    parser.add_argument("--min_coverage", type=float, default=0.30)
+    parser.add_argument(
+        "--filter_rules",
+        default=str(DEFAULT_FIELD_FILTER_RULES),
+        help="R0/R1/R5 名单文件，默认 templates/field_filter_rules.json",
+    )
+    parser.add_argument(
+        "--R3_coverage",
+        "--min_coverage",
+        type=float,
+        default=0.30,
+        dest="R3_coverage",
+        help="R3 覆盖率下限，coverage 低于该值则删除。默认 0.30",
+    )
+    parser.add_argument(
+        "--R4_n_unique",
+        type=int,
+        default=2,
+        dest="R4_n_unique",
+        help="R4 有效取值数下限，n_unique 低于该值则删除。默认 2",
+    )
+    parser.add_argument(
+        "--R4_mode_share",
+        "--R4_众数",
+        type=float,
+        default=0.95,
+        dest="R4_mode_share",
+        help="R4 众数占比上限，mode_share 高于该值则删除。默认 0.95",
+    )
     parser.add_argument(
         "--write_templates",
         action="store_true",

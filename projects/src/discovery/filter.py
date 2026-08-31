@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from common.paths import (
+    DEFAULT_FIELD_FILTER_RULES,
     dataset_exclusion_log_path,
     dataset_field_bank_template_dir,
     dataset_field_registry_path,
@@ -18,60 +19,12 @@ from common.paths import (
 )
 
 
-R0_SUBSTRINGS = {
-    "vital_status",
-    "days_to_death",
-    "year_of_death",
-    "days_to_last_follow_up",
-    "days_to_last_known_disease_status",
-    "last_known_disease_status",
-    "progression_or_recurrence",
-    "days_to_recurrence",
-    "days_to_progression",
-    "treatment_or_therapy",
-    "days_to_treatment_start",
-    "days_to_treatment_end",
-    "treatment_outcome",
-    "cause_of_death",
-    "days_to_diagnosis",
-}
-R0_EXACT = {"state"}
-
-R1_EXACT = {
-    "submitter_id",
-    "case_id",
-    "updated_datetime",
-    "created_datetime",
-    "project_id",
-    "disease_type",
-    "primary_site",
-    "classification_of_tumor",
-    "consent_type",
-    "tumor_of_origin",
-}
-
-CONTAINER_LEAFS = {
-    "demographic",
-    "diagnoses",
-    "follow_ups",
-    "treatments",
-    "pathology_details",
-    "exposures",
-    "family_histories",
-    "project",
-    "molecular_tests",
-    "other_clinical_attributes",
-}
-
+DEFAULT_R3_COVERAGE = 0.30
+DEFAULT_R4_N_UNIQUE = 2
+DEFAULT_R4_MODE_SHARE = 0.95
 POST_BASELINE_LAYERS = {"follow_ups", "other_clinical_attributes"}
 
-R5_DROP_LEAFS = {
-    "age_at_index": ("R5_derivable", "keep diagnoses.age_at_diagnosis"),
-    "days_to_birth": ("R5_derivable", "keep diagnoses.age_at_diagnosis"),
-    "ajcc_pathologic_stage": ("R5_derivable", "keep ajcc_pathologic_t/n/m"),
-    "ajcc_staging_system_edition": ("R5_derivable", "not patient-level / not comparable"),
-    "year_of_diagnosis": ("R5_derivable", "administrative censoring confounder"),
-}
+_RULES_CACHE: dict[str, dict] | None = None
 
 
 def _leaf_name(field_path: str) -> str:
@@ -89,22 +42,86 @@ def timepoint(field_path: str) -> str:
     return "baseline"
 
 
-def apply_rules(row: pd.Series, min_coverage: float) -> tuple[str | None, str]:
+def load_filter_rules(path=None) -> dict:
+    global _RULES_CACHE
+    rules_path = Path(path) if path else DEFAULT_FIELD_FILTER_RULES
+    cache_key = str(rules_path.resolve()) if rules_path.exists() else str(rules_path)
+    if _RULES_CACHE is not None and _RULES_CACHE.get("_path") == cache_key:
+        return _RULES_CACHE["data"]
+    if not rules_path.exists():
+        raise FileNotFoundError(f"未找到字段筛选名单: {rules_path}")
+    with open(rules_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"字段筛选名单必须是 JSON object: {rules_path}")
+    _RULES_CACHE = {"_path": cache_key, "data": data}
+    return data
+
+
+def _as_lower_set(values) -> set[str]:
+    return {str(v).strip().lower() for v in (values or []) if str(v).strip()}
+
+
+def _path_has_token(field_path: str, token: str) -> bool:
+    needle = str(token).strip().lower()
+    if not needle:
+        return False
+    parts = [p.replace("[]", "").lower() for p in str(field_path).split(".")]
+    return needle in parts
+
+
+def _path_matches_suffix(field_path: str, suffix: str) -> bool:
+    raw = str(field_path)
+    target = str(suffix).strip()
+    if not target:
+        return False
+    return raw == target or raw.endswith("." + target) or raw.endswith(target)
+
+
+def apply_rules(
+    row: pd.Series,
+    min_coverage: float = DEFAULT_R3_COVERAGE,
+    min_unique: int = DEFAULT_R4_N_UNIQUE,
+    max_mode_share: float = DEFAULT_R4_MODE_SHARE,
+    rules: dict | None = None,
+) -> tuple[str | None, str]:
     """Apply R0-R5 in document order. R2/R6 are markers, not drop rules."""
     field_path = str(row["field_path"])
     leaf = _leaf_name(field_path).lower()
     norm = _norm(field_path)
+    rules = rules or load_filter_rules()
+    r0 = rules.get("R0_label_leak") or {}
+    r1 = rules.get("R1_admin") or {}
+    r5_drop = {}
+    for group in (rules.get("R5_derivable") or {}).get("groups") or []:
+        keep = [str(v).strip() for v in (group.get("keep") or []) if str(v).strip()]
+        note = str(group.get("note") or "").strip()
+        trigger = f"keep {', '.join(keep)}" if keep else note
+        for leaf_name in group.get("drop") or []:
+            key = str(leaf_name).strip().lower()
+            if key:
+                r5_drop[key] = trigger or key
 
     # R0: label leakage. Hard exclusion, never skip.
-    if leaf in R0_EXACT or any(token in leaf or token in norm for token in R0_SUBSTRINGS):
-        return "R0_label_leak", leaf
-    if leaf.startswith("days_to_") and leaf != "days_to_birth":
-        return "R0_label_leak", leaf
+    r0_except = _as_lower_set(r0.get("except_leaves"))
+    if leaf not in r0_except:
+        if leaf in _as_lower_set(r0.get("leaves")):
+            return "R0_label_leak", leaf
+        if any(token in leaf or token in norm for token in _as_lower_set(r0.get("substrings"))):
+            return "R0_label_leak", leaf
+        if any(_path_has_token(field_path, token) for token in (r0.get("path_contains") or [])):
+            return "R0_label_leak", f"path_contains:{leaf}"
+        if any(_path_matches_suffix(field_path, suffix) for suffix in (r0.get("path_suffixes") or [])):
+            return "R0_label_leak", leaf
+        if any(leaf.startswith(prefix) for prefix in (r0.get("leaf_startswith") or [])):
+            return "R0_label_leak", leaf
 
     # R1: administrative / identifier fields.
-    if leaf in R1_EXACT or leaf.endswith("_id"):
+    if leaf in _as_lower_set(r1.get("leaves")) or any(
+        leaf.endswith(suffix) for suffix in (r1.get("leaf_endswith") or [])
+    ):
         return "R1_admin", leaf
-    if leaf in CONTAINER_LEAFS:
+    if leaf in _as_lower_set(r1.get("container_leaves")):
         return "R1_admin", f"container:{leaf}"
 
     # R2 is a marker only; see timepoint().
@@ -117,15 +134,14 @@ def apply_rules(row: pd.Series, min_coverage: float) -> tuple[str | None, str]:
     # R4: degenerate fields.
     n_unique = int(row.get("unique_count") or 0)
     mode_share = float(row.get("mode_share") or 0.0)
-    if n_unique < 2:
+    if n_unique < min_unique:
         return "R4_degenerate", f"n_unique={n_unique}"
-    if mode_share > 0.95:
+    if mode_share > max_mode_share:
         return "R4_degenerate", f"mode_share={mode_share:.6f}"
 
     # Extra derivable-field drops kept from the current registry.
-    if leaf in R5_DROP_LEAFS:
-        rule, note = R5_DROP_LEAFS[leaf]
-        return rule, note
+    if leaf in r5_drop:
+        return "R5_derivable", r5_drop[leaf]
 
     return None, ""
 
@@ -213,7 +229,13 @@ def run_field_filter(args):
     exclusion_rows = []
     keep_rows = []
     for _, row in df.iterrows():
-        rule, trigger = apply_rules(row, min_coverage=args.min_coverage)
+        rule, trigger = apply_rules(
+            row,
+            min_coverage=getattr(args, "R3_coverage", DEFAULT_R3_COVERAGE),
+            min_unique=getattr(args, "R4_n_unique", DEFAULT_R4_N_UNIQUE),
+            max_mode_share=getattr(args, "R4_mode_share", DEFAULT_R4_MODE_SHARE),
+            rules=load_filter_rules(getattr(args, "filter_rules", None)),
+        )
         item = {
             "dataset": row["dataset"],
             "field": row["field_path"],

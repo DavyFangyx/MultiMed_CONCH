@@ -1,18 +1,22 @@
-"""Extract per-patient survival time and record update timestamps from clinical JSON.
+"""Extract per-patient survival time plus t_write / t_record entity times.
 
 Dead   -> last time = demographic.days_to_death
-Not dead -> last time = diagnoses[].days_to_last_follow_up
-Also keep lost_to_followup and every updated_datetime (created_datetime is ignored).
-Multiple submissions of the same array stay as separate columns: {array}_updated{i}.
+Not dead -> last time = diagnoses[].days_to_last_follow_up,
+            else follow_ups[].days_to_follow_up
 
-Field updated_datetime values are converted to days from the patient's first update,
-then divided by last_time_days (days_to_death if Dead, else days_to_last_follow_up).
-Values may exceed 1 when a field is updated after that last time.
+Only six entities are timed: diagnoses, treatments, pathology_details,
+follow_ups, molecular_tests, other_clinical_attributes.
+case / demographic / exposures / family_histories are ignored.
 
-Outputs in projects/rawdata_stats/{dataset}/time/:
+t_write  uses each object's updated_datetime (created_datetime ignored).
+t_record uses clinical days_* with narrow timepoint_category fallbacks.
+See rawdata_stats/TIME_CRITERIA.md.
+
+Outputs in projects/rawdata_stats/{dataset}/time_write and time_record:
   patient_time_stats.csv / patient_time_stats.png
   normalized_update_time.csv / normalized_update_time.png / normalized_update_time_boxplot.png
   sequences/{family}.csv / sequences/{family}.png
+  missing/{family}.csv / missing/{family}.png
 
 conda activate conch
 cd CONCH-main
@@ -27,6 +31,7 @@ import argparse
 import math
 import os
 import re
+import shutil
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,23 +67,53 @@ STALE_OUTPUTS = (
     "ground_truth_time_distribution_all.png",
 )
 
-UPDATE_COL_RE = re.compile(r"^(.*)_updated(?:\d+)?$")
-FIELD_DISPLAY_ORDER = [
-    "case",
-    "demographic",
+TIME_FAMILIES = [
     "diagnoses",
-    "diagnoses_pathology_details",
     "diagnoses_treatments",
+    "diagnoses_pathology_details",
     "follow_ups",
     "follow_ups_molecular_tests",
     "follow_ups_other_clinical_attributes",
-    "family_histories",
-    "exposures",
 ]
 
+FAMILY_PATHS = {
+    "diagnoses": "diagnoses[]",
+    "diagnoses_treatments": "diagnoses[].treatments[]",
+    "diagnoses_pathology_details": "diagnoses[].pathology_details[]",
+    "follow_ups": "follow_ups[]",
+    "follow_ups_molecular_tests": "follow_ups[].molecular_tests[]",
+    "follow_ups_other_clinical_attributes": "follow_ups[].other_clinical_attributes[]",
+}
 
-def _is_list_of_dicts(value) -> bool:
-    return isinstance(value, list) and any(isinstance(item, dict) for item in value)
+TREATMENT_BASELINE_TIMEPOINTS = frozenset(
+    {
+        "prior to diagnosis",
+        "preoperative",
+        "prior to procurement",
+        "pretreatment",
+        "pre-treatment",
+    }
+)
+PATHOLOGY_BASELINE_TIMEPOINTS = frozenset(
+    {
+        "initial diagnosis",
+        "prior to diagnosis",
+    }
+)
+
+WRITE_COL_RE = re.compile(r"^(.*)_updated(\d+)$")
+RECORD_COL_RE = re.compile(r"^(.*)_record(\d+)$")
+SEQUENCE_ID_COLS = ["dataset", "submitter_id", "case_id"]
+WRITE_KIND = "write"
+RECORD_KIND = "record"
+
+
+def _iter_dict_items(value):
+    if not isinstance(value, list):
+        return
+    for item in value:
+        if isinstance(item, dict):
+            yield item
 
 
 def _is_non_empty(value) -> bool:
@@ -146,6 +181,14 @@ def _max_numeric(values) -> float | None:
     return max(nums)
 
 
+def _normalize_timepoint(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _timepoint_in(value, vocab: frozenset[str]) -> bool:
+    return _normalize_timepoint(value) in vocab
+
+
 def _collect_days_to_last_follow_up(case: dict) -> tuple[float | None, str]:
     diagnoses = case.get("diagnoses") if isinstance(case.get("diagnoses"), list) else []
     last_fu = _max_numeric(
@@ -190,47 +233,98 @@ def _year_of_diagnosis(case: dict) -> int | None:
     return None
 
 
-def _collect_updated_datetimes(case: dict) -> OrderedDict:
-    buckets: OrderedDict[str, dict] = OrderedDict()
-
-    def ensure(key: str, is_array: bool) -> dict:
-        bucket = buckets.get(key)
-        if bucket is None:
-            bucket = {"is_array": is_array, "values": []}
-            buckets[key] = bucket
-        else:
-            bucket["is_array"] = bucket["is_array"] or is_array
-        return bucket
-
-    def walk(obj, prefix: str, is_array_item: bool) -> None:
-        if not isinstance(obj, dict):
-            return
-
-        raw = obj.get("updated_datetime")
-        if _is_non_empty(raw):
-            key = "updated_datetime" if prefix == "" else prefix
-            bucket = ensure(key, is_array=is_array_item and prefix != "")
-            bucket["values"].append(str(raw).strip())
-
-        for child_key, child in obj.items():
-            child_prefix = f"{prefix}_{child_key}" if prefix else str(child_key)
-            if isinstance(child, dict):
-                walk(child, child_prefix, False)
-            elif _is_list_of_dicts(child):
-                for item in child:
-                    if isinstance(item, dict):
-                        walk(item, child_prefix, True)
-
-    walk(case, "", False)
-    return buckets
+def _write_value(obj: dict):
+    raw = obj.get("updated_datetime")
+    dt = _parse_datetime(raw)
+    if dt is None:
+        return None, ""
+    text = str(raw).strip() if _is_non_empty(raw) else _format_datetime(dt)
+    return dt, text
 
 
-def _updated_column_name(key: str, index: int, is_array: bool, n_values: int) -> str:
-    if key == "updated_datetime":
-        return "updated_datetime" if n_values <= 1 else f"updated_datetime{index}"
-    if is_array or n_values > 1:
-        return f"{key}_updated{index}"
-    return f"{key}_updated"
+def _record_days_diagnosis(obj: dict, parent_days=None):
+    return _to_float(obj.get("days_to_diagnosis"))
+
+
+def _record_days_treatment(obj: dict, parent_days):
+    primary = _to_float(obj.get("days_to_treatment_start"))
+    if primary is not None:
+        return primary
+    if _timepoint_in(obj.get("timepoint_category"), TREATMENT_BASELINE_TIMEPOINTS):
+        return parent_days
+    return None
+
+
+def _record_days_pathology(obj: dict, parent_days):
+    primary = _to_float(obj.get("days_to_pathology_detail"))
+    if primary is not None:
+        return primary
+    if _timepoint_in(obj.get("timepoint_category"), PATHOLOGY_BASELINE_TIMEPOINTS):
+        return parent_days
+    return None
+
+
+def _record_days_follow_up(obj: dict, parent_days=None):
+    return _to_float(obj.get("days_to_follow_up"))
+
+
+def _record_days_molecular(obj: dict, parent_days):
+    primary = _to_float(obj.get("days_to_test"))
+    if primary is not None:
+        return primary
+    return parent_days
+
+
+def _record_days_other(obj: dict, parent_days):
+    comorbidity = _to_float(obj.get("days_to_comorbidity"))
+    if comorbidity is not None:
+        return comorbidity
+    risk = _to_float(obj.get("days_to_risk_factor"))
+    if risk is not None:
+        return risk
+    return parent_days
+
+
+def _make_slot(obj: dict, record_days) -> dict:
+    dt, text = _write_value(obj)
+    return {
+        "present": True,
+        "write_dt": dt,
+        "write_text": text,
+        "record_days": record_days,
+    }
+
+def _empty_slots() -> OrderedDict:
+    return OrderedDict((family, []) for family in TIME_FAMILIES)
+
+
+def _collect_entity_slots(case: dict) -> OrderedDict:
+    slots = _empty_slots()
+
+    for diagnosis in _iter_dict_items(case.get("diagnoses")):
+        diagnosis_days = _record_days_diagnosis(diagnosis)
+        slots["diagnoses"].append(_make_slot(diagnosis, diagnosis_days))
+        for treatment in _iter_dict_items(diagnosis.get("treatments")):
+            slots["diagnoses_treatments"].append(
+                _make_slot(treatment, _record_days_treatment(treatment, diagnosis_days))
+            )
+        for pathology in _iter_dict_items(diagnosis.get("pathology_details")):
+            slots["diagnoses_pathology_details"].append(
+                _make_slot(pathology, _record_days_pathology(pathology, diagnosis_days))
+            )
+
+    for follow_up in _iter_dict_items(case.get("follow_ups")):
+        follow_days = _record_days_follow_up(follow_up)
+        slots["follow_ups"].append(_make_slot(follow_up, follow_days))
+        for molecular in _iter_dict_items(follow_up.get("molecular_tests")):
+            slots["follow_ups_molecular_tests"].append(
+                _make_slot(molecular, _record_days_molecular(molecular, follow_days))
+            )
+        for other in _iter_dict_items(follow_up.get("other_clinical_attributes")):
+            slots["follow_ups_other_clinical_attributes"].append(
+                _make_slot(other, _record_days_other(other, follow_days))
+            )
+    return slots
 
 
 def extract_patient_time_record(case: dict, dataset_name: str | None = None) -> dict:
@@ -264,99 +358,132 @@ def extract_patient_time_record(case: dict, dataset_name: str | None = None) -> 
             ("year_of_diagnosis", _year_of_diagnosis(case)),
         ]
     )
-    record["_updated_buckets"] = _collect_updated_datetimes(case)
+    record["_slots"] = _collect_entity_slots(case)
     return record
 
 
-def _expand_updated_columns(records: list[dict]) -> list[dict]:
-    max_lens: OrderedDict[str, int] = OrderedDict()
-    flags: dict[str, bool] = {}
+def _slot_column(family: str, index: int, kind: str) -> str:
+    suffix = "updated" if kind == WRITE_KIND else "record"
+    return f"{family}_{suffix}{index}"
 
+
+def _expand_kind_columns(records: list[dict], kind: str) -> list[dict]:
+    max_lens = OrderedDict((family, 0) for family in TIME_FAMILIES)
     for record in records:
-        buckets = record.get("_updated_buckets") or {}
-        for key, bucket in buckets.items():
-            flags[key] = flags.get(key, False) or bool(bucket.get("is_array"))
-            max_lens[key] = max(max_lens.get(key, 0), len(bucket.get("values") or []))
-
-    ordered_keys = list(max_lens.keys())
-    if "updated_datetime" in ordered_keys:
-        ordered_keys.remove("updated_datetime")
-        ordered_keys.insert(0, "updated_datetime")
+        slots = record.get("_slots") or {}
+        for family in TIME_FAMILIES:
+            max_lens[family] = max(max_lens[family], len(slots.get(family) or []))
 
     rows = []
     for record in records:
-        row = OrderedDict((k, v) for k, v in record.items() if k != "_updated_buckets")
-        buckets = record.get("_updated_buckets") or {}
-        for key in ordered_keys:
-            n_values = max_lens[key]
-            values = (buckets.get(key) or {}).get("values") or []
-            is_array = flags.get(key, False)
+        row = OrderedDict((k, v) for k, v in record.items() if k != "_slots")
+        slots = record.get("_slots") or {}
+        for family in TIME_FAMILIES:
+            n_values = max_lens[family]
+            values = slots.get(family) or []
             for i in range(1, n_values + 1):
-                col = _updated_column_name(key, i, is_array, n_values)
-                row[col] = values[i - 1] if i - 1 < len(values) else ""
+                col = _slot_column(family, i, kind)
+                if i - 1 >= len(values):
+                    row[col] = ""
+                    continue
+                slot = values[i - 1]
+                if kind == WRITE_KIND:
+                    row[col] = slot.get("write_text") or ""
+                else:
+                    days = slot.get("record_days")
+                    row[col] = "" if days is None else days
         rows.append(row)
     return rows
 
 
-def build_patient_time_frame(cases: list, dataset_name: str | None = None) -> pd.DataFrame:
+def build_patient_time_frame(cases: list, dataset_name: str | None = None, kind: str = WRITE_KIND) -> pd.DataFrame:
     records = [extract_patient_time_record(case, dataset_name=dataset_name) for case in cases]
-    rows = _expand_updated_columns(records)
+    rows = _expand_kind_columns(records, kind)
     return pd.DataFrame(rows)
 
 
-def _is_update_column(col: str) -> bool:
-    if col == "updated_datetime" or col.startswith("updated_datetime"):
-        return True
-    return bool(UPDATE_COL_RE.match(col))
+def _slot_re(kind: str):
+    return WRITE_COL_RE if kind == WRITE_KIND else RECORD_COL_RE
 
 
-def _field_family(col: str) -> str:
-    if col == "updated_datetime" or col.startswith("updated_datetime"):
-        return "case"
-    match = UPDATE_COL_RE.match(col)
+def _is_slot_column(col: str, kind: str) -> bool:
+    return bool(_slot_re(kind).match(col))
+
+
+def _field_family(col: str, kind: str) -> str:
+    match = _slot_re(kind).match(col)
     if match:
         return match.group(1)
     return col
 
 
+def _slot_index(col: str, kind: str) -> int:
+    match = _slot_re(kind).match(col)
+    if match:
+        return int(match.group(2))
+    return 0
+
+
+def _slot_columns(df: pd.DataFrame, kind: str) -> list[str]:
+    return [c for c in df.columns if _is_slot_column(c, kind)]
+
+
 def _ordered_fields(fields: list[str]) -> list[str]:
-    known = [name for name in FIELD_DISPLAY_ORDER if name in fields]
+    known = [name for name in TIME_FAMILIES if name in fields]
     extra = sorted(name for name in fields if name not in known)
     return known + extra
 
 
-SCALAR_UPDATE_FAMILIES = {"case", "demographic"}
-SEQUENCE_ID_COLS = ["dataset", "submitter_id", "case_id"]
-def _sequence_families(df: pd.DataFrame) -> OrderedDict:
+def _sequence_families(df: pd.DataFrame, kind: str) -> OrderedDict:
     families: OrderedDict[str, list[str]] = OrderedDict()
-    for col in _ordered_update_columns(df):
-        family = _field_family(col)
-        if family in SCALAR_UPDATE_FAMILIES:
-            continue
+    for col in _ordered_slot_columns(df, kind):
+        family = _field_family(col, kind)
         families.setdefault(family, []).append(col)
     return families
 
 
-def _reset_sequence_dir(output_dir: Path) -> Path:
-    seq_dir = Path(output_dir) / "sequences"
-    seq_dir.mkdir(parents=True, exist_ok=True)
-    for path in seq_dir.glob("*.csv"):
-        path.unlink()
-    for path in seq_dir.glob("*.png"):
-        path.unlink()
-    return seq_dir
+def _ordered_slot_columns(df: pd.DataFrame, kind: str) -> list[str]:
+    cols = _slot_columns(df, kind)
+    families = _ordered_fields(list(dict.fromkeys(_field_family(c, kind) for c in cols)))
+    grouped = {family: [] for family in families}
+    extra = []
+    for col in cols:
+        family = _field_family(col, kind)
+        if family in grouped:
+            grouped[family].append(col)
+        else:
+            extra.append(col)
+    ordered = []
+    for family in families:
+        ordered.extend(sorted(grouped[family], key=lambda name: _slot_index(name, kind)))
+    ordered.extend(extra)
+    return ordered
+
+def _reset_subdir(output_dir: Path, name: str) -> Path:
+    path = Path(output_dir) / name
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _remove_legacy_time_dir(dataset_dir: Path) -> None:
+    legacy = Path(dataset_dir) / "time"
+    if legacy.exists():
+        shutil.rmtree(legacy)
 
 
 def write_sequence_tables(
     df: pd.DataFrame,
     output_dir: Path,
     id_cols: list[str],
+    kind: str,
 ) -> list[Path]:
     if df.empty:
         return []
     keep_ids = [c for c in id_cols if c in df.columns]
     written = []
-    for family, cols in _sequence_families(df).items():
+    for family, cols in _sequence_families(df, kind).items():
         sub = df.loc[:, keep_ids + cols].copy()
         path = Path(output_dir) / f"{family}.csv"
         sub.to_csv(path, index=False)
@@ -368,24 +495,21 @@ def _days_between(start: datetime, end: datetime) -> float:
     return (end - start).total_seconds() / 86400.0
 
 
-def _norm_by_last_days(dt: datetime, t_start: datetime, last_days: float) -> float | None:
-    if last_days is None:
-        return None
-    if last_days == 0:
-        return None
-    return _days_between(t_start, dt) / last_days
+def _last_time_fields(src) -> tuple[float | None, str]:
+    vital_status = _normalize_vital_status(src.get("vital_status"))
+    if _is_dead(vital_status):
+        return _to_float(src.get("days_to_death")), "demographic.days_to_death"
+    last_days = _to_float(src.get("days_to_last_follow_up"))
+    last_source = str(src.get("ground_truth_source") or "diagnoses.days_to_last_follow_up")
+    return last_days, last_source
 
 
-def _update_columns(df: pd.DataFrame) -> list[str]:
-    return [c for c in df.columns if _is_update_column(c)]
-
-
-def build_normalized_update_frame(df: pd.DataFrame) -> pd.DataFrame:
+def build_normalized_write_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Keep every submission slot. 1 = last_time_days; values may exceed 1."""
     if df.empty:
         return pd.DataFrame()
 
-    update_cols = _update_columns(df)
+    update_cols = _ordered_slot_columns(df, WRITE_KIND)
     rows = []
     for _, src in df.iterrows():
         parsed = {}
@@ -399,14 +523,7 @@ def build_normalized_update_frame(df: pd.DataFrame) -> pd.DataFrame:
         if not all_times:
             continue
 
-        vital_status = _normalize_vital_status(src.get("vital_status"))
-        if _is_dead(vital_status):
-            last_days = _to_float(src.get("days_to_death"))
-            last_source = "demographic.days_to_death"
-        else:
-            last_days = _to_float(src.get("days_to_last_follow_up"))
-            last_source = str(src.get("ground_truth_source") or "diagnoses.days_to_last_follow_up")
-
+        last_days, last_source = _last_time_fields(src)
         t_min = min(all_times)
         t_max = max(all_times)
         row = OrderedDict(
@@ -414,7 +531,7 @@ def build_normalized_update_frame(df: pd.DataFrame) -> pd.DataFrame:
                 ("dataset", src.get("dataset", "")),
                 ("submitter_id", src.get("submitter_id", "")),
                 ("case_id", src.get("case_id", "")),
-                ("vital_status", vital_status),
+                ("vital_status", _normalize_vital_status(src.get("vital_status"))),
                 ("last_time_days", last_days),
                 ("last_time_source", last_source),
                 ("first_updated_datetime", _format_datetime(t_min)),
@@ -424,14 +541,102 @@ def build_normalized_update_frame(df: pd.DataFrame) -> pd.DataFrame:
         )
         for col in update_cols:
             dt = parsed.get(col)
-            if dt is None:
+            if dt is None or last_days in (None, 0):
                 row[col] = ""
                 continue
-            norm = _norm_by_last_days(dt, t_min, last_days)
-            row[col] = "" if norm is None else round(float(norm), 6)
+            row[col] = round(_days_between(t_min, dt) / last_days, 6)
         rows.append(row)
     return pd.DataFrame(rows)
 
+
+def build_normalized_record_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    record_cols = _ordered_slot_columns(df, RECORD_KIND)
+    rows = []
+    for _, src in df.iterrows():
+        parsed = {}
+        for col in record_cols:
+            days = _to_float(src.get(col))
+            if days is None:
+                continue
+            parsed[col] = days
+        if not parsed:
+            continue
+
+        last_days, last_source = _last_time_fields(src)
+        row = OrderedDict(
+            [
+                ("dataset", src.get("dataset", "")),
+                ("submitter_id", src.get("submitter_id", "")),
+                ("case_id", src.get("case_id", "")),
+                ("vital_status", _normalize_vital_status(src.get("vital_status"))),
+                ("last_time_days", last_days),
+                ("last_time_source", last_source),
+                ("n_records", len(parsed)),
+            ]
+        )
+        for col in record_cols:
+            days = parsed.get(col)
+            if days is None or last_days in (None, 0):
+                row[col] = ""
+                continue
+            row[col] = round(days / last_days, 6)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _slot_has_time(slot: dict, kind: str) -> bool:
+    if kind == WRITE_KIND:
+        return slot.get("write_dt") is not None
+    return slot.get("record_days") is not None
+
+
+def _slot_path(family: str, index: int) -> str:
+    base = FAMILY_PATHS.get(family, family)
+    if base.endswith("[]"):
+        return f"{base[:-2]}[{index}]"
+    return f"{family}[{index}]"
+
+
+def build_missing_tables(records: list[dict], kind: str) -> OrderedDict:
+    max_lens = OrderedDict((family, 0) for family in TIME_FAMILIES)
+    for record in records:
+        slots = record.get("_slots") or {}
+        for family in TIME_FAMILIES:
+            max_lens[family] = max(max_lens[family], len(slots.get(family) or []))
+
+    tables: OrderedDict[str, pd.DataFrame] = OrderedDict()
+    for family in TIME_FAMILIES:
+        n_slots = max_lens[family]
+        if n_slots == 0:
+            continue
+        rows = []
+        for idx in range(1, n_slots + 1):
+            present = 0
+            covered = 0
+            for record in records:
+                values = (record.get("_slots") or {}).get(family) or []
+                if idx > len(values):
+                    continue
+                present += 1
+                if _slot_has_time(values[idx - 1], kind):
+                    covered += 1
+            rows.append(
+                OrderedDict(
+                    [
+                        ("slot", idx),
+                        ("path", _slot_path(family, idx)),
+                        ("covered", covered),
+                        ("present", present),
+                        ("excluded", present - covered),
+                        ("ratio", f"{covered}/{present}"),
+                    ]
+                )
+            )
+        tables[family] = pd.DataFrame(rows)
+    return tables
 
 def _setup_matplotlib():
     import matplotlib
@@ -482,31 +687,12 @@ def plot_patient_time_stats(df: pd.DataFrame, output_dir: Path, dataset_name: st
     return path
 
 
-def _ordered_update_columns(df: pd.DataFrame) -> list[str]:
-    cols = _update_columns(df)
-    families = _ordered_fields(list(dict.fromkeys(_field_family(c) for c in cols)))
-    grouped = {family: [] for family in families}
-    extra = []
-    for col in cols:
-        family = _field_family(col)
-        if family in grouped:
-            grouped[family].append(col)
-        else:
-            extra.append(col)
-    ordered = []
-    for family in families:
-        ordered.extend(grouped[family])
-    ordered.extend(extra)
-    return ordered
-
-
 def _column_colors(plt, columns: list[str]) -> dict[str, tuple]:
     n = max(len(columns), 1)
     cmap = plt.get_cmap("tab20" if n <= 20 else "hsv")
     if n == 1:
         return {columns[0]: cmap(0.0)}
     return {col: cmap(i / max(n - 1, 1)) for i, col in enumerate(columns)}
-
 
 
 def _apply_decade_yaxis(ax, values) -> None:
@@ -531,22 +717,28 @@ def _apply_decade_yaxis(ax, values) -> None:
     ax.axhline(1.0, color="#444444", linestyle="--", linewidth=1.2, alpha=0.95, xmin=0.0, xmax=1.0)
     ax.set_ylabel("Normalized update time (x10; 1 = clinical end)")
 
-def plot_normalized_update_time(wide: pd.DataFrame, output_dir: Path, dataset_name: str) -> Path | None:
+
+def plot_normalized_update_time(
+    wide: pd.DataFrame,
+    output_dir: Path,
+    dataset_name: str,
+    kind: str,
+) -> Path | None:
     if wide.empty:
         return None
 
     plt = _setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
     plot_df = wide.copy()
-    if "last_updated_datetime" in plot_df.columns:
-        plot_df = plot_df.sort_values(["last_updated_datetime", "submitter_id"]).reset_index(drop=True)
+    sort_cols = [c for c in ("last_updated_datetime", "submitter_id") if c in plot_df.columns]
+    if sort_cols:
+        plot_df = plot_df.sort_values(sort_cols).reset_index(drop=True)
     else:
         plot_df = plot_df.sort_values("submitter_id").reset_index(drop=True)
     plot_df["patient_index"] = range(1, len(plot_df) + 1)
 
-    update_cols = _ordered_update_columns(plot_df)
     plotted_cols = []
-    for col in update_cols:
+    for col in _ordered_slot_columns(plot_df, kind):
         y = pd.to_numeric(plot_df[col], errors="coerce")
         if y.notna().sum() == 0:
             continue
@@ -583,16 +775,20 @@ def plot_normalized_update_time(wide: pd.DataFrame, output_dir: Path, dataset_na
     return path
 
 
-def plot_normalized_update_time_boxplot(wide: pd.DataFrame, output_dir: Path, dataset_name: str) -> Path | None:
+def plot_normalized_update_time_boxplot(
+    wide: pd.DataFrame,
+    output_dir: Path,
+    dataset_name: str,
+    kind: str,
+) -> Path | None:
     if wide.empty:
         return None
 
     plt = _setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
-    update_cols = _ordered_update_columns(wide)
     data = []
     labels = []
-    for col in update_cols:
+    for col in _ordered_slot_columns(wide, kind):
         vals = pd.to_numeric(wide[col], errors="coerce").dropna().tolist()
         if not vals:
             continue
@@ -618,7 +814,7 @@ def plot_normalized_update_time_boxplot(wide: pd.DataFrame, output_dir: Path, da
     )
     ys = [v for vals in data for v in vals]
     _apply_decade_yaxis(ax, ys)
-    ax.plot([], [], "o", color="#222222", markersize=4.5, label="离群样本")
+    ax.plot([], [], "o", color="#222222", markersize=4.5, label="outlier")
     ax.legend(loc="upper right", frameon=False, fontsize=9)
     ax.set_title(f"{dataset_name} each update slot vs clinical end")
     ax.tick_params(axis="x", labelrotation=45)
@@ -630,7 +826,6 @@ def plot_normalized_update_time_boxplot(wide: pd.DataFrame, output_dir: Path, da
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return path
-
 
 def _subplot_grid(n_axes: int) -> tuple[int, int]:
     if n_axes <= 1:
@@ -645,22 +840,26 @@ def _subplot_grid(n_axes: int) -> tuple[int, int]:
     return n_rows, n_cols
 
 
-def plot_sequence_family_times(wide: pd.DataFrame, output_dir: Path, dataset_name: str) -> list[Path]:
-    """One PNG per sequence family. Each updated slot is a subplot; x = sample index."""
+def plot_sequence_family_times(
+    wide: pd.DataFrame,
+    output_dir: Path,
+    dataset_name: str,
+    kind: str,
+) -> list[Path]:
+    """One PNG per sequence family. Each slot is a subplot; x = sample index."""
     if wide.empty:
         return []
 
     plt = _setup_matplotlib()
-    import numpy as np
-
     output_dir.mkdir(parents=True, exist_ok=True)
     plot_df = wide.reset_index(drop=True).copy()
     plot_df["patient_index"] = range(1, len(plot_df) + 1)
     x = plot_df["patient_index"].to_numpy()
     n_patients = len(plot_df)
     written = []
+    suffix = "updated" if kind == WRITE_KIND else "record"
 
-    for family, cols in _sequence_families(plot_df).items():
+    for family, cols in _sequence_families(plot_df, kind).items():
         plotted_cols = []
         ys_all = []
         for col in cols:
@@ -690,8 +889,8 @@ def plot_sequence_family_times(wide: pd.DataFrame, output_dir: Path, dataset_nam
             ax = flat[i]
             y = pd.to_numeric(plot_df[col], errors="coerce")
             ax.plot(x, y, color="#4C78A8", linewidth=0.9, alpha=0.9)
-            slot = col.rsplit("_updated", 1)[-1]
-            ax.set_title(f"updated{slot}", fontsize=9)
+            slot = col.rsplit(f"_{suffix}", 1)[-1]
+            ax.set_title(f"{suffix}{slot}", fontsize=9)
             ax.axhline(1.0, color="#444444", linestyle="--", linewidth=0.9, alpha=0.8)
             ax.set_xlim(1, max(n_patients, 1))
             if use_decade:
@@ -715,6 +914,31 @@ def plot_sequence_family_times(wide: pd.DataFrame, output_dir: Path, dataset_nam
         plt.close(fig)
         written.append(path)
     return written
+
+
+def plot_missing_family(df: pd.DataFrame, output_dir: Path, family: str, dataset_name: str) -> Path | None:
+    if df.empty:
+        return None
+    plt = _setup_matplotlib()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    labels = [str(v) for v in df["path"].tolist()]
+    covered = pd.to_numeric(df["covered"], errors="coerce").fillna(0).tolist()
+    present = pd.to_numeric(df["present"], errors="coerce").fillna(0).tolist()
+    x = range(len(labels))
+    fig_w = max(8.0, min(22.0, 1.2 * len(labels) + 3))
+    fig, ax = plt.subplots(figsize=(fig_w, 5.2))
+    ax.bar(x, present, color="#D9D9D9", label="present")
+    ax.bar(x, covered, color="#4C78A8", label="timed")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Patients")
+    ax.set_title(f"{dataset_name} {family} slot coverage")
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    path = Path(output_dir) / f"{family}.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
 
 
 def plot_patient_time_stats_all(dataset_frames: list[tuple[str, pd.DataFrame]], output_dir: Path) -> Path | None:
@@ -751,6 +975,54 @@ def _cleanup_stale_outputs(output_dir: Path) -> None:
         if path.exists():
             path.unlink()
 
+def _write_kind_outputs(
+    records: list[dict],
+    output_dir: Path,
+    dataset_name: str,
+    kind: str,
+) -> pd.DataFrame:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_outputs(output_dir)
+    rows = _expand_kind_columns(records, kind)
+    df = pd.DataFrame(rows)
+
+    csv_path = output_dir / "patient_time_stats.csv"
+    df.to_csv(csv_path, index=False)
+    png_path = plot_patient_time_stats(df, output_dir, dataset_name)
+    print(f"  {kind} patient_time_stats: {csv_path}")
+    print(f"  {kind} patient_time_stats: {png_path}")
+
+    seq_dir = _reset_subdir(output_dir, "sequences")
+    for path in write_sequence_tables(df, seq_dir, SEQUENCE_ID_COLS, kind):
+        print(f"  {kind} sequence table: {path}")
+
+    if kind == WRITE_KIND:
+        wide = build_normalized_write_frame(df)
+    else:
+        wide = build_normalized_record_frame(df)
+    if not wide.empty:
+        norm_csv = output_dir / "normalized_update_time.csv"
+        wide.to_csv(norm_csv, index=False)
+        norm_png = plot_normalized_update_time(wide, output_dir, dataset_name, kind)
+        box_png = plot_normalized_update_time_boxplot(wide, output_dir, dataset_name, kind)
+        print(f"  {kind} normalized_update_time: {norm_csv}")
+        if norm_png is not None:
+            print(f"  {kind} normalized_update_time: {norm_png}")
+        if box_png is not None:
+            print(f"  {kind} normalized_update_time: {box_png}")
+        for path in plot_sequence_family_times(wide, seq_dir, dataset_name, kind):
+            print(f"  {kind} sequence plot: {path}")
+
+    miss_dir = _reset_subdir(output_dir, "missing")
+    for family, miss_df in build_missing_tables(records, kind).items():
+        miss_csv = miss_dir / f"{family}.csv"
+        miss_df.to_csv(miss_csv, index=False)
+        print(f"  {kind} missing table: {miss_csv}")
+        miss_png = plot_missing_family(miss_df, miss_dir, family, dataset_name)
+        if miss_png is not None:
+            print(f"  {kind} missing plot: {miss_png}")
+    return df
+
 
 def analyze_dataset_times(
     json_paths,
@@ -760,36 +1032,13 @@ def analyze_dataset_times(
 ) -> pd.DataFrame:
     print("######## Dataset: {} ########".format(dataset_name))
     cases = load_clinical_cases(json_paths, project_ids=project_ids)
-    df = build_patient_time_frame(cases, dataset_name=dataset_name)
+    records = [extract_patient_time_record(case, dataset_name=dataset_name) for case in cases]
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    _cleanup_stale_outputs(output_dir)
-
-    csv_path = output_dir / "patient_time_stats.csv"
-    df.to_csv(csv_path, index=False)
-    png_path = plot_patient_time_stats(df, output_dir, dataset_name)
-    print(f"  patient_time_stats: {csv_path}")
-    print(f"  patient_time_stats: {png_path}")
-
-    seq_dir = _reset_sequence_dir(output_dir)
-    for path in write_sequence_tables(df, seq_dir, SEQUENCE_ID_COLS):
-        print(f"  sequence table: {path}")
-
-    wide = build_normalized_update_frame(df)
-    if not wide.empty:
-        norm_csv = output_dir / "normalized_update_time.csv"
-        wide.to_csv(norm_csv, index=False)
-        norm_png = plot_normalized_update_time(wide, output_dir, dataset_name)
-        box_png = plot_normalized_update_time_boxplot(wide, output_dir, dataset_name)
-        print(f"  normalized_update_time: {norm_csv}")
-        if norm_png is not None:
-            print(f"  normalized_update_time: {norm_png}")
-        if box_png is not None:
-            print(f"  normalized_update_time: {box_png}")
-        for path in plot_sequence_family_times(wide, seq_dir, dataset_name):
-            print(f"  sequence plot: {path}")
-    return df
-
+    dataset_dir = Path(output_dir)
+    _remove_legacy_time_dir(dataset_dir)
+    write_df = _write_kind_outputs(records, dataset_dir / "time_write", dataset_name, WRITE_KIND)
+    _write_kind_outputs(records, dataset_dir / "time_record", dataset_name, RECORD_KIND)
+    return write_df
 
 def _synthetic_cases() -> list[dict]:
     alive = {
@@ -805,19 +1054,59 @@ def _synthetic_cases() -> list[dict]:
         },
         "diagnoses": [
             {
+                "days_to_diagnosis": 0,
                 "days_to_last_follow_up": 120,
                 "year_of_diagnosis": 2023,
                 "updated_datetime": "2024-03-01T00:00:00-06:00",
                 "treatments": [
-                    {"updated_datetime": "2024-03-02T00:00:00-06:00"},
-                    {"updated_datetime": "2024-03-03T00:00:00-06:00"},
+                    {
+                        "days_to_treatment_start": 10,
+                        "updated_datetime": "2024-03-02T00:00:00-06:00",
+                    },
+                    {
+                        "timepoint_category": "Preoperative",
+                        "updated_datetime": "2024-03-03T00:00:00-06:00",
+                    },
+                    {
+                        "timepoint_category": "Postoperative",
+                    },
+                ],
+                "pathology_details": [
+                    {
+                        "days_to_pathology_detail": 2,
+                        "updated_datetime": "2024-03-04T00:00:00-06:00",
+                    },
+                    {
+                        "timepoint_category": "Initial Diagnosis",
+                    },
                 ],
             }
         ],
         "follow_ups": [
-            {"days_to_follow_up": 80, "updated_datetime": "2024-04-01T00:00:00-06:00"},
-            {"days_to_follow_up": 120, "updated_datetime": "2024-06-01T00:00:00-06:00"},
+            {
+                "days_to_follow_up": 80,
+                "updated_datetime": "2024-04-01T00:00:00-06:00",
+                "molecular_tests": [
+                    {"days_to_test": 70, "updated_datetime": "2024-04-02T00:00:00-06:00"},
+                    {"updated_datetime": "2024-04-03T00:00:00-06:00"},
+                ],
+                "other_clinical_attributes": [
+                    {
+                        "days_to_comorbidity": 75,
+                        "days_to_risk_factor": 90,
+                        "updated_datetime": "2024-04-04T00:00:00-06:00",
+                    },
+                    {
+                        "updated_datetime": "2024-04-05T00:00:00-06:00",
+                    },
+                ],
+            },
+            {
+                "updated_datetime": "2024-08-01T00:00:00-06:00",
+            },
         ],
+        "exposures": [{"updated_datetime": "2024-07-01T00:00:00-06:00"}],
+        "family_histories": [{"updated_datetime": "2024-08-01T00:00:00-06:00"}],
     }
     dead = {
         "submitter_id": "TCGA-AA-0002",
@@ -832,95 +1121,139 @@ def _synthetic_cases() -> list[dict]:
         },
         "diagnoses": [
             {
+                "days_to_diagnosis": 0,
                 "days_to_last_follow_up": 40,
                 "year_of_diagnosis": 2024,
                 "updated_datetime": "2024-07-01T00:00:00-06:00",
+                "treatments": [
+                    {"days_to_treatment_start": 5, "updated_datetime": "2024-07-02T00:00:00-06:00"},
+                ],
             }
         ],
         "follow_ups": [
-            {"days_to_follow_up": 40, "updated_datetime": "2024-08-01T00:00:00-06:00"},
+            {
+                "days_to_follow_up": 40,
+                "updated_datetime": "2024-09-01T00:00:00-06:00",
+                "molecular_tests": [{}],
+            },
         ],
     }
     return [alive, dead]
 
 
+def _assert_no_ignored_columns(df: pd.DataFrame) -> None:
+    joined = " ".join(str(c) for c in df.columns)
+    for token in ("exposures", "family_histories", "demographic_updated", "updated_datetime"):
+        assert token not in joined
+
+
 def run_self_test() -> None:
     cases = _synthetic_cases()
-    df = build_patient_time_frame(cases, dataset_name="synthetic")
-    assert list(df["submitter_id"]) == ["TCGA-AA-0001", "TCGA-AA-0002"]
-    assert df.loc[0, "ground_truth_time"] == 120
-    assert df.loc[0, "event"] == 0
-    assert df.loc[1, "ground_truth_time"] == 45
-    assert df.loc[1, "event"] == 1
-    assert df.loc[1, "lost_to_followup"] == "Yes"
-    assert "diagnoses_updated1" in df.columns
-    assert "diagnoses_treatments_updated1" in df.columns
-    assert "diagnoses_treatments_updated2" in df.columns
-    assert "follow_ups_updated1" in df.columns
-    assert "follow_ups_updated2" in df.columns
-    assert str(df.loc[0, "diagnoses_treatments_updated2"]).startswith("2024-03-03")
-    follow2 = df.loc[1, "follow_ups_updated2"]
+    records = [extract_patient_time_record(case, dataset_name="synthetic") for case in cases]
+    write_df = pd.DataFrame(_expand_kind_columns(records, WRITE_KIND))
+    record_df = pd.DataFrame(_expand_kind_columns(records, RECORD_KIND))
+
+    assert list(write_df["submitter_id"]) == ["TCGA-AA-0001", "TCGA-AA-0002"]
+    assert write_df.loc[0, "ground_truth_time"] == 120
+    assert write_df.loc[0, "event"] == 0
+    assert write_df.loc[1, "ground_truth_time"] == 45
+    assert write_df.loc[1, "event"] == 1
+    assert write_df.loc[1, "lost_to_followup"] == "Yes"
+    _assert_no_ignored_columns(write_df)
+    _assert_no_ignored_columns(record_df)
+    assert "diagnoses_updated1" in write_df.columns
+    assert "diagnoses_treatments_updated1" in write_df.columns
+    assert "diagnoses_treatments_updated2" in write_df.columns
+    assert "follow_ups_updated1" in write_df.columns
+    assert "follow_ups_updated2" in write_df.columns
+    assert str(write_df.loc[0, "diagnoses_treatments_updated2"]).startswith("2024-03-03")
+    treat3 = write_df.loc[0, "diagnoses_treatments_updated3"]
+    assert treat3 == "" or pd.isna(treat3)
+    follow2 = write_df.loc[1, "follow_ups_updated2"]
     assert follow2 == "" or pd.isna(follow2)
 
-    wide = build_normalized_update_frame(df)
+    assert record_df.loc[0, "diagnoses_record1"] == 0
+    assert record_df.loc[0, "diagnoses_treatments_record1"] == 10
+    assert record_df.loc[0, "diagnoses_treatments_record2"] == 0
+    treat3_days = record_df.loc[0, "diagnoses_treatments_record3"]
+    assert treat3_days == "" or pd.isna(treat3_days)
+    assert record_df.loc[0, "diagnoses_pathology_details_record1"] == 2
+    assert record_df.loc[0, "diagnoses_pathology_details_record2"] == 0
+    assert record_df.loc[0, "follow_ups_record1"] == 80
+    follow2_days = record_df.loc[0, "follow_ups_record2"]
+    assert follow2_days == "" or pd.isna(follow2_days)
+    assert record_df.loc[0, "follow_ups_molecular_tests_record1"] == 70
+    assert record_df.loc[0, "follow_ups_molecular_tests_record2"] == 80
+    assert record_df.loc[0, "follow_ups_other_clinical_attributes_record1"] == 75
+    assert record_df.loc[0, "follow_ups_other_clinical_attributes_record2"] == 80
+
+    wide = build_normalized_write_frame(write_df)
     assert not wide.empty
-    assert "diagnoses_treatments_updated1" in wide.columns
-    assert "diagnoses_treatments_updated2" in wide.columns
-    assert "follow_ups_updated1" in wide.columns
-    assert "follow_ups_updated2" in wide.columns
-    assert wide.loc[0, "last_time_source"] == "diagnoses.days_to_last_follow_up"
     assert float(wide.loc[0, "last_time_days"]) == 120
+    assert wide.loc[0, "last_time_source"] == "diagnoses.days_to_last_follow_up"
     assert wide.loc[1, "last_time_source"] == "demographic.days_to_death"
-    assert float(wide.loc[1, "last_time_days"]) == 45
     assert float(wide.loc[0, "follow_ups_updated1"]) < float(wide.loc[0, "follow_ups_updated2"])
     assert float(wide.loc[0, "diagnoses_treatments_updated1"]) < float(wide.loc[0, "diagnoses_treatments_updated2"])
     assert float(wide.loc[0, "follow_ups_updated2"]) > 1.0
-    dead_follow2 = wide.loc[1, "follow_ups_updated2"]
-    assert dead_follow2 == "" or pd.isna(dead_follow2)
     assert float(wide.loc[1, "follow_ups_updated1"]) > 1.0
 
-    out_dir = Path("/tmp") / "time_stats_self_test"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for name in STALE_OUTPUTS:
-        (out_dir / name).write_text("stale")
-    plot_patient_time_stats(df, out_dir, "synthetic")
-    plot_normalized_update_time(wide, out_dir, "synthetic")
-    plot_normalized_update_time_boxplot(wide, out_dir, "synthetic")
-    _cleanup_stale_outputs(out_dir)
-    for name in STALE_OUTPUTS:
-        assert not (out_dir / name).exists()
-    assert (out_dir / "patient_time_stats.png").exists()
-    assert (out_dir / "normalized_update_time.png").exists()
-    assert (out_dir / "normalized_update_time_boxplot.png").exists()
+    rec_wide = build_normalized_record_frame(record_df)
+    assert float(rec_wide.loc[0, "diagnoses_treatments_record1"]) == round(10 / 120, 6)
+    assert float(rec_wide.loc[0, "follow_ups_other_clinical_attributes_record1"]) == round(75 / 120, 6)
+    assert float(rec_wide.loc[0, "follow_ups_molecular_tests_record2"]) == round(80 / 120, 6)
 
-    seq_dir = _reset_sequence_dir(out_dir)
-    raw_paths = write_sequence_tables(df, seq_dir, SEQUENCE_ID_COLS)
-    plot_paths = plot_sequence_family_times(wide, seq_dir, "synthetic")
-    raw_names = {path.name for path in raw_paths}
-    plot_names = {path.name for path in plot_paths}
-    assert raw_names == {"diagnoses.csv", "diagnoses_treatments.csv", "follow_ups.csv"}
-    assert plot_names == {"diagnoses.png", "diagnoses_treatments.png", "follow_ups.png"}
-    assert not any(path.name.endswith("_normalized.csv") for path in seq_dir.glob("*.csv"))
-    diagnoses = pd.read_csv(seq_dir / "diagnoses.csv")
+    write_missing = build_missing_tables(records, WRITE_KIND)
+    record_missing = build_missing_tables(records, RECORD_KIND)
+    treat_write = write_missing["diagnoses_treatments"]
+    treat_record = record_missing["diagnoses_treatments"]
+    assert list(treat_write["ratio"])[:3] == ["2/2", "1/1", "0/1"]
+    assert list(treat_record["ratio"])[:3] == ["2/2", "1/1", "0/1"]
+    follow_record = record_missing["follow_ups"]
+    assert "1/2" in set(follow_record["ratio"]) or follow_record.loc[1, "ratio"] == "0/1"
+    assert follow_record.loc[0, "ratio"] == "2/2"
+    assert follow_record.loc[1, "ratio"] == "0/1"
+
+    out_root = Path("/tmp") / "time_stats_self_test"
+    if out_root.exists():
+        shutil.rmtree(out_root)
+    out_root.mkdir(parents=True, exist_ok=True)
+    legacy = out_root / "time"
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "stale.csv").write_text("stale")
+    write_dir = out_root / "time_write"
+    record_dir = out_root / "time_record"
+    write_dir.mkdir(parents=True, exist_ok=True)
+    for name in STALE_OUTPUTS:
+        (write_dir / name).write_text("stale")
+    _write_kind_outputs(records, write_dir, "synthetic", WRITE_KIND)
+    _write_kind_outputs(records, record_dir, "synthetic", RECORD_KIND)
+    _remove_legacy_time_dir(out_root)
+    for name in STALE_OUTPUTS:
+        assert not (write_dir / name).exists()
+    assert not legacy.exists()
+    assert (write_dir / "patient_time_stats.png").exists()
+    assert (write_dir / "normalized_update_time.png").exists()
+    assert (write_dir / "normalized_update_time_boxplot.png").exists()
+    assert (record_dir / "patient_time_stats.png").exists()
+    assert (record_dir / "normalized_update_time.png").exists()
+    assert (write_dir / "sequences" / "diagnoses.csv").exists()
+    assert (record_dir / "sequences" / "diagnoses.csv").exists()
+    assert (write_dir / "missing" / "diagnoses_treatments.csv").exists()
+    assert (record_dir / "missing" / "follow_ups.csv").exists()
+    diagnoses = pd.read_csv(write_dir / "sequences" / "diagnoses.csv")
     assert list(diagnoses.columns) == [
         "dataset",
         "submitter_id",
         "case_id",
         "diagnoses_updated1",
     ]
-    assert "follow_ups_updated1" not in diagnoses.columns
-    treatments = pd.read_csv(seq_dir / "diagnoses_treatments.csv")
-    assert list(treatments.columns) == [
-        "dataset",
-        "submitter_id",
-        "case_id",
-        "diagnoses_treatments_updated1",
-        "diagnoses_treatments_updated2",
-    ]
-    treat2 = treatments.loc[treatments["submitter_id"] == "TCGA-AA-0002", "diagnoses_treatments_updated2"].iloc[0]
-    assert pd.isna(treat2) or treat2 == ""
-    print(f"self-test passed: {len(df)} rows, {len(_update_columns(wide))} submission columns")
-
+    treatments = pd.read_csv(record_dir / "sequences" / "diagnoses_treatments.csv")
+    assert "diagnoses_treatments_record2" in treatments.columns
+    print(
+        f"self-test passed: {len(write_df)} rows, "
+        f"{len(_slot_columns(write_df, WRITE_KIND))} write columns, "
+        f"{len(_slot_columns(record_df, RECORD_KIND))} record columns"
+    )
 
 def run(args):
     if args.self_test:
@@ -948,7 +1281,7 @@ def run(args):
             df = analyze_dataset_times(
                 json_paths=get_dataset_clinic_files(name, datasets),
                 dataset_name=name,
-                output_dir=output_root / name / "time",
+                output_dir=output_root / name,
                 project_ids=get_dataset_project_ids(name, datasets),
             )
             frames.append((name, df))
@@ -963,7 +1296,7 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="统计每个患者的生存/随访时间，以及按最后更新时间归一化后的字段提交早晚",
+        description="统计每个患者的生存/随访时间，以及 t_write / t_record 实体时间",
     )
     parser.add_argument(
         "--dataset",
@@ -975,14 +1308,17 @@ def main():
     parser.add_argument(
         "--out_root",
         default=str(OUTPUT_ROOT),
-        help="输出根目录，每个数据集写到 {out_root}/{dataset}/",
+        help="输出根目录，每个数据集写到 {out_root}/{dataset}/time_write 和 time_record",
     )
     parser.add_argument(
         "--self_test",
         action="store_true",
-        help="用两条合成病例跑一遍抽取和出图，不读真实 JSON",
+        help="用合成病例跑一遍抽取和出图，不读真实 JSON",
     )
-    run(parser.parse_args())
+    args = parser.parse_args()
+    if args.dataset == "":
+        args.dataset = None
+    run(args)
 
 
 if __name__ == "__main__":

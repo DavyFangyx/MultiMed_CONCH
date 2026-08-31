@@ -30,6 +30,16 @@ datasets.json + clinical JSON
 - `outputs/`：只放 Field Bank prompt / embedding 和 greedy 产物
 - `Clinic_Analyzer/`：clinic embedding 评估
 
+独立的人工方案通路在 `A_pipeline/`，不走上面这条链。它默认读 `A_pipeline/datasets.json` 里 lizhe 的 9 个 `clinical.cart`，不是 B 的 33 份 ClinicDatasets。L0-L5 / D0-D5 入口：
+
+```bash
+python projects/A_pipeline/run.py json2prompt --dataset TCGA-READ --scheme L0
+python projects/A_pipeline/run.py pipeline --dataset TCGA-READ --scheme all
+python projects/A_pipeline/run.py baseline --dataset TCGA-READ --scheme all
+```
+
+产物写到 `outputs/{dataset}/A_manual/`，详见 [A_pipeline/README.md](A_pipeline/README.md)。
+
 ## 公共约定
 
 ```bash
@@ -61,7 +71,7 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main
 ```bash
 python projects/scripts/run_scan_fields.py --dataset all
 python projects/scripts/run_field_stats.py --dataset all
-python projects/scripts/run_field_filter.py --dataset all --write_templates
+python projects/scripts/run_field_filter.py --dataset all --write_templates --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
 python projects/scripts/run_time_stats.py --dataset all
 ```
 
@@ -74,22 +84,24 @@ rawdata_stats/{dataset}/kept_fields.json
 rawdata_stats/{dataset}/fliter_log/
   exclusion_log.csv
   field_registry.csv
-rawdata_stats/{dataset}/time/
+rawdata_stats/{dataset}/time_write/ and time_record/
   patient_time_stats.csv
   patient_time_stats.png
   normalized_update_time.csv
   normalized_update_time.png
   normalized_update_time_boxplot.png
-  sequences/
-    {family}.csv
-    {family}.png
+  sequences/{family}.csv
+  sequences/{family}.png
+  missing/{family}.csv
+  missing/{family}.png
 rawdata_stats/_shared/
   field_stats.csv
   kept_fields.json
   patient_time_stats_all.png
+rawdata_stats/TIME_CRITERIA.md
 ```
 
-Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_follow_up`。
+Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_follow_up`。`t_write` / `t_record` 两张实现表见 `rawdata_stats/TIME_CRITERIA.md`。
 
 ---
 

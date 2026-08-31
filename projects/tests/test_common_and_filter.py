@@ -81,6 +81,135 @@ def test_filter_rules():
     assert timepoint("diagnoses[].ajcc_pathologic_t") == "baseline"
 
 
+def test_filter_rules_new_r0_r1_and_thresholds():
+    lost = pd.Series(
+        {
+            "field_path": "lost_to_followup",
+            "coverage": 0.9,
+            "unique_count": 2,
+            "mode_share": 0.5,
+        }
+    )
+    rule, _ = apply_rules(lost)
+    assert rule == "R0_label_leak"
+
+    follow_up = pd.Series(
+        {
+            "field_path": "follow_ups[].disease_response",
+            "coverage": 0.99,
+            "unique_count": 2,
+            "mode_share": 0.6,
+        }
+    )
+    rule, _ = apply_rules(follow_up)
+    assert rule == "R0_label_leak"
+
+    cycles = pd.Series(
+        {
+            "field_path": "diagnoses[].treatments[].number_of_cycles",
+            "coverage": 0.8,
+            "unique_count": 5,
+            "mode_share": 0.4,
+        }
+    )
+    rule, _ = apply_rules(cycles)
+    assert rule == "R0_label_leak"
+
+    figo = pd.Series(
+        {
+            "field_path": "diagnoses[].figo_staging_edition_year",
+            "coverage": 0.8,
+            "unique_count": 3,
+            "mode_share": 0.4,
+        }
+    )
+    rule, _ = apply_rules(figo)
+    assert rule == "R1_admin"
+
+    review = pd.Series(
+        {
+            "field_path": "diagnoses[].pathology_details[].consistent_pathology_review",
+            "coverage": 0.9,
+            "unique_count": 2,
+            "mode_share": 0.5,
+        }
+    )
+    rule, _ = apply_rules(review)
+    assert rule == "R1_admin"
+
+    coverage_drop = pd.Series(
+        {
+            "field_path": "diagnoses[].ajcc_pathologic_t",
+            "coverage": 0.4,
+            "unique_count": 5,
+            "mode_share": 0.4,
+        }
+    )
+    rule, _ = apply_rules(coverage_drop, min_coverage=0.5)
+    assert rule == "R3_coverage"
+
+    unique_drop = pd.Series(
+        {
+            "field_path": "diagnoses[].ajcc_pathologic_t",
+            "coverage": 0.9,
+            "unique_count": 3,
+            "mode_share": 0.4,
+        }
+    )
+    rule, _ = apply_rules(unique_drop, min_unique=4)
+    assert rule == "R4_degenerate"
+
+    mode_drop = pd.Series(
+        {
+            "field_path": "diagnoses[].ajcc_pathologic_t",
+            "coverage": 0.9,
+            "unique_count": 3,
+            "mode_share": 0.8,
+        }
+    )
+    rule, _ = apply_rules(mode_drop, max_mode_share=0.7)
+    assert rule == "R4_degenerate"
+
+
+def test_filter_rules_r5_drop_keep():
+    stage = pd.Series(
+        {
+            "field_path": "diagnoses[].ajcc_pathologic_stage",
+            "coverage": 0.9,
+            "unique_count": 5,
+            "mode_share": 0.4,
+        }
+    )
+    rule, trigger = apply_rules(stage)
+    assert rule == "R5_derivable"
+    assert "ajcc_pathologic_t" in trigger
+    assert "ajcc_pathologic_n" in trigger
+    assert "ajcc_pathologic_m" in trigger
+
+    t_field = pd.Series(
+        {
+            "field_path": "diagnoses[].ajcc_pathologic_t",
+            "coverage": 0.9,
+            "unique_count": 5,
+            "mode_share": 0.4,
+        }
+    )
+    rule, _ = apply_rules(t_field)
+    assert rule is None
+
+    age_index = pd.Series(
+        {
+            "field_path": "demographic.age_at_index",
+            "coverage": 0.9,
+            "unique_count": 20,
+            "mode_share": 0.1,
+        }
+    )
+    rule, trigger = apply_rules(age_index)
+    assert rule == "R5_derivable"
+    assert "age_at_diagnosis" in trigger
+
+
 def test_infer_type_stage_vs_class():
     assert infer_type("ajcc_pathologic_t", ["T1", "T2", "T3", "T4"], 4) == "ordinal_stage"
     assert infer_type("ajcc_clinical_stage", ["Stage I", "Stage II", "Stage IIIA"], 3) == "ordinal_stage"
@@ -123,6 +252,8 @@ if __name__ == "__main__":
     test_extract_path_and_primary_diagnosis()
     test_missingness_three_state()
     test_filter_rules()
+    test_filter_rules_new_r0_r1_and_thresholds()
+    test_filter_rules_r5_drop_keep()
     test_infer_type_stage_vs_class()
     test_dataset_field_bank_dir_defaults_to_prompt()
     test_dataset_field_bank_dir_onehot()

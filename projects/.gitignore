@@ -28,8 +28,12 @@ Clinic_Analyzer/configs/running/**
 !templates/
 !templates/**/*.csv
 !templates/**/*.json
+!A_pipeline/templates/
+!A_pipeline/templates/**/*.csv
+!A_pipeline/templates/**/*.json
 !outputs/README.md
 !rawdata_stats/README.md
+!rawdata_stats/TIME_CRITERIA.md
 # Generated Field Bank tables, filled per dataset
 templates/field_bank/
 templates/field_bank/**

@@ -1,0 +1,98 @@
+{
+  "说明": "R0/R1/R5 名单型筛选。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。",
+  "R0_label_leak": {
+    "leaves": [
+      "state",
+      "lost_to_followup"
+    ],
+    "substrings": [
+      "vital_status",
+      "days_to_death",
+      "year_of_death",
+      "days_to_last_follow_up",
+      "days_to_last_known_disease_status",
+      "last_known_disease_status",
+      "progression_or_recurrence",
+      "days_to_recurrence",
+      "days_to_progression",
+      "treatment_or_therapy",
+      "days_to_treatment_start",
+      "days_to_treatment_end",
+      "treatment_outcome",
+      "cause_of_death",
+      "days_to_diagnosis"
+    ],
+    "path_contains": [
+      "follow_ups"
+    ],
+    "path_suffixes": [
+      "treatments[].number_of_cycles",
+      "treatments[].number_of_fractions",
+      "treatments[].regimen_or_line_of_therapy",
+      "treatments[].timepoint_category",
+      "treatments[].treatment_type_administered"
+    ],
+    "leaf_startswith": [
+      "days_to_"
+    ],
+    "except_leaves": [
+      "days_to_birth"
+    ]
+  },
+  "R1_admin": {
+    "leaves": [
+      "submitter_id",
+      "case_id",
+      "updated_datetime",
+      "created_datetime",
+      "project_id",
+      "disease_type",
+      "primary_site",
+      "classification_of_tumor",
+      "consent_type",
+      "tumor_of_origin",
+      "consistent_pathology_review",
+      "figo_staging_edition_year"
+    ],
+    "leaf_endswith": [
+      "_id"
+    ],
+    "container_leaves": [
+      "demographic",
+      "diagnoses",
+      "follow_ups",
+      "treatments",
+      "pathology_details",
+      "exposures",
+      "family_histories",
+      "project",
+      "molecular_tests",
+      "other_clinical_attributes"
+    ]
+  },
+  "R5_derivable": {
+    "说明": "drop 是实际删除名单。keep 是语义重复后留下的字段，筛选只读 drop，keep 写入 exclusion_log。",
+    "groups": [
+      {
+        "drop": ["age_at_index", "days_to_birth"],
+        "keep": ["age_at_diagnosis"],
+        "note": "age can be derived from diagnoses.age_at_diagnosis"
+      },
+      {
+        "drop": ["ajcc_pathologic_stage"],
+        "keep": ["ajcc_pathologic_t", "ajcc_pathologic_n", "ajcc_pathologic_m"],
+        "note": "composite stage duplicates T/N/M"
+      },
+      {
+        "drop": ["ajcc_staging_system_edition"],
+        "keep": [],
+        "note": "not patient-level / not comparable"
+      },
+      {
+        "drop": ["year_of_diagnosis"],
+        "keep": [],
+        "note": "administrative censoring confounder"
+      }
+    ]
+  }
+}

@@ -15,6 +15,7 @@ DEFAULT_JSON_PATH = (
 DEFAULT_DATASETS_CONFIG = str(PROJECT_ROOT / "datasets.json")
 DEFAULT_CKPT = str(WORKSPACE_ROOT / "CONCH/pytorch_model.bin")
 DEFAULT_JSON_FIELD_DICT = PROJECT_ROOT / "templates" / "field_labels.json"
+DEFAULT_FIELD_FILTER_RULES = PROJECT_ROOT / "templates" / "field_filter_rules.json"
 LEGACY_JSON_FIELD_DICT = PROJECT_ROOT / "templates" / "common" / "json_field_dictionary.json"
 RAWDATA_STATS_ROOT = PROJECT_ROOT / "rawdata_stats"
 RAWDATA_STATS_SHARED_DIR = RAWDATA_STATS_ROOT / "_shared"

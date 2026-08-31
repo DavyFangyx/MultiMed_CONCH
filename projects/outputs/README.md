@@ -18,7 +18,7 @@ outputs/{dataset}/
     FIELD_BANK/embeddings/pt/{patient_id}.pt
     greedy/
 
-outputs/_shared/A_manual/baseline_onehot_mapping_tables/
+A_pipeline/baseline_onehot_mapping_tables/
 ```
 
 预处理：
@@ -35,6 +35,6 @@ rawdata_stats/_shared/
 
 ```text
 templates/field_labels.json
-templates/A_manual/{schemes.json, L0.csv ... L5.csv}
-templates/B_scan/{dataset}/FIELD_BANK.csv
+A_pipeline/templates/{schemes.json, L0.csv ... L5.csv}
+templates/field_bank/{dataset}/FIELD_BANK.csv
 ```
