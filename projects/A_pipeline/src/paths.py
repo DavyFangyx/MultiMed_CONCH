@@ -1,4 +1,4 @@
-"""Paths for the isolated A_manual L0-L5 / D0-D5 pipeline."""
+"""Paths for the isolated A_manual L0-L5 / D0-D5 / HGCN_clinic pipeline."""
 
 from pathlib import Path
 
@@ -31,6 +31,18 @@ def dataset_embedding_dir(dataset_name: str) -> str:
 
 def dataset_baseline_embedding_dir(dataset_name: str, base_root: str) -> str:
     return str(Path(base_root) / dataset_name / "A_manual")
+
+
+def dataset_hgcn_clinic_dir(
+    dataset_name: str,
+    scheme: str | None = None,
+    base_root: str | None = None,
+) -> str:
+    root = Path(base_root) if base_root else (PROJECT_ROOT / "outputs")
+    path = root / dataset_name / "A_manual" / "HGCN_clinic"
+    if scheme:
+        path = path / scheme
+    return str(path)
 
 
 def global_mapping_dir() -> Path:

@@ -100,6 +100,8 @@ PATHOLOGY_BASELINE_TIMEPOINTS = frozenset(
         "prior to diagnosis",
     }
 )
+FOLLOW_UP_NESTED_KEYS = frozenset({"molecular_tests", "other_clinical_attributes"})
+FOLLOW_UP_IDENTITY_KEYS = frozenset({"follow_up_id"})
 
 WRITE_COL_RE = re.compile(r"^(.*)_updated(\d+)$")
 RECORD_COL_RE = re.compile(r"^(.*)_record(\d+)$")
@@ -187,6 +189,25 @@ def _normalize_timepoint(value) -> str:
 
 def _timepoint_in(value, vocab: frozenset[str]) -> bool:
     return _normalize_timepoint(value) in vocab
+
+
+def _is_follow_up_shell(obj: dict) -> bool:
+    """Container-only follow_up: id plus nested tests/attributes, no event content."""
+    if not isinstance(obj, dict):
+        return False
+    if _is_non_empty(obj.get("days_to_follow_up")) or _is_non_empty(obj.get("submitter_id")):
+        return False
+    has_nested = False
+    for key, value in obj.items():
+        if key in FOLLOW_UP_NESTED_KEYS:
+            if isinstance(value, list) and value:
+                has_nested = True
+            continue
+        if key in FOLLOW_UP_IDENTITY_KEYS:
+            continue
+        if _is_non_empty(value):
+            return False
+    return has_nested
 
 
 def _collect_days_to_last_follow_up(case: dict) -> tuple[float | None, str]:
@@ -315,7 +336,8 @@ def _collect_entity_slots(case: dict) -> OrderedDict:
 
     for follow_up in _iter_dict_items(case.get("follow_ups")):
         follow_days = _record_days_follow_up(follow_up)
-        slots["follow_ups"].append(_make_slot(follow_up, follow_days))
+        if not _is_follow_up_shell(follow_up):
+            slots["follow_ups"].append(_make_slot(follow_up, follow_days))
         for molecular in _iter_dict_items(follow_up.get("molecular_tests")):
             slots["follow_ups_molecular_tests"].append(
                 _make_slot(molecular, _record_days_molecular(molecular, follow_days))

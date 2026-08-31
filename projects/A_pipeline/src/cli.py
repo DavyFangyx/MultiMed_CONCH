@@ -1,6 +1,8 @@
-"""CLI for human-defined L0-L5 / D0-D5 scheme workflows."""
+"""CLI for human-defined L0-L5 / D0-D5 / HGCN_clinic scheme workflows."""
 
 import argparse
+
+from pathlib import Path
 
 from .clinical_io import load_clinical_cases
 from .datasets import dataset_jobs, load_dataset_configs, resolve_dataset_names
@@ -12,6 +14,7 @@ from .paths import (
     DEFAULT_OUT_DIR,
     DEFAULT_PROMPT_DIR,
     DEFAULT_TEMPLATE_DIR,
+    dataset_hgcn_clinic_dir,
 )
 
 from .baseline import (
@@ -26,13 +29,14 @@ from .baseline import (
 from .config import load_custom_schemes, resolve_scheme_names
 from .encode import run_encode
 from .json2prompt import run_json2prompt
+from .hgcn_clinic import prepare_hgcn_nominal_mappings, resolve_hgcn_schemes, run_hgcn_clinic
 
 
 def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--scheme",
         default="all",
-        help="方案名；文本流程支持 L0-L5，baseline 流程支持 D0-D5。all 表示运行当前命令支持的全部方案。",
+        help="方案名；文本/HGCN 流程支持 L0-L5，baseline 流程支持 D0-D5。all 表示运行当前命令支持的全部方案。",
     )
     parser.add_argument(
         "--dataset",
@@ -53,10 +57,10 @@ def _add_common_args(parser: argparse.ArgumentParser):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="A_pipeline: JSON → Prompt CSV → CONCH embedding / D0-D5 baseline",
+        description="A_pipeline: JSON → Prompt CSV → CONCH embedding / D0-D5 baseline / HGCN clinic",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "L0-L5 / D0-D5 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
+            "L0-L5 / D0-D5 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
             "产物写到 outputs/{dataset}/A_manual。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
         ),
     )
@@ -66,6 +70,7 @@ def main(argv=None):
         ("encode", "prompt CSV → CONCH embedding"),
         ("pipeline", "json2prompt + encode"),
         ("baseline", "JSON → D0-D5 baseline vectors"),
+        ("hgcn_clinic", "JSON → HGCN clinic graph-node pkl"),
     ]:
         p = sub.add_parser(name, help=help_text)
         _add_common_args(p)
@@ -75,6 +80,11 @@ def main(argv=None):
     if args.cmd == "baseline":
         try:
             schemes = resolve_baseline_schemes(args.scheme)
+        except ValueError as exc:
+            parser.error(str(exc))
+    elif args.cmd == "hgcn_clinic":
+        try:
+            schemes = resolve_hgcn_schemes(args.scheme)
         except ValueError as exc:
             parser.error(str(exc))
     else:
@@ -132,6 +142,12 @@ def main(argv=None):
         )
         print(f"  共享 mapping 已保存: {mapping_dir / 'category_mapping.json'}")
 
+    if args.cmd == "hgcn_clinic":
+        shared_nominal_mappings, shared_mapping_scope = prepare_hgcn_nominal_mappings(
+            jobs,
+            min_count=args.baseline_nominal_min_count,
+        )
+
     for job in jobs:
         if job["name"]:
             print(f"\n######## Dataset: {job['name']} ########")
@@ -172,6 +188,25 @@ def main(argv=None):
                     if shared_nominal_mappings is not None and shared_mapping_scope is not None
                     else None
                 ),
+            )
+
+        if args.cmd == "hgcn_clinic":
+            if job["name"]:
+                hgcn_out_root = dataset_hgcn_clinic_dir(
+                    job["name"],
+                    base_root=args.baseline_out,
+                )
+            else:
+                hgcn_out_root = str(Path(job["out_dir"]) / "HGCN_clinic")
+            run_hgcn_clinic(
+                json_paths=job["json_paths"],
+                schemes=schemes,
+                out_root=hgcn_out_root,
+                project_ids=job["project_ids"],
+                nominal_min_count=args.baseline_nominal_min_count,
+                shared_nominal_mappings=shared_nominal_mappings,
+                mapping_scope=shared_mapping_scope,
+                dataset_name=job["name"],
             )
 
 

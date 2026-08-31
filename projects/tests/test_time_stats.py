@@ -94,3 +94,50 @@ def test_missing_slot_denominator_is_object_presence():
     assert follow_record.loc[1, "path"] == "follow_ups[2]"
     patho = record_missing["diagnoses_pathology_details"]
     assert patho.loc[0, "path"] == "diagnoses[].pathology_details[1]"
+
+
+def test_follow_up_shells_are_skipped():
+    case = {
+        "submitter_id": "TCGA-AA-0003",
+        "case_id": "uuid-3",
+        "demographic": {"vital_status": "Alive"},
+        "diagnoses": [{"days_to_diagnosis": 0, "days_to_last_follow_up": 100}],
+        "follow_ups": [
+            {
+                "days_to_follow_up": 80,
+                "submitter_id": "TCGA-AA-0003_follow_up",
+                "updated_datetime": "2024-04-01T00:00:00-06:00",
+            },
+            {
+                "follow_up_id": "shell-mt",
+                "molecular_tests": [
+                    {"days_to_test": 12, "updated_datetime": "2024-04-02T00:00:00-06:00"}
+                ],
+            },
+            {
+                "ecog_performance_status": 1,
+                "updated_datetime": "2024-05-01T00:00:00-06:00",
+            },
+            {
+                "follow_up_id": "shell-oca",
+                "other_clinical_attributes": [{"timepoint_category": "Initial Diagnosis"}],
+            },
+        ],
+    }
+    records = [extract_patient_time_record(case, dataset_name="synthetic")]
+    write_df = pd.DataFrame(_expand_kind_columns(records, WRITE_KIND))
+    record_df = pd.DataFrame(_expand_kind_columns(records, RECORD_KIND))
+    slots = records[0]["_slots"]["follow_ups"]
+    assert len(slots) == 2
+    assert record_df.loc[0, "follow_ups_record1"] == 80
+    assert record_df.loc[0, "follow_ups_record2"] in ("", None) or pd.isna(record_df.loc[0, "follow_ups_record2"])
+    assert "follow_ups_record3" not in record_df.columns
+    assert record_df.loc[0, "follow_ups_molecular_tests_record1"] == 12
+    assert str(write_df.loc[0, "follow_ups_updated1"]).startswith("2024-04-01")
+    assert str(write_df.loc[0, "follow_ups_updated2"]).startswith("2024-05-01")
+    missing = build_missing_tables(records, RECORD_KIND)["follow_ups"]
+    assert list(missing["path"]) == ["follow_ups[1]", "follow_ups[2]"]
+    assert list(missing["ratio"]) == ["1/1", "0/1"]
+    write_missing = build_missing_tables(records, WRITE_KIND)["follow_ups"]
+    assert list(write_missing["ratio"]) == ["1/1", "1/1"]
+
