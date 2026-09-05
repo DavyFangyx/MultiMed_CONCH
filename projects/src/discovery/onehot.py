@@ -14,6 +14,7 @@ from common.paths import PROJECT_ROOT
 from common.types import infer_type, to_numeric
 from .converters import convert_value
 from .field_bank import extract_field_bank_raw_values
+from .landmark import landmark_policy, resolve_landmark
 
 
 MISSING_TOKEN = "__MISSING__"
@@ -105,8 +106,13 @@ def _converted_tokens(raw_values: list, convert: str) -> list[str]:
     return tokens
 
 
-def extract_converted_tokens(case: dict, field_path: str, convert: str) -> list[str]:
-    return _converted_tokens(extract_field_bank_raw_values(case, field_path), convert)
+def extract_converted_tokens(case: dict, field_path: str, convert: str, landmark=True, landmark_time=None) -> list[str]:
+    return _converted_tokens(
+        extract_field_bank_raw_values(
+            case, field_path, landmark=landmark, landmark_time=landmark_time
+        ),
+        convert,
+    )
 
 
 def _numeric_from_token(token: str, field_path: str) -> float | None:
@@ -166,6 +172,8 @@ def collect_patient_field_values(
     cases: list[dict],
     fields: list[str],
     converts: dict[str, str] | None = None,
+    landmark=True,
+    landmark_time=None,
 ) -> list[dict]:
     converts = converts or {}
     patients = []
@@ -173,9 +181,12 @@ def collect_patient_field_values(
         patient_id = str(case.get("submitter_id") or "").strip()
         if not patient_id:
             continue
+        landmark_state = resolve_landmark(case, landmark, landmark_time=landmark_time)
         values = {}
         for field in fields:
-            values[field] = extract_converted_tokens(case, field, converts.get(field, ""))
+            values[field] = extract_converted_tokens(
+                case, field, converts.get(field, ""), landmark=landmark_state
+            )
         patients.append({"patient_id": patient_id, "values": values})
     return patients
 
@@ -315,6 +326,8 @@ def encode_onehot(
     out_dir,
     dictionary: dict[tuple[str, str], str] | None = None,
     rare_threshold: int = RARE_FREQ_THRESHOLD,
+    landmark=True,
+    landmark_time=None,
 ) -> dict:
     torch = _lazy_torch()
     fields = list(cfg["fields"])
@@ -325,7 +338,9 @@ def encode_onehot(
     metadata_dir.mkdir(parents=True, exist_ok=True)
     pt_dir.mkdir(parents=True, exist_ok=True)
 
-    patients = collect_patient_field_values(cases, fields, converts)
+    patients = collect_patient_field_values(
+        cases, fields, converts, landmark=landmark, landmark_time=landmark_time
+    )
     field_types = infer_field_types(fields, patients, dictionary=dictionary)
 
     normalization_stats = {}
@@ -361,6 +376,8 @@ def encode_onehot(
         "feat_dim": max_width,
         "n_patients": len(patients),
         "rare_freq_threshold": int(rare_threshold),
+        "landmark_policy": landmark_policy(bool(landmark)),
+        "landmark_time": None if landmark in (False, None) else landmark_time,
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     _write_json(metadata_dir / "field_types.json", field_types)

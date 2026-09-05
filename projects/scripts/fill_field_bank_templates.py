@@ -111,15 +111,13 @@ def main(argv=None):
         raise SystemExit(f"no FIELD_BANK.csv files under {root}")
     fields = collect_fields(paths)
     if args.rewrite_spec or not spec_path.exists():
-        write_shared_spec(fields, spec_path)
-        print(f"✅ shared spec: {spec_path}  fields={len(fields)}")
+        write_shared_spec(path=spec_path)
+        print(f"✅ shared spec: {spec_path}  fields={len(load_shared_spec(spec_path))}")
     spec = load_shared_spec(spec_path)
     missing = [field for field in fields if field not in spec]
-    extra = [field for field in spec if field not in set(fields)]
-    if missing or extra:
+    if missing:
         raise SystemExit(
-            f"shared spec mismatch: missing={len(missing)} extra={len(extra)} "
-            f"missing_sample={missing[:5]} extra_sample={extra[:5]}"
+            f"shared spec missing {len(missing)} dataset fields: {missing[:8]}"
         )
     total_filled = 0
     total_overwritten = 0

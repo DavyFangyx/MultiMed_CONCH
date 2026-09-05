@@ -1,0 +1,2 @@
+demographic_race_template,demographic_age_at_index_template,demographic_sex_at_birth_template,follow_ups_other_clinical_attributes_bmi_template,derived_radiation_therapy_template,derived_pharmaceutical_therapy_template
+Race is {}.,The patient is {} years old at index.,Sex at birth is {}.,Baseline BMI is {}.,Radiation therapy is {}.,Pharmaceutical therapy is {}.

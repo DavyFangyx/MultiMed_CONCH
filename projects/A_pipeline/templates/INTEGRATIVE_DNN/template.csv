@@ -1,0 +1,2 @@
+demographic_age_at_index_template,demographic_sex_at_birth_template,diagnoses_ajcc_pathologic_stage_template
+The patient is {} years old at index.,Sex at birth is {}.,Pathologic overall stage is {}.

@@ -1,0 +1,18 @@
+{
+  "description": "HGCN_LUAD：race + age + gender + morphology + prior malignancy + site + radiation + pharma",
+  "prompt_file": "prompts.csv",
+  "dirname": "HGCN_LUAD",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].morphology",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA-LUAD"
+  ]
+}

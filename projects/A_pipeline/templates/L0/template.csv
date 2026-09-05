@@ -1,0 +1,2 @@
+demographic_age_at_index_template,demographic_sex_at_birth_template,demographic_race_template,demographic_ethnicity_template
+The patient is {} years old at index.,Sex at birth is {}.,Race is {}.,Ethnicity is {}.

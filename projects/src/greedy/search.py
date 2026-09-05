@@ -82,6 +82,11 @@ def greedy_forward(
         current, current_std = extract_c_index(init_result)
         selected = list(init_selected)
         remaining = [idx for idx in remaining if idx not in seen_init]
+        print(
+            f"[greedy] init n={len(selected)} c_index={float(current):.4f} "
+            f"fields={','.join(_field_name(fields, i) for i in selected)}",
+            flush=True,
+        )
         path.append(
             {
                 "step": 1,
@@ -151,10 +156,22 @@ def greedy_forward(
 
         delta = float(best_score) - current
         if min_delta is not None and delta + 1e-12 < float(min_delta):
+            print(
+                f"[greedy] stop min_delta best={best_name} "
+                f"c_index={float(best_score):.4f} delta={delta:+.4f} "
+                f"threshold={float(min_delta):.4f}",
+                flush=True,
+            )
             break
 
         selected.append(best_idx)
         remaining.remove(best_idx)
+        print(
+            f"[greedy] step={step} added={best_name} "
+            f"c_index={float(best_score):.4f} delta={delta:+.4f} "
+            f"n={len(selected)} remaining={len(remaining)}",
+            flush=True,
+        )
         path.append(
             {
                 "step": step,

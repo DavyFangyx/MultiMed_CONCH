@@ -23,21 +23,36 @@ def _make_pt_dir(root: Path) -> Path:
 
 
 def test_resolve_field_bank_prompt_job(tmp_path):
-    clinic_dir = _make_pt_dir(tmp_path / "TCGA-BRCA" / "field_bank" / "prompt")
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA-BRCA" / "field_bank" / "prompt" / "landmark_365")
     job = resolve_clinic_eval_job(clinic_dir)
     assert job["display_name"] == "TCGA-BRCA"
-    assert job["scheme"] == "prompt"
+    assert job["scheme"] == "prompt__landmark_365"
+    assert job["encoding"] == "prompt"
+    assert job["landmark_tag"] == "landmark_365"
     assert job["study"] == "tcga_brca"
-    assert job["run_name"] == "tcga_brca__prompt"
+    assert job["run_name"] == "tcga_brca__prompt__landmark_365"
 
 
 def test_resolve_greedy_subset_job(tmp_path):
-    clinic_dir = _make_pt_dir(tmp_path / "TCGA_LIHC" / "greedy" / "onehot" / "subsets" / "G3_deadbeef12")
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA_LIHC" / "greedy" / "onehot" / "landmark_none" / "subsets" / "G3_deadbeef12")
     job = resolve_clinic_eval_job(clinic_dir)
     assert job["display_name"] == "TCGA_LIHC"
-    assert job["scheme"] == "G3_deadbeef12"
+    assert job["scheme"] == "onehot__landmark_none__G3_deadbeef12"
+    assert job["encoding"] == "onehot"
+    assert job["landmark_tag"] == "landmark_none"
     assert job["study"] == "tcga_lihc"
-    assert job["run_name"] == "tcga_lihc__G3_deadbeef12"
+    assert job["run_name"] == "tcga_lihc__onehot__landmark_none__G3_deadbeef12"
+
+
+def test_resolve_scheme_run_tag_job(tmp_path):
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA-READ" / "schemes" / "landmark_730_L2")
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["display_name"] == "TCGA-READ"
+    assert job["scheme"] == "landmark_730_L2"
+    assert job["encoding"] == "L2"
+    assert job["landmark_tag"] == "landmark_730"
+    assert job["study"] == "tcga_read"
+    assert job["run_name"] == "tcga_read__landmark_730_L2"
 
 
 def test_resolve_rejects_a_manual(tmp_path):
@@ -46,15 +61,52 @@ def test_resolve_rejects_a_manual(tmp_path):
         resolve_clinic_eval_job(clinic_dir)
 
 
+def test_resolve_longitudinal_field_bank_job(tmp_path):
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA-BRCA" / "longitudinal" / "field_bank" / "prompt" / "landmark_365")
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["display_name"] == "TCGA-BRCA"
+    assert job["scheme"] == "longitudinal__prompt__landmark_365"
+    assert job["encoding"] == "prompt"
+    assert job["landmark_tag"] == "landmark_365"
+    assert job["study"] == "tcga_brca"
+    assert job["run_name"] == "tcga_brca__longitudinal__prompt__landmark_365"
+
+
+def test_resolve_longitudinal_greedy_subset_job(tmp_path):
+    clinic_dir = _make_pt_dir(
+        tmp_path / "TCGA_LIHC" / "longitudinal" / "greedy" / "onehot" / "landmark_none" / "subsets" / "G3_deadbeef12"
+    )
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["display_name"] == "TCGA_LIHC"
+    assert job["scheme"] == "longitudinal__onehot__landmark_none__G3_deadbeef12"
+    assert job["encoding"] == "onehot"
+    assert job["landmark_tag"] == "landmark_none"
+    assert job["run_name"] == "tcga_lihc__longitudinal__onehot__landmark_none__G3_deadbeef12"
+
+
 def test_default_clinic_embedding_dir_is_field_bank_prompt():
-    path = clinic_embedding_dir("tcga_lihc")
-    assert path.parts[-5:] == ("TCGA_LIHC", "field_bank", "prompt", "embeddings", "pt")
+    path = clinic_embedding_dir("tcga_lihc", landmark_tag="landmark_365")
+    assert path.parts[-6:] == ("TCGA_LIHC", "field_bank", "prompt", "landmark_365", "embeddings", "pt")
 
 
 def test_subset_embedding_dir_uses_greedy_encoding():
-    path = subset_embedding_dir("TCGA_LIHC", "G2_abc", Path("/tmp/outputs"), encoding="onehot")
-    assert path.as_posix().endswith("TCGA_LIHC/greedy/onehot/subsets/G2_abc/embeddings/pt")
+    path = subset_embedding_dir("TCGA_LIHC", "G2_abc", Path("/tmp/outputs"), encoding="onehot", landmark_tag="landmark_none")
+    assert path.as_posix().endswith("TCGA_LIHC/greedy/onehot/landmark_none/subsets/G2_abc/embeddings/pt")
     assert "B_scan" not in path.as_posix()
+
+
+def test_subset_embedding_dir_uses_longitudinal_experiment():
+    path = subset_embedding_dir(
+        "TCGA_LIHC",
+        "G2_abc",
+        Path("/tmp/outputs"),
+        encoding="prompt",
+        landmark_tag="landmark_365",
+        experiment="longitudinal",
+    )
+    assert path.as_posix().endswith(
+        "TCGA_LIHC/longitudinal/greedy/prompt/landmark_365/subsets/G2_abc/embeddings/pt"
+    )
 
 
 def test_load_field_bank_prefers_index_encoding(tmp_path):
@@ -94,6 +146,18 @@ def test_materialize_prompt_tensor_keeps_512(tmp_path):
     torch.save(matrix, src / "TCGA-XX-0001.pt")
     out = tmp_path / "subset" / "pt"
     materialize_subset_embeddings(bank, [0, 2], out)
+    sliced = torch.load(out / "TCGA-XX-0001.pt", map_location="cpu")
+    assert tuple(sliced.shape) == (2, 512)
+
+
+def test_materialize_longitudinal_tokens_per_field(tmp_path):
+    torch = pytest.importorskip("torch")
+    bank = tmp_path / "prompt"
+    src = _make_pt_dir(bank)
+    (bank / "field_index.json").write_text(json.dumps({"encoding": "prompt", "tokens_per_field": 2, "fields": ["a", "b"]}))
+    torch.save(torch.arange(4 * 512).reshape(4, 512).float(), src / "TCGA-XX-0001.pt")
+    out = tmp_path / "subset" / "pt"
+    materialize_subset_embeddings(bank, [1], out)
     sliced = torch.load(out / "TCGA-XX-0001.pt", map_location="cpu")
     assert tuple(sliced.shape) == (2, 512)
 

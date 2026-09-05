@@ -9,8 +9,9 @@ follow_ups, molecular_tests, other_clinical_attributes.
 case / demographic / exposures / family_histories are ignored.
 
 t_write  uses each object's updated_datetime (created_datetime ignored).
-t_record uses clinical days_* with narrow timepoint_category fallbacks.
-See rawdata_stats/TIME_CRITERIA.md.
+t_record is an interval (t_lo, t_hi). CSV cells store finite t_hi. Landmark keeps
+a slot iff status is not unlocated/non_informative and t_hi <= T. Event days are
+lower bounds, not proof the record already existed. See rawdata_stats/TIME_CRITERIA.md.
 
 Outputs in projects/rawdata_stats/{dataset}/time_write and time_record:
   patient_time_stats.csv / patient_time_stats.png
@@ -85,23 +86,69 @@ FAMILY_PATHS = {
     "follow_ups_other_clinical_attributes": "follow_ups[].other_clinical_attributes[]",
 }
 
-TREATMENT_BASELINE_TIMEPOINTS = frozenset(
-    {
-        "prior to diagnosis",
-        "preoperative",
-        "prior to procurement",
-        "pretreatment",
-        "pre-treatment",
-    }
-)
-PATHOLOGY_BASELINE_TIMEPOINTS = frozenset(
-    {
-        "initial diagnosis",
-        "prior to diagnosis",
-    }
-)
 FOLLOW_UP_NESTED_KEYS = frozenset({"molecular_tests", "other_clinical_attributes"})
 FOLLOW_UP_IDENTITY_KEYS = frozenset({"follow_up_id"})
+FOLLOW_UP_NON_CONTENT_KEYS = FOLLOW_UP_NESTED_KEYS | FOLLOW_UP_IDENTITY_KEYS | frozenset(
+    {
+        "submitter_id",
+        "timepoint_category",
+        "days_to_follow_up",
+        "created_datetime",
+        "updated_datetime",
+        "state",
+    }
+)
+TREATMENT_TIME_KEYS = (
+    "days_to_treatment_start",
+    "days_to_treatment_end",
+    "timepoint_category",
+)
+SURGERY_TYPE_TOKENS = (
+    "surgery",
+    "hysterectomy",
+    "resection",
+    "colectomy",
+    "orchiectomy",
+    "mastectomy",
+    "prostatectomy",
+    "nephrectomy",
+    "gastrectomy",
+    "lobectomy",
+    "excision",
+    "amputation",
+    "cystectomy",
+    "hepatectomy",
+    "pancreatectomy",
+    "thyroidectomy",
+)
+EMPTY_SITE_TOKENS = frozenset({"", "not reported", "unknown", "not applicable", "none"})
+OCA_BASELINE_CATEGORIES = frozenset({"initial diagnosis", "prior to diagnosis"})
+OCA_UNLOCATED_CATEGORIES = frozenset(
+    {"not reported", "adulthood", "childhood", "adolescence"}
+)
+AJCC_PATHOLOGIC_KEYS = (
+    "ajcc_pathologic_t",
+    "ajcc_pathologic_n",
+    "ajcc_pathologic_m",
+    "ajcc_pathologic_stage",
+)
+DELTA_RESP = 0.0
+DELTA_PATH = 0.0
+DELTA_LAB = 0.0
+USE_H1B = True
+RECORD_STATUS_POINT = "point"
+RECORD_STATUS_BOUNDED = "bounded"
+RECORD_STATUS_LO_ONLY = "lo_only"
+RECORD_STATUS_UNLOCATED = "unlocated"
+RECORD_STATUS_NON_INFORMATIVE = "non_informative"
+EXCLUDED_LANDMARK_STATUSES = frozenset({RECORD_STATUS_UNLOCATED, RECORD_STATUS_NON_INFORMATIVE})
+RECORD_STATUS_LEVELS = (
+    RECORD_STATUS_POINT,
+    RECORD_STATUS_BOUNDED,
+    RECORD_STATUS_LO_ONLY,
+    RECORD_STATUS_UNLOCATED,
+    RECORD_STATUS_NON_INFORMATIVE,
+)
 
 WRITE_COL_RE = re.compile(r"^(.*)_updated(\d+)$")
 RECORD_COL_RE = re.compile(r"^(.*)_record(\d+)$")
@@ -183,12 +230,30 @@ def _max_numeric(values) -> float | None:
     return max(nums)
 
 
-def _normalize_timepoint(value) -> str:
-    return str(value or "").strip().lower()
+def _looks_like_treatment(obj: dict) -> bool:
+    for key in obj:
+        name = str(key).lower()
+        if name.startswith("treatment") or name.startswith("days_to_treatment") or name == "therapeutic_agents":
+            return True
+    return False
 
 
-def _timepoint_in(value, vocab: frozenset[str]) -> bool:
-    return _normalize_timepoint(value) in vocab
+def _iter_treatment_items(diagnosis: dict):
+    treatments = diagnosis.get("treatments")
+    if isinstance(treatments, list):
+        yield from _iter_dict_items(treatments)
+        return
+    alt = diagnosis.get("c")
+    if isinstance(alt, list) and any(isinstance(item, dict) and _looks_like_treatment(item) for item in alt):
+        yield from _iter_dict_items(alt)
+
+
+def _has_treatment_time_field(obj: dict) -> bool:
+    return any(_is_non_empty(obj.get(key)) for key in TREATMENT_TIME_KEYS)
+
+
+def _is_negative_therapy(obj: dict) -> bool:
+    return str(obj.get("treatment_or_therapy") or "").strip().lower() == "no"
 
 
 def _is_follow_up_shell(obj: dict) -> bool:
@@ -263,57 +328,361 @@ def _write_value(obj: dict):
     return dt, text
 
 
-def _record_days_diagnosis(obj: dict, parent_days=None):
-    return _to_float(obj.get("days_to_diagnosis"))
+def _norm_cat(value) -> str:
+    return str(value or "").strip().lower()
 
 
-def _record_days_treatment(obj: dict, parent_days):
-    primary = _to_float(obj.get("days_to_treatment_start"))
-    if primary is not None:
-        return primary
-    if _timepoint_in(obj.get("timepoint_category"), TREATMENT_BASELINE_TIMEPOINTS):
-        return parent_days
+def _has_pathologic_anchor(diagnosis: dict) -> bool:
+    if _is_non_empty(diagnosis.get("residual_disease")):
+        return True
+    return any(_is_non_empty(diagnosis.get(key)) for key in AJCC_PATHOLOGIC_KEYS)
+
+
+def _site_is_organ(diagnosis: dict) -> bool:
+    site = _norm_cat(diagnosis.get("site_of_resection_or_biopsy"))
+    return bool(site) and site not in EMPTY_SITE_TOKENS
+
+
+def _is_surgery_type(value) -> bool:
+    text = _norm_cat(value)
+    return any(token in text for token in SURGERY_TYPE_TOKENS)
+
+
+def _is_prior_diagnosis(diagnosis: dict) -> bool:
+    if str(diagnosis.get("diagnosis_is_primary_disease")).strip().lower() == "false":
+        return True
+    return _norm_cat(diagnosis.get("classification_of_tumor")) == "prior primary"
+
+
+def _primary_diagnoses(case: dict) -> list[dict]:
+    diagnoses = [item for item in _iter_dict_items(case.get("diagnoses"))]
+    primaries = [item for item in diagnoses if not _is_prior_diagnosis(item)]
+    return primaries or diagnoses
+
+
+def _pathology_class(diagnosis: dict, treatments: list[dict] | None = None) -> str:
+    if treatments is None:
+        treatments = list(_iter_treatment_items(diagnosis))
+    method = _norm_cat(diagnosis.get("method_of_diagnosis"))
+    has_resection_tx = any(
+        _is_surgery_type(item.get("treatment_type")) and _norm_cat(item.get("treatment_or_therapy")) != "no"
+        for item in treatments
+    )
+    has_resection_evidence = _has_pathologic_anchor(diagnosis) or has_resection_tx
+    if method == "biopsy" and has_resection_evidence:
+        return "P2"
+    if method != "biopsy" and _has_pathologic_anchor(diagnosis) and _site_is_organ(diagnosis):
+        return "P1"
+    return "P3"
+
+
+def _follow_up_has_content(obj: dict) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    for key, value in obj.items():
+        if key in FOLLOW_UP_NON_CONTENT_KEYS:
+            continue
+        if _is_non_empty(value):
+            return True
+    return False
+
+
+def _min_numeric(values) -> float | None:
+    nums = [n for n in (_to_float(v) for v in values) if n is not None]
+    if not nums:
+        return None
+    return min(nums)
+
+
+def _max_of(*values) -> float | None:
+    nums = [n for n in values if n is not None]
+    if not nums:
+        return None
+    return max(nums)
+
+
+def _min_of(*values) -> float | None:
+    nums = [n for n in values if n is not None]
+    if not nums:
+        return None
+    return min(nums)
+
+
+def _record_status(t_lo, t_hi, *, unlocated=False, non_informative=False) -> str:
+    if non_informative:
+        return RECORD_STATUS_NON_INFORMATIVE
+    if unlocated or (t_lo is None and t_hi is None):
+        return RECORD_STATUS_UNLOCATED
+    if t_lo is None or t_hi is None or t_hi == float("inf"):
+        return RECORD_STATUS_LO_ONLY
+    if t_lo == t_hi:
+        return RECORD_STATUS_POINT
+    return RECORD_STATUS_BOUNDED
+
+
+def _finite_hi(t_hi):
+    if t_hi is None:
+        return None
+    if t_hi == float("inf"):
+        return None
+    return t_hi
+
+
+def _located_event_days(treatments: list[dict], follow_days: list) -> list:
+    days = []
+    for item in treatments:
+        start = _to_float(item.get("days_to_treatment_start"))
+        end = _to_float(item.get("days_to_treatment_end"))
+        if start is not None:
+            days.append(start)
+        if end is not None:
+            days.append(end)
+    days.extend(d for d in follow_days if d is not None)
+    return days
+
+
+def _case_context(case: dict) -> dict:
+    diagnoses = [item for item in _iter_dict_items(case.get("diagnoses"))]
+    treatments = []
+    for diagnosis in diagnoses:
+        treatments.extend(list(_iter_treatment_items(diagnosis)))
+    follow_days = []
+    for follow_up in _iter_dict_items(case.get("follow_ups")):
+        if _is_follow_up_shell(follow_up):
+            continue
+        days = _to_float(follow_up.get("days_to_follow_up"))
+        if days is not None:
+            follow_days.append(days)
+    last_fu, _ = _collect_days_to_last_follow_up(case)
+    last_status = _max_numeric(
+        item.get("days_to_last_known_disease_status") for item in diagnoses
+    )
+    recurrence = _max_numeric(item.get("days_to_recurrence") for item in diagnoses)
+    located_events = _located_event_days(treatments, follow_days)
+    h2 = _max_of(last_fu, last_status, recurrence, *(located_events or [None]))
+    adjuvant_starts = []
+    adjuvant_labeled = False
+    dated_starts = []
+    for item in treatments:
+        intent = _norm_cat(item.get("treatment_intent_type"))
+        category = _norm_cat(item.get("timepoint_category"))
+        labeled = intent == "adjuvant" or category == "postoperative"
+        if labeled:
+            adjuvant_labeled = True
+        start = _to_float(item.get("days_to_treatment_start"))
+        if start is None:
+            continue
+        dated_starts.append(start)
+        if labeled:
+            adjuvant_starts.append(start)
+    if not adjuvant_starts and adjuvant_labeled:
+        adjuvant_starts = dated_starts
+    earliest_tx_start = _min_numeric(item.get("days_to_treatment_start") for item in treatments)
+    surgery_days = []
+    for item in treatments:
+        if not _is_surgery_type(item.get("treatment_type")):
+            continue
+        if _norm_cat(item.get("treatment_or_therapy")) == "no":
+            continue
+        start = _to_float(item.get("days_to_treatment_start"))
+        if start is not None:
+            surgery_days.append(start)
+    primary_prior_malignancy = any(
+        _norm_cat(item.get("prior_malignancy")) == "yes" for item in _primary_diagnoses(case)
+    )
+    return {
+        "diagnoses": diagnoses,
+        "treatments": treatments,
+        "follow_days": sorted(follow_days),
+        "h2": h2,
+        "adjuvant_starts": adjuvant_starts,
+        "earliest_tx_start": earliest_tx_start,
+        "surgery_days": surgery_days,
+        "primary_prior_malignancy": primary_prior_malignancy,
+        "has_resection_evidence": any(
+            _has_pathologic_anchor(item)
+            or any(
+                _is_surgery_type(tx.get("treatment_type"))
+                and _norm_cat(tx.get("treatment_or_therapy")) != "no"
+                for tx in _iter_treatment_items(item)
+            )
+            for item in diagnoses
+        ),
+    }
+
+
+def _h1b(t_lo, follow_days):
+    if not USE_H1B or t_lo is None or t_lo == float("-inf"):
+        return None
+    later = [day for day in follow_days if day >= t_lo]
+    if not later:
+        return None
+    return min(later)
+
+
+def _t_hi_from_sources(*values):
+    for value in values:
+        if value is not None:
+            return value
     return None
 
 
-def _record_days_pathology(obj: dict, parent_days):
-    primary = _to_float(obj.get("days_to_pathology_detail"))
-    if primary is not None:
-        return primary
-    if _timepoint_in(obj.get("timepoint_category"), PATHOLOGY_BASELINE_TIMEPOINTS):
-        return parent_days
+def _t_hi_for_record(t_lo, ctx, h1=None):
+    return _t_hi_from_sources(h1, _h1b(t_lo, ctx.get("follow_days") or []), ctx.get("h2"))
+
+
+def _finalize_interval(t_lo, t_hi=None, *, unlocated=False, non_informative=False):
+    if non_informative:
+        return None, None, RECORD_STATUS_NON_INFORMATIVE
+    if unlocated:
+        return None, None, RECORD_STATUS_UNLOCATED
+    status = _record_status(t_lo, t_hi)
+    if status in {RECORD_STATUS_UNLOCATED, RECORD_STATUS_NON_INFORMATIVE}:
+        return None, None, status
+    return t_lo, t_hi, status
+
+
+def _interval_diagnosis(obj: dict, ctx: dict):
+    days = _to_float(obj.get("days_to_diagnosis"))
+    if _is_prior_diagnosis(obj) and ctx.get("primary_prior_malignancy"):
+        return _finalize_interval(0.0, 0.0)
+    if days is None:
+        return _finalize_interval(None, None, unlocated=True)
+    if days == 0:
+        return _finalize_interval(0.0, 0.0)
+    return _finalize_interval(days, _t_hi_for_record(days, ctx))
+
+
+def _interval_treatment(obj: dict, diagnosis: dict, ctx: dict):
+    if _is_prior_diagnosis(diagnosis) and ctx.get("primary_prior_malignancy"):
+        return _finalize_interval(0.0, 0.0)
+    start = _to_float(obj.get("days_to_treatment_start"))
+    end = _to_float(obj.get("days_to_treatment_end"))
+    category = _norm_cat(obj.get("timepoint_category"))
+    if category == "prior to diagnosis":
+        prior_tx = _norm_cat(diagnosis.get("prior_treatment"))
+        if prior_tx == "yes":
+            return _finalize_interval(0.0, 0.0)
+        return _finalize_interval(None, None, unlocated=True)
+    t_lo = None
+    if _is_non_empty(obj.get("treatment_outcome")) and end is not None:
+        t_lo = end + DELTA_RESP
+    elif end is not None:
+        t_lo = end
+    elif start is not None:
+        t_lo = start
+    if t_lo is None:
+        return _finalize_interval(None, None, unlocated=True)
+    return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx))
+
+
+def _interval_pathology(obj: dict, diagnosis: dict, ctx: dict):
+    if _is_prior_diagnosis(diagnosis) and ctx.get("primary_prior_malignancy"):
+        return _finalize_interval(0.0, 0.0)
+    treatments = list(_iter_treatment_items(diagnosis))
+    klass = _pathology_class(diagnosis, treatments)
+    diagnosis_days = _to_float(diagnosis.get("days_to_diagnosis"))
+    if klass == "P3" or diagnosis_days is None:
+        return _finalize_interval(None, None, unlocated=True)
+    t_lo = diagnosis_days
+    h1 = None
+    if ctx.get("has_resection_evidence") and ctx.get("adjuvant_starts"):
+        h1 = min(ctx["adjuvant_starts"])
+    if klass == "P1":
+        t_hi = diagnosis_days + DELTA_PATH
+        if h1 is not None and h1 < t_hi:
+            t_hi = h1
+        return _finalize_interval(t_lo, t_hi)
+    return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx, h1=h1))
+
+
+def _interval_follow_up(obj: dict):
+    days = _to_float(obj.get("days_to_follow_up"))
+    if days is not None:
+        return _finalize_interval(days, days)
+    if _follow_up_has_content(obj):
+        return _finalize_interval(None, None, unlocated=True)
+    return _finalize_interval(None, None, non_informative=True)
+
+
+def _primary_path_class(ctx: dict) -> str | None:
+    classes = [_pathology_class(item) for item in _primary_diagnoses({"diagnoses": ctx["diagnoses"]})]
+    if "P1" in classes:
+        return "P1"
+    if "P2" in classes:
+        return "P2"
+    if classes:
+        return classes[0]
     return None
 
 
-def _record_days_follow_up(obj: dict, parent_days=None):
-    return _to_float(obj.get("days_to_follow_up"))
+def _interval_molecular(obj: dict, ctx: dict):
+    days = _to_float(obj.get("days_to_test"))
+    category = _norm_cat(obj.get("timepoint_category"))
+    path_class = _primary_path_class(ctx)
+    if days is not None:
+        t_lo = days + DELTA_LAB
+        return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx))
+    if category == "initial diagnosis":
+        return _finalize_interval(float("-inf"), 0.0 + DELTA_LAB)
+    if category == "sample procurement":
+        if path_class == "P1":
+            return _finalize_interval(float("-inf"), 0.0)
+        return _finalize_interval(None, None, unlocated=True)
+    if category == "preoperative":
+        if path_class == "P1":
+            return _finalize_interval(float("-inf"), 0.0)
+        surgery = _min_numeric(ctx.get("surgery_days") or [])
+        if surgery is None:
+            return _finalize_interval(None, None, unlocated=True)
+        return _finalize_interval(float("-inf"), surgery)
+    if category == "prior to treatment":
+        start = ctx.get("earliest_tx_start")
+        if start is None:
+            return _finalize_interval(None, None, unlocated=True)
+        return _finalize_interval(float("-inf"), start)
+    if category == "postoperative":
+        t_lo = 0.0
+        if path_class == "P2":
+            surgery = _min_numeric(ctx.get("surgery_days") or [])
+            if surgery is None:
+                return _finalize_interval(None, None, unlocated=True)
+            t_lo = surgery
+        return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx))
+    return _finalize_interval(None, None, unlocated=True)
 
 
-def _record_days_molecular(obj: dict, parent_days):
-    primary = _to_float(obj.get("days_to_test"))
-    if primary is not None:
-        return primary
-    return parent_days
-
-
-def _record_days_other(obj: dict, parent_days):
+def _interval_other(obj: dict, ctx: dict):
+    category = _norm_cat(obj.get("timepoint_category"))
     comorbidity = _to_float(obj.get("days_to_comorbidity"))
-    if comorbidity is not None:
-        return comorbidity
     risk = _to_float(obj.get("days_to_risk_factor"))
-    if risk is not None:
-        return risk
-    return parent_days
+    event_day = comorbidity if comorbidity is not None else risk
+    if event_day is not None:
+        if event_day < 0:
+            return _finalize_interval(0.0, 0.0)
+        return _finalize_interval(event_day, _t_hi_for_record(event_day, ctx))
+    if category in OCA_BASELINE_CATEGORIES:
+        return _finalize_interval(0.0, 0.0)
+    if category in OCA_UNLOCATED_CATEGORIES or not category:
+        return _finalize_interval(None, None, unlocated=True)
+    return _finalize_interval(None, None, unlocated=True)
 
 
-def _make_slot(obj: dict, record_days) -> dict:
+def _make_slot(obj: dict, t_lo, t_hi, status: str) -> dict:
     dt, text = _write_value(obj)
+    finite_hi = _finite_hi(t_hi)
+    record_days = finite_hi if status not in EXCLUDED_LANDMARK_STATUSES else None
     return {
         "present": True,
         "write_dt": dt,
         "write_text": text,
         "record_days": record_days,
+        "record_lo": t_lo,
+        "record_hi": t_hi,
+        "record_status": status,
+        "obj": obj,
     }
+
 
 def _empty_slots() -> OrderedDict:
     return OrderedDict((family, []) for family in TIME_FAMILIES)
@@ -321,31 +690,30 @@ def _empty_slots() -> OrderedDict:
 
 def _collect_entity_slots(case: dict) -> OrderedDict:
     slots = _empty_slots()
+    ctx = _case_context(case)
 
     for diagnosis in _iter_dict_items(case.get("diagnoses")):
-        diagnosis_days = _record_days_diagnosis(diagnosis)
-        slots["diagnoses"].append(_make_slot(diagnosis, diagnosis_days))
-        for treatment in _iter_dict_items(diagnosis.get("treatments")):
-            slots["diagnoses_treatments"].append(
-                _make_slot(treatment, _record_days_treatment(treatment, diagnosis_days))
-            )
+        t_lo, t_hi, status = _interval_diagnosis(diagnosis, ctx)
+        slots["diagnoses"].append(_make_slot(diagnosis, t_lo, t_hi, status))
+        for treatment in _iter_treatment_items(diagnosis):
+            if _is_negative_therapy(treatment):
+                continue
+            t_lo, t_hi, status = _interval_treatment(treatment, diagnosis, ctx)
+            slots["diagnoses_treatments"].append(_make_slot(treatment, t_lo, t_hi, status))
         for pathology in _iter_dict_items(diagnosis.get("pathology_details")):
-            slots["diagnoses_pathology_details"].append(
-                _make_slot(pathology, _record_days_pathology(pathology, diagnosis_days))
-            )
+            t_lo, t_hi, status = _interval_pathology(pathology, diagnosis, ctx)
+            slots["diagnoses_pathology_details"].append(_make_slot(pathology, t_lo, t_hi, status))
 
     for follow_up in _iter_dict_items(case.get("follow_ups")):
-        follow_days = _record_days_follow_up(follow_up)
         if not _is_follow_up_shell(follow_up):
-            slots["follow_ups"].append(_make_slot(follow_up, follow_days))
+            t_lo, t_hi, status = _interval_follow_up(follow_up)
+            slots["follow_ups"].append(_make_slot(follow_up, t_lo, t_hi, status))
         for molecular in _iter_dict_items(follow_up.get("molecular_tests")):
-            slots["follow_ups_molecular_tests"].append(
-                _make_slot(molecular, _record_days_molecular(molecular, follow_days))
-            )
+            t_lo, t_hi, status = _interval_molecular(molecular, ctx)
+            slots["follow_ups_molecular_tests"].append(_make_slot(molecular, t_lo, t_hi, status))
         for other in _iter_dict_items(follow_up.get("other_clinical_attributes")):
-            slots["follow_ups_other_clinical_attributes"].append(
-                _make_slot(other, _record_days_other(other, follow_days))
-            )
+            t_lo, t_hi, status = _interval_other(other, ctx)
+            slots["follow_ups_other_clinical_attributes"].append(_make_slot(other, t_lo, t_hi, status))
     return slots
 
 
@@ -413,6 +781,9 @@ def _expand_kind_columns(records: list[dict], kind: str) -> list[dict]:
                     row[col] = slot.get("write_text") or ""
                 else:
                     days = slot.get("record_days")
+                    if days is None:
+                        status = slot.get("record_status")
+                        days = _finite_hi(slot.get("record_hi")) if status not in EXCLUDED_LANDMARK_STATUSES else None
                     row[col] = "" if days is None else days
         rows.append(row)
     return rows
@@ -612,7 +983,9 @@ def build_normalized_record_frame(df: pd.DataFrame) -> pd.DataFrame:
 def _slot_has_time(slot: dict, kind: str) -> bool:
     if kind == WRITE_KIND:
         return slot.get("write_dt") is not None
-    return slot.get("record_days") is not None
+    if slot.get("record_status") in EXCLUDED_LANDMARK_STATUSES:
+        return False
+    return _finite_hi(slot.get("record_hi")) is not None
 
 
 def _slot_path(family: str, index: int) -> str:
@@ -638,25 +1011,31 @@ def build_missing_tables(records: list[dict], kind: str) -> OrderedDict:
         for idx in range(1, n_slots + 1):
             present = 0
             covered = 0
+            status_counts = OrderedDict((level, 0) for level in RECORD_STATUS_LEVELS)
             for record in records:
                 values = (record.get("_slots") or {}).get(family) or []
                 if idx > len(values):
                     continue
                 present += 1
-                if _slot_has_time(values[idx - 1], kind):
-                    covered += 1
-            rows.append(
-                OrderedDict(
-                    [
-                        ("slot", idx),
-                        ("path", _slot_path(family, idx)),
-                        ("covered", covered),
-                        ("present", present),
-                        ("excluded", present - covered),
-                        ("ratio", f"{covered}/{present}"),
-                    ]
-                )
+                slot = values[idx - 1]
+                status = slot.get("record_status")
+                if status in status_counts:
+                    status_counts[status] += 1
+                if not _slot_has_time(slot, kind):
+                    continue
+                covered += 1
+            row = OrderedDict(
+                [
+                    ("slot", idx),
+                    ("path", _slot_path(family, idx)),
+                    ("covered", covered),
+                    ("present", present),
+                    ("excluded", present - covered),
+                    ("ratio", f"{covered}/{present}"),
+                ]
             )
+            row.update(status_counts)
+            rows.append(row)
         tables[family] = pd.DataFrame(rows)
     return tables
 
@@ -944,13 +1323,29 @@ def plot_missing_family(df: pd.DataFrame, output_dir: Path, family: str, dataset
     plt = _setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
     labels = [str(v) for v in df["path"].tolist()]
-    covered = pd.to_numeric(df["covered"], errors="coerce").fillna(0).tolist()
-    present = pd.to_numeric(df["present"], errors="coerce").fillna(0).tolist()
+    covered = pd.to_numeric(df["covered"], errors="coerce").fillna(0)
+    present = pd.to_numeric(df["present"], errors="coerce").fillna(0)
     x = range(len(labels))
     fig_w = max(8.0, min(22.0, 1.2 * len(labels) + 3))
     fig, ax = plt.subplots(figsize=(fig_w, 5.2))
-    ax.bar(x, present, color="#D9D9D9", label="present")
-    ax.bar(x, covered, color="#4C78A8", label="timed")
+    ax.bar(x, present.tolist(), color="#D9D9D9", label="present")
+    status_colors = {
+        RECORD_STATUS_POINT: "#4C78A8",
+        RECORD_STATUS_BOUNDED: "#59A14F",
+        RECORD_STATUS_LO_ONLY: "#F28E2B",
+        RECORD_STATUS_UNLOCATED: "#E15759",
+        RECORD_STATUS_NON_INFORMATIVE: "#B07AA1",
+    }
+    if all(level in df.columns for level in RECORD_STATUS_LEVELS):
+        bottom = [0.0] * len(labels)
+        for level in RECORD_STATUS_LEVELS:
+            vals = pd.to_numeric(df[level], errors="coerce").fillna(0).tolist()
+            if not any(vals):
+                continue
+            ax.bar(x, vals, bottom=bottom, color=status_colors[level], label=level)
+            bottom = [b + v for b, v in zip(bottom, vals)]
+    else:
+        ax.bar(x, covered.tolist(), color=status_colors[RECORD_STATUS_POINT], label="timed")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
     ax.set_ylabel("Patients")
@@ -1092,6 +1487,12 @@ def _synthetic_cases() -> list[dict]:
                     {
                         "timepoint_category": "Postoperative",
                     },
+                    {
+                        "timepoint_category": "Recurrence",
+                    },
+                    {
+                        "treatment_or_therapy": "no",
+                    },
                 ],
                 "pathology_details": [
                     {
@@ -1195,19 +1596,26 @@ def run_self_test() -> None:
     assert follow2 == "" or pd.isna(follow2)
 
     assert record_df.loc[0, "diagnoses_record1"] == 0
-    assert record_df.loc[0, "diagnoses_treatments_record1"] == 10
-    assert record_df.loc[0, "diagnoses_treatments_record2"] == 0
+    assert record_df.loc[0, "diagnoses_treatments_record1"] == 80
+    treat2_days = record_df.loc[0, "diagnoses_treatments_record2"]
+    assert treat2_days == "" or pd.isna(treat2_days)
     treat3_days = record_df.loc[0, "diagnoses_treatments_record3"]
     assert treat3_days == "" or pd.isna(treat3_days)
-    assert record_df.loc[0, "diagnoses_pathology_details_record1"] == 2
-    assert record_df.loc[0, "diagnoses_pathology_details_record2"] == 0
+    treat4_days = record_df.loc[0, "diagnoses_treatments_record4"]
+    assert treat4_days == "" or pd.isna(treat4_days)
+    path1_days = record_df.loc[0, "diagnoses_pathology_details_record1"]
+    assert path1_days == "" or pd.isna(path1_days)
+    path2_days = record_df.loc[0, "diagnoses_pathology_details_record2"]
+    assert path2_days == "" or pd.isna(path2_days)
     assert record_df.loc[0, "follow_ups_record1"] == 80
     follow2_days = record_df.loc[0, "follow_ups_record2"]
     assert follow2_days == "" or pd.isna(follow2_days)
-    assert record_df.loc[0, "follow_ups_molecular_tests_record1"] == 70
-    assert record_df.loc[0, "follow_ups_molecular_tests_record2"] == 80
-    assert record_df.loc[0, "follow_ups_other_clinical_attributes_record1"] == 75
-    assert record_df.loc[0, "follow_ups_other_clinical_attributes_record2"] == 80
+    assert record_df.loc[0, "follow_ups_molecular_tests_record1"] == 80
+    mol2_days = record_df.loc[0, "follow_ups_molecular_tests_record2"]
+    assert mol2_days == "" or pd.isna(mol2_days)
+    assert record_df.loc[0, "follow_ups_other_clinical_attributes_record1"] == 80
+    oca2_days = record_df.loc[0, "follow_ups_other_clinical_attributes_record2"]
+    assert oca2_days == "" or pd.isna(oca2_days)
 
     wide = build_normalized_write_frame(write_df)
     assert not wide.empty
@@ -1220,16 +1628,21 @@ def run_self_test() -> None:
     assert float(wide.loc[1, "follow_ups_updated1"]) > 1.0
 
     rec_wide = build_normalized_record_frame(record_df)
-    assert float(rec_wide.loc[0, "diagnoses_treatments_record1"]) == round(10 / 120, 6)
-    assert float(rec_wide.loc[0, "follow_ups_other_clinical_attributes_record1"]) == round(75 / 120, 6)
-    assert float(rec_wide.loc[0, "follow_ups_molecular_tests_record2"]) == round(80 / 120, 6)
+    assert float(rec_wide.loc[0, "diagnoses_treatments_record1"]) == round(80 / 120, 6)
+    assert float(rec_wide.loc[0, "follow_ups_other_clinical_attributes_record1"]) == round(80 / 120, 6)
+    mol2_norm = rec_wide.loc[0, "follow_ups_molecular_tests_record2"]
+    assert mol2_norm == "" or pd.isna(mol2_norm)
 
     write_missing = build_missing_tables(records, WRITE_KIND)
     record_missing = build_missing_tables(records, RECORD_KIND)
     treat_write = write_missing["diagnoses_treatments"]
     treat_record = record_missing["diagnoses_treatments"]
-    assert list(treat_write["ratio"])[:3] == ["2/2", "1/1", "0/1"]
-    assert list(treat_record["ratio"])[:3] == ["2/2", "1/1", "0/1"]
+    assert list(treat_write["ratio"])[:4] == ["2/2", "1/1", "0/1", "0/1"]
+    assert list(treat_record["ratio"])[:4] == ["2/2", "0/1", "0/1", "0/1"]
+    assert list(treat_record["point"])[:4] == [0, 0, 0, 0]
+    assert list(treat_record["bounded"])[:4] == [2, 0, 0, 0]
+    assert list(treat_record["lo_only"])[:4] == [0, 0, 0, 0]
+    assert list(treat_record["unlocated"])[:4] == [0, 1, 1, 1]
     follow_record = record_missing["follow_ups"]
     assert "1/2" in set(follow_record["ratio"]) or follow_record.loc[1, "ratio"] == "0/1"
     assert follow_record.loc[0, "ratio"] == "2/2"

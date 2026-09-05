@@ -22,7 +22,7 @@ from .baseline import (
     fit_nominal_mappings,
     global_mapping_dir,
 )
-from .clinical_io import load_clinical_cases, normalize_json_paths
+from common.clinical_io import load_clinical_cases, normalize_json_paths
 
 
 HGCN_PAD_DIM = 1024
@@ -30,23 +30,24 @@ HGCN_MINMAX_NAME = "symmetric_to_unit"
 HGCN_MISSING_POLICY = "keep_none"
 HGCN_NOMINAL_ENCODING = "integer_index_from_d_series_mapping"
 
-HGCN_SCHEME_FIELDS = {
-    "L0": BASELINE_SCHEME_FIELDS["D0"],
-    "L1": BASELINE_SCHEME_FIELDS["D1"],
-    "L2": BASELINE_SCHEME_FIELDS["D2"],
-    "L3": BASELINE_SCHEME_FIELDS["D3"],
-    "L4": BASELINE_SCHEME_FIELDS["D4"],
-    "L5": BASELINE_SCHEME_FIELDS["D5"],
-}
+HGCN_SCHEME_FIELDS = {}
 
 ORDINAL_ENCODER_NAMES = {
-    "TUMOR_GRADE": "_encode_tumor_grade",
-    "AJCC_PATHOLOGIC_T": "_encode_t_stage",
-    "AJCC_PATHOLOGIC_N": "_encode_n_stage",
-    "AJCC_PATHOLOGIC_M": "_encode_m_stage",
-    "AJCC_PATHOLOGIC_STAGE": "_encode_overall_stage",
-    "ECOG_PERFORMANCE_STATUS": "_encode_ecog",
+    "diagnoses[].tumor_grade": "_encode_tumor_grade",
+    "diagnoses[].ajcc_pathologic_t": "_encode_t_stage",
+    "diagnoses[].ajcc_pathologic_n": "_encode_n_stage",
+    "diagnoses[].ajcc_pathologic_m": "_encode_m_stage",
+    "diagnoses[].ajcc_pathologic_stage": "_encode_overall_stage",
+    "follow_ups[].ecog_performance_status": "_encode_ecog",
 }
+
+
+def load_hgcn_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> None:
+    HGCN_SCHEME_FIELDS.clear()
+    for name in ("L0", "L1", "L2", "L3", "L4", "L5"):
+        if name not in text_scheme_fields:
+            raise ValueError(f"缺少文本方案 {name}，无法注册 HGCN clinic 字段")
+        HGCN_SCHEME_FIELDS[name] = list(text_scheme_fields[name])
 
 MISSING_DIAGONAL_NOTE = (
     "x_cli 缺观测的对角位置保持 0.0，含义是这个节点没有写入观测值，"

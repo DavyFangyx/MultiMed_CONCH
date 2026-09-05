@@ -121,7 +121,11 @@
     "tobacco_smoking_quit_year": "戒烟年份",
     "pack_years_smoked": "累计包年（每日包数 × 年数）",
     "updated_datetime": "更新时间",
-    "state": "数据状态"
+    "state": "数据状态",
+    "alcohol_history": "饮酒史",
+    "cigarettes_per_day": "每日吸烟支数",
+    "exposure_duration_years": "暴露持续年数",
+    "age_at_onset": "开始暴露时的年龄"
   },
   "follow_ups数组_每个对象": {
     "follow_up_id": "随访记录唯一 ID",

@@ -5,8 +5,17 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from common.paths import PROJECT_ROOT
+import re
+
+import pandas as pd
+
+from common.paths import (
+    DEFAULT_GDC_CASES_MAPPING,
+    DEFAULT_GDC_CLINICAL_DICTIONARY,
+    PROJECT_ROOT,
+)
 from .converters import known_converters
+from .filter import apply_rules, load_filter_rules
 
 SPEC_COLUMNS = ["field", "convert", "unit", "template", "note"]
 SHARED_SPEC_PATH = PROJECT_ROOT / "templates" / "field_bank" / "_shared" / "field_prompt_spec.csv"
@@ -15,41 +24,24 @@ DAYS_TO_YEARS_FIELDS = {
     "diagnoses[].age_at_diagnosis",
 }
 
-INT_FIELDS = {
-    "demographic.year_of_birth",
-    "diagnoses[].figo_staging_edition_year",
-    "diagnoses[].gleason_score",
-    "diagnoses[].pathology_details[].lymph_nodes_positive",
-    "diagnoses[].pathology_details[].lymph_nodes_tested",
-    "diagnoses[].treatments[].number_of_fractions",
-    "diagnoses[].weiss_assessment_score",
-    "exposures[].age_at_onset",
-    "exposures[].tobacco_smoking_onset_year",
-    "exposures[].tobacco_smoking_quit_year",
-    "family_histories[].relatives_with_cancer_history_count",
-    "follow_ups[].ecog_performance_status",
-    "follow_ups[].karnofsky_performance_status",
-    "follow_ups[].molecular_tests[].mitotic_count",
-    "follow_ups[].other_clinical_attributes[].height",
-    "follow_ups[].other_clinical_attributes[].number_of_pregnancies",
-    "follow_ups[].other_clinical_attributes[].weight",
+ARRAY_PREFIX = {
+    "diagnoses": "diagnoses[]",
+    "treatments": "treatments[]",
+    "pathology_details": "pathology_details[]",
+    "exposures": "exposures[]",
+    "family_histories": "family_histories[]",
+    "follow_ups": "follow_ups[]",
+    "molecular_tests": "molecular_tests[]",
+    "other_clinical_attributes": "other_clinical_attributes[]",
 }
 
-UNIT_BY_FIELD = {
-    "diagnoses[].age_at_diagnosis": "years",
-    "diagnoses[].pathology_details[].greatest_tumor_dimension": "cm",
-    "diagnoses[].pathology_details[].necrosis_percent": "%",
-    "diagnoses[].pathology_details[].percent_tumor_invasion": "%",
-    "diagnoses[].pathology_details[].tumor_basal_diameter": "mm",
-    "diagnoses[].pathology_details[].tumor_largest_dimension_diameter": "cm",
-    "exposures[].age_at_onset": "years",
+UNIT_OVERRIDES = {
     "exposures[].pack_years_smoked": "pack-years",
-    "follow_ups[].other_clinical_attributes[].dlco_ref_predictive_percent": "%",
-    "follow_ups[].other_clinical_attributes[].fev1_fvc_pre_bronch_percent": "%",
-    "follow_ups[].other_clinical_attributes[].fev1_ref_pre_bronch_percent": "%",
-    "follow_ups[].other_clinical_attributes[].height": "cm",
-    "follow_ups[].other_clinical_attributes[].weight": "kg",
 }
+
+_OFFICIAL_META: dict[str, dict[str, str]] | None = None
+
+_EXISTING_TEMPLATES: dict[str, str] | None = None
 
 TEMPLATE_OVERRIDES = {
     "demographic.age_is_obfuscated": "Age is obfuscated: {}.",
@@ -301,16 +293,167 @@ def field_leaf(field: str) -> str:
     return str(field).split(".")[-1].replace("[]", "")
 
 
+def mapping_field_to_prompt_path(field: str) -> str:
+    return ".".join(ARRAY_PREFIX.get(part, part) for part in str(field).split("."))
+
+
+def _gdc_type_tokens(type_text: str) -> set[str]:
+    tokens = set()
+    for raw in re.split(r"[|]", _clean_text(type_text).lower()):
+        token = raw.strip()
+        if token and token != "null":
+            tokens.add(token)
+    return tokens
+
+
+def _is_integer_type(type_text: str) -> bool:
+    return "integer" in _gdc_type_tokens(type_text)
+
+
+def _is_numeric_type(type_text: str) -> bool:
+    return bool(_gdc_type_tokens(type_text) & {"integer", "number"})
+
+
+def _unit_from_description(field: str, description: str, type_text: str) -> str:
+    if field in UNIT_OVERRIDES:
+        return UNIT_OVERRIDES[field]
+    if not _is_numeric_type(type_text):
+        return ""
+    text = _clean_text(description)
+    if not text:
+        return ""
+    lowered = text.lower()
+    if re.search(r"calendar year|year in which|year that the patient|year of the patient's last follow-up", lowered):
+        return ""
+    if re.search(r"\b(in years|age \(in years\)|duration, in years|number of years)\b", lowered):
+        return "years"
+    if re.search(r"\bcentimeters\b", lowered):
+        return "cm"
+    if re.search(r"\bmillimeters\b|\(mm\)", lowered):
+        return "mm"
+    if re.search(r"\bkilograms\b", lowered):
+        return "kg"
+    if re.search(r"\bgrams\b", lowered):
+        return "g"
+    if "percent" in lowered or "percentage" in lowered:
+        return "%"
+    if "hours per day" in lowered:
+        return "hours/day"
+    if "milligrams per milliliter" in lowered:
+        return "mg/mL"
+    if re.search(r"number of days during which|number of days a patient", lowered):
+        return "days"
+    if re.search(r"\bnumber of weeks\b", lowered):
+        return "weeks"
+    return ""
+
+
+def load_official_field_meta(
+    mapping_csv: Path | None = None,
+    dictionary_csv: Path | None = None,
+) -> dict[str, dict[str, str]]:
+    global _OFFICIAL_META
+    use_cache = mapping_csv is None and dictionary_csv is None
+    if use_cache and _OFFICIAL_META is not None:
+        return _OFFICIAL_META
+    mapping_path = Path(mapping_csv or DEFAULT_GDC_CASES_MAPPING)
+    dict_path = Path(dictionary_csv or DEFAULT_GDC_CLINICAL_DICTIONARY)
+    csv.field_size_limit(10_000_000)
+    with mapping_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        mapping_rows = list(csv.DictReader(handle))
+    with dict_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        dict_rows = list(csv.DictReader(handle))
+    by_entity_field = {
+        (_clean_text(row.get("entity")), _clean_text(row.get("field"))): row
+        for row in dict_rows
+    }
+    meta: dict[str, dict[str, str]] = {}
+    for row in mapping_rows:
+        mapping_field = _clean_text(row.get("field"))
+        entity = _clean_text(row.get("entity"))
+        prompt_field = mapping_field_to_prompt_path(mapping_field)
+        leaf = field_leaf(prompt_field)
+        dict_row = by_entity_field.get((entity, leaf))
+        if dict_row is None:
+            dict_row = {
+                "type": _clean_text(row.get("type")),
+                "description": _clean_text(row.get("description")),
+            }
+        if prompt_field in meta:
+            raise ValueError(f"duplicate prompt field {prompt_field}")
+        meta[prompt_field] = {
+            "entity": entity,
+            "mapping_field": mapping_field,
+            "type": _clean_text(dict_row.get("type")),
+            "description": _clean_text(dict_row.get("description")),
+        }
+    if use_cache:
+        _OFFICIAL_META = meta
+    return meta
+
+
+def load_official_prompt_fields(
+    mapping_csv: Path | None = None,
+    dictionary_csv: Path | None = None,
+    rules: dict | None = None,
+) -> list[str]:
+    meta = load_official_field_meta(mapping_csv, dictionary_csv)
+    rules = rules or load_filter_rules()
+    fields = []
+    for field in meta:
+        fake = pd.Series(
+            {
+                "field_path": field,
+                "coverage": 1.0,
+                "unique_count": 10,
+                "mode_share": 0.1,
+            }
+        )
+        rule, _ = apply_rules(
+            fake,
+            min_coverage=0.0,
+            min_unique=0,
+            max_mode_share=1.0,
+            rules=rules,
+        )
+        if rule is None:
+            fields.append(field)
+    return fields
+
+
+def _existing_spec_templates(path: Path | None = None) -> dict[str, str]:
+    path = Path(path or SHARED_SPEC_PATH)
+    global _EXISTING_TEMPLATES
+    if path == SHARED_SPEC_PATH and _EXISTING_TEMPLATES is not None:
+        return _EXISTING_TEMPLATES
+    if not path.exists():
+        return {}
+    templates = {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        for raw in csv.DictReader(handle):
+            field = _clean_text(raw.get("field"))
+            template = _clean_text(raw.get("template"))
+            if field and template:
+                templates[field] = template
+    if path == SHARED_SPEC_PATH:
+        _EXISTING_TEMPLATES = templates
+    return templates
+
+
 def field_convert(field: str) -> str:
     if field in DAYS_TO_YEARS_FIELDS:
         return "days_to_years"
-    if field in INT_FIELDS:
+    meta = load_official_field_meta().get(field)
+    if meta and _is_integer_type(meta["type"]):
         return "int"
     return ""
 
 
 def field_unit(field: str) -> str:
-    return UNIT_BY_FIELD.get(field, "")
+    if field in DAYS_TO_YEARS_FIELDS:
+        return "years"
+    meta = load_official_field_meta().get(field, {})
+    return _unit_from_description(field, meta.get("description", ""), meta.get("type", ""))
 
 
 def field_label(field: str) -> str:
@@ -332,6 +475,9 @@ def field_label(field: str) -> str:
 
 
 def default_template(field: str) -> str:
+    existing = _existing_spec_templates().get(field)
+    if existing:
+        return existing
     if field in TEMPLATE_OVERRIDES:
         return TEMPLATE_OVERRIDES[field]
     leaf = field_leaf(field)
@@ -357,7 +503,7 @@ def spec_row(field: str) -> dict[str, str]:
         notes.append("strip trailing .0")
     if unit:
         notes.append(f"unit from GDC description: {unit}")
-    if field in TEMPLATE_OVERRIDES:
+    if field in TEMPLATE_OVERRIDES or field in _existing_spec_templates():
         notes.append("canonical sentence")
     return {
         "field": field,
@@ -403,9 +549,11 @@ def load_shared_spec(path: Path | None = None) -> dict[str, dict[str, str]]:
     return spec
 
 
-def write_shared_spec(fields: list[str], path: Path | None = None) -> Path:
+def write_shared_spec(fields: list[str] | None = None, path: Path | None = None) -> Path:
     path = Path(path or SHARED_SPEC_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if fields is None:
+        fields = load_official_prompt_fields()
     rows = [spec_row(field) for field in sorted(set(fields))]
     for row in rows:
         validate_spec_row(row)
@@ -413,6 +561,9 @@ def write_shared_spec(fields: list[str], path: Path | None = None) -> Path:
         writer = csv.DictWriter(handle, fieldnames=SPEC_COLUMNS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
+    global _EXISTING_TEMPLATES
+    if path == SHARED_SPEC_PATH:
+        _EXISTING_TEMPLATES = {row["field"]: row["template"] for row in rows}
     return path
 
 

@@ -41,7 +41,10 @@ python ClinicDatasets/gdc_clinical_batch.py --program all --dry-run
 python ClinicDatasets/gdc_clinical_batch.py --skip-biotab
 python ClinicDatasets/gdc_clinical_batch.py --projects TCGA-KIRP --skip-biotab
 python ClinicDatasets/gdc_clinical_batch.py --program TARGET --skip-biotab
+python ClinicDatasets/gdc_clinical_batch.py --projects MMRF-COMMPASS CPTAC-3 --skip-biotab --page-size 100
 ```
+
+CPTAC / MMRF 没有 BCR Biotab（`n_clinical_file_cases=0`），只能走 A 分支 JSON。它们的 clinical 嵌套比 TCGA 大，默认一次拉 10000 例会把 GDC 附件截断，这两个队列用 `--page-size 100`。
 
 单独运行 B 分支，下载 BCR Biotab：
 

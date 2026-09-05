@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from itertools import count
 
 import pandas as pd
 
@@ -48,20 +47,6 @@ def default_outer_modalities_for(dataset: str) -> tuple[str, ...]:
         return ANALYZER_MODALITIES
     return DEFAULT_OUTER_MODALITIES
 
-_WORKER_COUNTER = count(1)
-
-
-def _worker_log_path() -> Path | None:
-    stem = os.environ.get("GREEDY_LOG_STEM", "").strip()
-    workers_raw = os.environ.get("GREEDY_WORKERS", "1").strip() or "1"
-    try:
-        workers = max(int(workers_raw), 1)
-    except ValueError:
-        workers = 1
-    if not stem or workers <= 1:
-        return None
-    worker_id = ((next(_WORKER_COUNTER) - 1) % workers) + 1
-    return Path(f"{stem}_{worker_id}.log")
 
 def parse_modalities(raw: str | None, *, allow_empty: bool = False) -> list[str]:
     if raw is None:
@@ -232,27 +217,15 @@ def evaluate_clinic_dir(
         cmd.extend(["--split_dir", str(split_dir)])
 
     env = os.environ.copy()
-    worker_log = _worker_log_path()
-    log_handle = None
-    run_kwargs = {
-        "cwd": str(analyzer_dir),
-        "env": env,
-        "check": False,
-        "text": True,
-    }
-    if worker_log is not None:
-        worker_log.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = worker_log.open("a", encoding="utf-8")
-        header = f"\n===== {scheme} {modality} =====\n"
-        log_handle.write(header)
-        log_handle.flush()
-        run_kwargs.update({"stdout": log_handle, "stderr": subprocess.STDOUT})
     proc = subprocess.run(
         cmd,
-        **run_kwargs,
+        cwd=str(analyzer_dir),
+        env=env,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
-    if log_handle is not None:
-        log_handle.close()
     log = {
         "cmd": cmd,
         "returncode": proc.returncode,
@@ -264,9 +237,11 @@ def evaluate_clinic_dir(
     if job_log:
         write_job_record(Path(job_log), log)
     if proc.returncode != 0:
+        tail = (proc.stdout or "").strip()[-2000:]
+        extra = f"\n{tail}" if tail else ""
         raise RuntimeError(
             f"Clinic_Analyzer failed for {scheme} (exit {proc.returncode}). "
-            f"See {job_log or out_dir}."
+            f"See {job_log or out_dir}.{extra}"
         )
     payload = read_cindex(out_dir, prefer_val=prefer_val)
     payload.update({"skipped": False, "clinic_dir": str(clinic_dir), "run_name": run_name, "modality": modality})

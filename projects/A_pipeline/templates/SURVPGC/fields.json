@@ -1,0 +1,19 @@
+{
+  "description": "SURVPGC：subtype + age + sex + tumor stage + stage edition + race",
+  "prompt_file": "prompts.csv",
+  "dirname": "SURVPGC",
+  "fields": [
+    "diagnoses[].primary_diagnosis",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition",
+    "demographic.race"
+  ],
+  "datasets": [
+    "TCGA_LIHC",
+    "TCGA-COAD",
+    "TCGA-READ",
+    "TCGA-BRCA"
+  ]
+}

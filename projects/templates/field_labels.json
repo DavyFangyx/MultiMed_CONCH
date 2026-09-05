@@ -1,5 +1,5 @@
 {
-  "说明": "基于你这个 clinical.cart JSON 文件整理的字段字典。保持 JSON 结构表达，并在每个字段后给出中文含义。注意：不同病人记录出现的字段会不完全一致。",
+  "说明": "旧人工字段表，释义不可靠。筛选不读这份表，扫描默认也不再读取。仅保留作历史对照。当前扫描释义来自 ClinicDatasets/gdc_clinical/field_tables/gdc_clinical_dictionary.csv。",
   "顶层字段": {
     "case_id": "病例在 GDC/TCGA 中的唯一 ID（UUID）",
     "submitter_id": "病例在提交方系统中的 ID（常见为 TCGA-XX-XXXX）",

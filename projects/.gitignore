@@ -16,6 +16,7 @@ Clinic_Analyzer/configs/queue/**
 Clinic_Analyzer/configs/done/**
 Clinic_Analyzer/configs/failed/**
 Clinic_Analyzer/configs/running/**
+Clinic_Analyzer/configs/greedy/**
 
 # Intermediate and result data files
 *.csv

@@ -1,0 +1,2 @@
+demographic_race_template,demographic_age_at_index_template,demographic_sex_at_birth_template,diagnoses_prior_malignancy_template,exposures_pack_years_smoked_template,derived_years_smoked_template,derived_radiation_therapy_template,derived_pharmaceutical_therapy_template
+Race is {}.,The patient is {} years old at index.,Sex at birth is {}.,Prior malignancy is {}.,Pack years smoked is {}.,Years smoked is {}.,Radiation therapy is {}.,Pharmaceutical therapy is {}.

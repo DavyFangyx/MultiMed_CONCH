@@ -1,0 +1,21 @@
+{
+  "description": "L2：L1 + tumor_grade + prior_malignancy + synchronous_malignancy + prior_treatment",
+  "prompt_file": "prompts.csv",
+  "dirname": "L2",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].tumor_grade",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "diagnoses[].prior_treatment"
+  ]
+}

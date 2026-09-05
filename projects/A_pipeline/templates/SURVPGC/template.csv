@@ -1,0 +1,2 @@
+diagnoses_primary_diagnosis_template,demographic_age_at_index_template,demographic_sex_at_birth_template,diagnoses_ajcc_pathologic_stage_template,diagnoses_ajcc_staging_system_edition_template,demographic_race_template
+Primary diagnosis is {}.,The patient is {} years old at index.,Sex at birth is {}.,Pathologic overall stage is {}.,AJCC staging system edition is {}.,Race is {}.

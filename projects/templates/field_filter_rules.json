@@ -1,39 +1,41 @@
 {
-  "说明": "R0/R1/R5 名单型筛选。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。",
+  "说明": "R0/R1/R5 名单型筛选。R0 只删真正结局字段；默认 landmark 开启时，diagnoses / follow_ups 整层留给 Field Bank 按 T 做取值 mask。--landmark_time none 时 R0 用 path_contains 整层删除这两层。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。R1 对齐 GDC administrative 且尚未被 R0 命中的字段；R5 只处理年龄、病理总分期、临床总分期、性别。",
   "R0_label_leak": {
     "leaves": [
       "state",
-      "lost_to_followup"
+      "lost_to_followup",
+      "vital_status",
+      "last_known_disease_status",
+      "progression_or_recurrence",
+      "treatment_outcome",
+      "cause_of_death",
+      "disease_response",
+      "initial_disease_status",
+      "imaging_result",
+      "imaging_findings",
+      "timepoint_category"
     ],
     "substrings": [
-      "vital_status",
       "days_to_death",
       "year_of_death",
       "days_to_last_follow_up",
       "days_to_last_known_disease_status",
-      "last_known_disease_status",
-      "progression_or_recurrence",
       "days_to_recurrence",
       "days_to_progression",
-      "treatment_or_therapy",
       "days_to_treatment_start",
       "days_to_treatment_end",
-      "treatment_outcome",
-      "cause_of_death",
-      "days_to_diagnosis"
-    ],
-    "path_contains": [
-      "follow_ups"
-    ],
-    "path_suffixes": [
-      "treatments[].number_of_cycles",
-      "treatments[].number_of_fractions",
-      "treatments[].regimen_or_line_of_therapy",
-      "treatments[].timepoint_category",
-      "treatments[].treatment_type_administered"
+      "days_to_diagnosis",
+      "evidence_of_progression",
+      "evidence_of_recurrence",
+      "year_of_diagnosis",
+      "year_of_follow_up"
     ],
     "leaf_startswith": [
       "days_to_"
+    ],
+    "path_contains": [
+      "diagnoses",
+      "follow_ups"
     ],
     "except_leaves": [
       "days_to_birth"
@@ -48,11 +50,9 @@
       "project_id",
       "disease_type",
       "primary_site",
-      "classification_of_tumor",
       "consent_type",
-      "tumor_of_origin",
-      "consistent_pathology_review",
-      "figo_staging_edition_year"
+      "index_date",
+      "batch_id"
     ],
     "leaf_endswith": [
       "_id"
@@ -74,24 +74,45 @@
     "说明": "drop 是实际删除名单。keep 是语义重复后留下的字段，筛选只读 drop，keep 写入 exclusion_log。",
     "groups": [
       {
-        "drop": ["age_at_index", "days_to_birth"],
-        "keep": ["age_at_diagnosis"],
+        "drop": [
+          "age_at_index",
+          "days_to_birth"
+        ],
+        "keep": [
+          "age_at_diagnosis"
+        ],
         "note": "age can be derived from diagnoses.age_at_diagnosis"
       },
       {
-        "drop": ["ajcc_pathologic_stage"],
-        "keep": ["ajcc_pathologic_t", "ajcc_pathologic_n", "ajcc_pathologic_m"],
-        "note": "composite stage duplicates T/N/M"
+        "drop": [
+          "ajcc_pathologic_stage"
+        ],
+        "keep": [
+          "ajcc_pathologic_t",
+          "ajcc_pathologic_n",
+          "ajcc_pathologic_m"
+        ],
+        "note": "composite pathologic stage duplicates T/N/M"
       },
       {
-        "drop": ["ajcc_staging_system_edition"],
-        "keep": [],
-        "note": "not patient-level / not comparable"
+        "drop": [
+          "ajcc_clinical_stage"
+        ],
+        "keep": [
+          "ajcc_clinical_t",
+          "ajcc_clinical_n",
+          "ajcc_clinical_m"
+        ],
+        "note": "composite clinical stage duplicates T/N/M"
       },
       {
-        "drop": ["year_of_diagnosis"],
-        "keep": [],
-        "note": "administrative censoring confounder"
+        "drop": [
+          "gender"
+        ],
+        "keep": [
+          "sex_at_birth"
+        ],
+        "note": "gender duplicates sex_at_birth"
       }
     ]
   }

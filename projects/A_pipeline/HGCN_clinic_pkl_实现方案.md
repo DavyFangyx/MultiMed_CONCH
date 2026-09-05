@@ -12,7 +12,7 @@
 
 - 本文件
 - [README.md](README.md)
-- [templates/schemes.json](templates/schemes.json)（L0-L5 字段列表）
+- [templates/L0/fields.json](templates/L0/fields.json) 到 [templates/L5/fields.json](templates/L5/fields.json)（L0-L5 字段列表）
 - [src/baseline.py](src/baseline.py)（D0-D5 字段列表、连续/有序/名义划分、ordinary 编码、缺失判定）
 - [src/extract.py](src/extract.py)
 - [src/missingness.py](src/missingness.py)
@@ -46,7 +46,7 @@
 
 | 通路 | 字段 | 每个字段怎么编码 | 产物形态 |
 |---|---|---|---|
-| L0-L5 | `templates/schemes.json` 的 placeholders | 模板句子 → CONCH | `(n_fields, 512).pt` |
+| L0-L5 | `templates/{scheme}/fields.json` 的 fields | 模板句子 → CONCH | `(n_fields, 512).pt` |
 | D0-D5 | 与 L 完全同一套字段 | 连续 `[0,1]` min-max（缺失填中位数）；有序整数（缺失当 0）；名义 one-hot（缺失是 `__MISSING__` 维） | 变长拼接向量 `.pt` |
 | **HGCN_clinic / L0-L5** | **还是这套字段，一个字段也不许改** | 连续保持标量；有序/名义都是一个整数；**缺失保持 None**；再按 HGCN 做对称 min-max + 对角 pad | **pkl 图节点** |
 
@@ -58,42 +58,42 @@ L0 和 D0、L1 和 D1、…、L5 和 D5 字段列表已经对齐。HGCN 按 L �
 
 ## 3. 字段列表（锁死，按 L/D 抄）
 
-从 `BASELINE_SCHEME_FIELDS` / `schemes.json` 原样复制，顺序就是节点顺序。禁止重排，禁止增删。
+从 `SCHEME_FIELDS` / `templates/{scheme}/fields.json` 原样复制，顺序就是节点顺序。禁止重排，禁止增删。
 
 ```text
 L0 / 4 节点:
-  AGE, SEX_AT_BIRTH, RACE, ETHNICITY
+  demographic.age_at_index, demographic.sex_at_birth, demographic.race, demographic.ethnicity
 
 L1 / 10 节点:
-  L0 + PRIMARY_DIAGNOSIS, MORPHOLOGY, TISSUE_OR_ORGAN_OF_ORIGIN,
-       LATERALITY, YEAR_OF_DIAGNOSIS, AGE_AT_DIAGNOSIS
+  L0 + diagnoses[].primary_diagnosis, diagnoses[].morphology, diagnoses[].tissue_or_organ_of_origin,
+       diagnoses[].laterality, diagnoses[].year_of_diagnosis, diagnoses[].age_at_diagnosis
 
 L2 / 14 节点:
-  L1 + TUMOR_GRADE, PRIOR_MALIGNANCY, SYNCHRONOUS_MALIGNANCY, PRIOR_TREATMENT
+  L1 + diagnoses[].tumor_grade, diagnoses[].prior_malignancy, diagnoses[].synchronous_malignancy, diagnoses[].prior_treatment
 
 L3 / 19 节点:
-  L2 + AJCC_PATHOLOGIC_T, AJCC_PATHOLOGIC_N, AJCC_PATHOLOGIC_M,
-       AJCC_PATHOLOGIC_STAGE, AJCC_STAGING_SYSTEM_EDITION
+  L2 + diagnoses[].ajcc_pathologic_t, diagnoses[].ajcc_pathologic_n, diagnoses[].ajcc_pathologic_m,
+       diagnoses[].ajcc_pathologic_stage, diagnoses[].ajcc_staging_system_edition
 
 L4 / 21 节点:
-  L3 + LYMPH_NODES_TESTED, LYMPH_NODES_POSITIVE
+  L3 + diagnoses[].pathology_details[].lymph_nodes_tested, diagnoses[].pathology_details[].lymph_nodes_positive
 
 L5 / 23 节点:
-  L4 + ECOG_PERFORMANCE_STATUS, BMI
+  L4 + follow_ups[].ecog_performance_status, follow_ups[].other_clinical_attributes[].bmi
 ```
 
 代码里不要再维护一份字段表。直接：
 
 ```python
-from src.baseline import BASELINE_SCHEME_FIELDS
+from src.config import SCHEME_FIELDS
 
 HGCN_SCHEME_FIELDS = {
-    "L0": BASELINE_SCHEME_FIELDS["D0"],
-    "L1": BASELINE_SCHEME_FIELDS["D1"],
-    "L2": BASELINE_SCHEME_FIELDS["D2"],
-    "L3": BASELINE_SCHEME_FIELDS["D3"],
-    "L4": BASELINE_SCHEME_FIELDS["D4"],
-    "L5": BASELINE_SCHEME_FIELDS["D5"],
+    "L0": SCHEME_FIELDS["L0"],
+    "L1": SCHEME_FIELDS["L1"],
+    "L2": SCHEME_FIELDS["L2"],
+    "L3": SCHEME_FIELDS["L3"],
+    "L4": SCHEME_FIELDS["L4"],
+    "L5": SCHEME_FIELDS["L5"],
 }
 ```
 
@@ -101,7 +101,7 @@ HGCN_SCHEME_FIELDS = {
 
 ### 3.1 明确不要做的字段改动
 
-- 不要改用 `demographic.gender`。L/D 用的是 `SEX_AT_BIRTH`
+- 不要改用 `demographic.gender`。L/D 用的是 `demographic.sex_at_birth`
 - 不要加入 Radiation / Pharmaceutical / Pack_years_smoked / Years_smoked / Alcohol
 - 不要按癌种换字段表。9 个数据集都跑同一套 L0-L5
 - 不要用 L4 的 21 句当唯一方案；L0 到 L5 都要出
@@ -114,17 +114,17 @@ HGCN_SCHEME_FIELDS = {
 
 ```text
 连续 BASELINE_CONTINUOUS_FIELDS:
-  AGE, YEAR_OF_DIAGNOSIS, AGE_AT_DIAGNOSIS,
-  LYMPH_NODES_TESTED, LYMPH_NODES_POSITIVE, BMI
+  demographic.age_at_index, diagnoses[].year_of_diagnosis, diagnoses[].age_at_diagnosis,
+  diagnoses[].pathology_details[].lymph_nodes_tested, diagnoses[].pathology_details[].lymph_nodes_positive, follow_ups[].other_clinical_attributes[].bmi
 
 有序 BASELINE_ORDINAL_FIELDS:
-  TUMOR_GRADE, AJCC_PATHOLOGIC_T, AJCC_PATHOLOGIC_N,
-  AJCC_PATHOLOGIC_M, AJCC_PATHOLOGIC_STAGE, ECOG_PERFORMANCE_STATUS
+  diagnoses[].tumor_grade, diagnoses[].ajcc_pathologic_t, diagnoses[].ajcc_pathologic_n,
+  diagnoses[].ajcc_pathologic_m, diagnoses[].ajcc_pathologic_stage, follow_ups[].ecog_performance_status
 
 名义 BASELINE_NOMINAL_FIELDS:
-  SEX_AT_BIRTH, RACE, ETHNICITY, PRIMARY_DIAGNOSIS, MORPHOLOGY,
-  TISSUE_OR_ORGAN_OF_ORIGIN, LATERALITY, PRIOR_MALIGNANCY,
-  SYNCHRONOUS_MALIGNANCY, PRIOR_TREATMENT, AJCC_STAGING_SYSTEM_EDITION
+  demographic.sex_at_birth, demographic.race, demographic.ethnicity, diagnoses[].primary_diagnosis, diagnoses[].morphology,
+  diagnoses[].tissue_or_organ_of_origin, diagnoses[].laterality, diagnoses[].prior_malignancy,
+  diagnoses[].synchronous_malignancy, diagnoses[].prior_treatment, diagnoses[].ajcc_staging_system_edition
 ```
 
 这就是 one-hot 通路已经告诉你的类型信息。HGCN 不要另发明一套。
@@ -142,7 +142,7 @@ HGCN_SCHEME_FIELDS = {
 
 字段语义保持 D 组已有规则，包括：
 
-- `AGE_AT_DIAGNOSIS`：数值 `> 365` 时按天除以 365.25（`_aggregate_continuous_value` 已有）
+- `diagnoses[].age_at_diagnosis`：数值 `> 365` 时按天除以 365.25（`_aggregate_continuous_value` 已有）
 - 连续字段多值取中位数（这是同一病人多条记录的聚合，不是跨病人填补）
 - 有序字段用现有 `_encode_tumor_grade` / `_encode_t_stage` / `_encode_n_stage` / `_encode_m_stage` / `_encode_overall_stage` / `_encode_ecog`
 - 名义字段用现有 `_canonical_nominal_value`（小写、去空、多值 ` | ` 连接）
@@ -277,8 +277,8 @@ pkl 用 `joblib.dump`。不要写 `.pt`。不要占用 `L0/`-`L5/` 文本目录�
   "dataset": "TCGA-KIRC",
   "scheme": "L4",
   "n_cli": 21,
-  "fields": ["AGE", "SEX_AT_BIRTH", "..."],
-  "field_types": {"AGE": "continuous", "SEX_AT_BIRTH": "nominal", "TUMOR_GRADE": "ordinal"},
+  "fields": ["demographic.age_at_index", "demographic.sex_at_birth", "..."],
+  "field_types": {"demographic.age_at_index": "continuous", "demographic.sex_at_birth": "nominal", "diagnoses[].tumor_grade": "ordinal"},
   "pad_dim": 1024,
   "minmax": "symmetric_to_unit",
   "missing_policy": "keep_none",
@@ -347,12 +347,12 @@ A_pipeline/
 
 `tests/test_hgcn_clinic.py` 至少覆盖：
 
-1. **字段锁定**：L0 产出 4 维，L5 产出 23 维；字段顺序与 `BASELINE_SCHEME_FIELDS` 一致
+1. **字段锁定**：L0 产出 4 维，L5 产出 23 维；字段顺序与 `SCHEME_FIELDS` 一致
 2. **不引入论文字段**：结果里没有 `Radiation_Therapy` / `Pack_years_smoked`
-3. **名义不是 one-hot**：`SEX_AT_BIRTH=male` 是一个整数，不是一段 0/1 向量
+3. **名义不是 one-hot**：`demographic.sex_at_birth=male` 是一个整数，不是一段 0/1 向量
 4. **有序复用 D 组**：`ajcc_pathologic_t=T2` 的整数与 `_encode_t_stage` 一致
 5. **缺失保持 None**：某个名义/连续字段不写或写 `not reported`，`ttt_cli_feas` 对应位置是 `None`，不是中位数，也不是 0 类
-6. **连续缺失不填中位数**：队列里 AGE 为 `[50, None, 70]`，缺失那位仍是 `None`
+6. **连续缺失不填中位数**：队列里 demographic.age_at_index 为 `[50, None, 70]`，缺失那位仍是 `None`
 7. **min-max 公式**：某连续字段观测值为 `[0, 10]`，变换后为 `[-1, 1]`；公式是 `(x-(max+min)/2)/(max-min)*2`，不是 D 组 `(x-min)/(max-min)`
 8. **None 不进 min/max**：观测 `[0, 10]` 加一个缺失，min/max 仍按 0 和 10 算
 9. **对角 pad**：3 个字段 shape `(3,1024)`；有值写在 `x[i,i]`，缺失位对角为 0，其余为 0

@@ -1,0 +1,2 @@
+demographic_race_template,demographic_age_at_index_template,diagnoses_primary_diagnosis_template,diagnoses_morphology_template,derived_radiation_therapy_template,derived_pharmaceutical_therapy_template
+Race is {}.,The patient is {} years old at index.,Primary diagnosis is {}.,Tumor morphology is {}.,Radiation therapy is {}.,Pharmaceutical therapy is {}.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -9,7 +10,14 @@ from pathlib import Path
 
 from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
-from common.paths import RAWDATA_STATS_ROOT, dataset_field_dict_path, resolve_reference_dict_path
+from common.paths import (
+    DEFAULT_GDC_CLINICAL_DICTIONARY,
+    DEFAULT_JSON_FIELD_DICT,
+    LEGACY_JSON_FIELD_DICT,
+    RAWDATA_STATS_ROOT,
+    dataset_field_dict_path,
+    resolve_reference_dict_path,
+)
 
 
 SECTION_PREFIX_MAP = {
@@ -35,6 +43,23 @@ GENERIC_LABELS = {
     "updated_datetime": "该条子记录最近更新时间",
     "submitter_id": "提交单位内部标识，便于跨表关联",
 }
+
+GDC_ENTITY_PREFIX = {
+    "case": "",
+    "demographic": "demographic",
+    "diagnosis": "diagnoses[]",
+    "pathology_detail": "diagnoses[].pathology_details[]",
+    "treatment": "diagnoses[].treatments[]",
+    "exposure": "exposures[]",
+    "follow_up": "follow_ups[]",
+    "molecular_test": "follow_ups[].molecular_tests[]",
+    "other_clinical_attribute": "follow_ups[].other_clinical_attributes[]",
+    "family_history": "family_histories[]",
+    "project": "project",
+}
+
+FALLBACK_LABEL = "扫描发现的字段（待标注）"
+ID_LABEL = "该条子记录唯一 ID（UUID）"
 
 
 def dataset_json_field_dict_path(dataset_name: str) -> Path:
@@ -127,7 +152,46 @@ def _collect_keys(value, prefix: str, sections: dict) -> None:
                     _collect_keys(item, child_prefix, sections)
 
 
-def _load_label_bank(reference_dict: dict):
+def _is_gdc_dictionary_path(path: Path) -> bool:
+    return path.suffix.lower() == ".csv"
+
+
+def _clean_label(value) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return ""
+    return text
+
+
+def _load_gdc_label_bank(path: Path):
+    by_section_field = {}
+    by_field = {}
+    field_order = {}
+    csv.field_size_limit(max(csv.field_size_limit(), 8 * 1024 * 1024))
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row = {(k or "").lstrip("﻿"): v for k, v in row.items()}
+            entity = str(row.get("entity") or "").strip()
+            field = str(row.get("field") or "").strip()
+            if not field:
+                continue
+            prefix = GDC_ENTITY_PREFIX.get(entity)
+            if prefix is None:
+                continue
+            section = _section_name_for_prefix(prefix)
+            label = _clean_label(row.get("description"))
+            if not label:
+                continue
+            by_section_field[(section, field)] = label
+            by_field.setdefault(field, label)
+            field_order.setdefault(section, [])
+            if field not in field_order[section]:
+                field_order[section].append(field)
+    return by_section_field, by_field, list(field_order), field_order
+
+
+def _load_json_label_bank(reference_dict: dict):
     by_section_field = {}
     by_field = {}
     section_order = []
@@ -138,7 +202,9 @@ def _load_label_bank(reference_dict: dict):
         for key, zh in generic.items():
             if key == "各种_id字段":
                 continue
-            by_field[str(key)] = str(zh)
+            label = _clean_label(zh)
+            if label:
+                by_field[str(key)] = label
 
     for section, body in reference_dict.items():
         if section in DICT_META_KEYS or not isinstance(body, dict):
@@ -146,11 +212,19 @@ def _load_label_bank(reference_dict: dict):
         section_order.append(section)
         field_order[section] = list(body.keys())
         for key, zh in body.items():
-            label = str(zh)
+            label = _clean_label(zh)
+            if not label:
+                continue
             by_section_field[(section, str(key))] = label
             by_field.setdefault(str(key), label)
 
     return by_section_field, by_field, section_order, field_order
+
+
+def _load_label_bank(reference_path: Path, reference_dict: dict):
+    if _is_gdc_dictionary_path(reference_path) and reference_path.exists():
+        return _load_gdc_label_bank(reference_path)
+    return _load_json_label_bank(reference_dict)
 
 
 def _label_for_field(section: str, field: str, by_section_field: dict, by_field: dict) -> str:
@@ -161,8 +235,8 @@ def _label_for_field(section: str, field: str, by_section_field: dict, by_field:
     if field in by_field:
         return by_field[field]
     if field.endswith("_id"):
-        return "该条子记录唯一 ID（UUID）"
-    return "扫描发现的字段（待标注）"
+        return ID_LABEL
+    return FALLBACK_LABEL
 
 
 def _ordered_fields(section: str, fields: set, field_order: dict) -> list:
@@ -179,10 +253,10 @@ def build_json_field_dict(
 ) -> dict:
     reference_path = resolve_reference_dict_path(reference_dict_path)
     reference_dict = {}
-    if reference_path.exists():
+    if reference_path.exists() and not _is_gdc_dictionary_path(reference_path):
         reference_dict = load_json_field_dictionary(reference_path)
 
-    by_section_field, by_field, section_order, field_order = _load_label_bank(reference_dict)
+    by_section_field, by_field, section_order, field_order = _load_label_bank(reference_path, reference_dict)
 
     sections = {}
     for case in cases:
@@ -200,7 +274,7 @@ def build_json_field_dict(
     n_cases = len(cases)
     out["说明"] = (
         f"由 {dataset_label} 的 clinical JSON 扫描生成的字段字典，"
-        f"共纳入 {n_cases} 个病例。结构与 templates/field_labels.json 对齐；"
+        f"共纳入 {n_cases} 个病例。释义优先对齐 GDC clinical dictionary；"
         "不同病人出现的字段不完全一致，这里取并集。"
     )
     out["_meta"] = {
@@ -263,12 +337,26 @@ def scan_dataset_json_field_dict(
     return path, dict_data
 
 
+def _is_reference_dict_path(path: Path) -> bool:
+    if _is_gdc_dictionary_path(path):
+        return True
+    resolved = path.resolve()
+    for candidate in (
+        DEFAULT_GDC_CLINICAL_DICTIONARY,
+        DEFAULT_JSON_FIELD_DICT,
+        LEGACY_JSON_FIELD_DICT,
+    ):
+        if candidate.exists() and resolved == candidate.resolve():
+            return True
+    return False
+
+
 def resolve_json_field_dict_path(dataset_name: str | None = None, explicit_path=None) -> Path:
-    default_path = resolve_reference_dict_path()
     explicit = Path(explicit_path) if explicit_path else None
     dataset_path = dataset_json_field_dict_path(dataset_name) if dataset_name else None
+    default_scan_path = dataset_json_field_dict_path(dataset_name or "custom")
 
-    if explicit is not None and explicit.resolve() != default_path.resolve():
+    if explicit is not None and not _is_reference_dict_path(explicit):
         return explicit
     if dataset_path is not None and dataset_path.exists():
         return dataset_path
@@ -277,7 +365,7 @@ def resolve_json_field_dict_path(dataset_name: str | None = None, explicit_path=
         return legacy
     if explicit is not None:
         return explicit
-    return default_path
+    return default_scan_path
 
 
 def run_scan(args):

@@ -1,0 +1,21 @@
+{
+  "description": "HGCN_ESCA：race + age + gender + alcohol + primary diagnosis + site + morphology + BMI + cigarettes/day + radiation + pharma",
+  "prompt_file": "prompts.csv",
+  "dirname": "HGCN_ESCA",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "exposures[].alcohol_history",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "diagnoses[].morphology",
+    "follow_ups[].other_clinical_attributes[].bmi",
+    "exposures[].cigarettes_per_day",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA-ESCA"
+  ]
+}

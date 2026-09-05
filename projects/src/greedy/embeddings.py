@@ -16,11 +16,33 @@ def subset_scheme_name(subset_idx) -> str:
     return f"G{len(idx)}_{digest}"
 
 
-def subset_embedding_dir(dataset: str, scheme: str, embeddings_root: Path, encoding: str = "prompt") -> Path:
-    from common.paths import validate_encoding
+def subset_embedding_dir(
+    dataset: str,
+    scheme: str,
+    embeddings_root: Path,
+    encoding: str = "prompt",
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
+) -> Path:
+    from common.paths import (
+        encoding_and_landmark_tag_from_path,
+        experiment_from_path,
+        experiment_path_parts,
+        require_landmark_tag,
+        validate_encoding,
+    )
 
     encoding = validate_encoding(encoding)
-    return Path(embeddings_root) / dataset / "greedy" / encoding / "subsets" / scheme / "embeddings" / "pt"
+    tag = landmark_tag
+    if tag is None:
+        _, inferred = encoding_and_landmark_tag_from_path(embeddings_root)
+        tag = inferred
+    tag = require_landmark_tag(tag)
+    experiment = experiment if experiment is not None else experiment_from_path(embeddings_root)
+    root = Path(embeddings_root) / dataset
+    for part in experiment_path_parts(experiment):
+        root = root / part
+    return root / "greedy" / encoding / tag / "subsets" / scheme / "embeddings" / "pt"
 
 
 def _as_matrix(obj):
@@ -83,13 +105,30 @@ def materialize_subset_embeddings(
             "skipped": True,
         }
 
+    tokens_per_field = 1
+    index_path = bank / "field_index.json"
+    if index_path.exists():
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+            tokens_per_field = max(int((payload or {}).get("tokens_per_field") or 1), 1)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            tokens_per_field = 1
+
     n_saved = 0
     feat_dim = None
     for src in paths:
         matrix = _as_matrix(torch.load(src, map_location="cpu"))
-        if max(idx) >= matrix.shape[0]:
-            raise IndexError(f"subset idx {idx} out of range for {src} with {matrix.shape[0]} fields")
-        sliced = matrix[idx]
+        rows = []
+        for field_idx in idx:
+            start = int(field_idx) * tokens_per_field
+            stop = start + tokens_per_field
+            if start < 0 or stop > matrix.shape[0]:
+                raise IndexError(
+                    f"subset idx {idx} out of range for {src} with {matrix.shape[0]} rows "
+                    f"and tokens_per_field={tokens_per_field}"
+                )
+            rows.append(matrix[start:stop])
+        sliced = rows[0] if len(rows) == 1 else torch.cat(rows, dim=0)
         feat_dim = int(sliced.shape[1])
         torch.save(sliced.contiguous(), out_pt_dir / src.name)
         n_saved += 1

@@ -1,0 +1,20 @@
+{
+  "description": "MMSURV：T + N + M + age + gender",
+  "prompt_file": "prompts.csv",
+  "dirname": "MMSURV",
+  "fields": [
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth"
+  ],
+  "datasets": [
+    "TCGA-BRCA",
+    "TCGA-ESCA",
+    "TCGA_LIHC",
+    "TCGA-LUAD",
+    "TCGA-COAD",
+    "TCGA-STAD"
+  ]
+}

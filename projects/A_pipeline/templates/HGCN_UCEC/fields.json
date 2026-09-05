@@ -1,0 +1,16 @@
+{
+  "description": "HGCN_UCEC：race + age + primary diagnosis + morphology + radiation + pharma",
+  "prompt_file": "prompts.csv",
+  "dirname": "HGCN_UCEC",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA-UCEC"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "description": "HGCN_LUSC：race + age + gender + prior malignancy + site + pack years + years smoked + radiation + pharma",
+  "prompt_file": "prompts.csv",
+  "dirname": "HGCN_LUSC",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "exposures[].pack_years_smoked",
+    "derived.years_smoked",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA-LUSC"
+  ]
+}

@@ -51,7 +51,7 @@ fliter_log/ 里的两份日志）
 
   CONCH-main/projects/rawdata_stats/TCGA-BRCA/scanned_fields.json
   该数据集所有病例扫出来的字段并集字典，按分区组织（顶层、demographic对象、
-  diagnoses数组_每个对象 等）。它记录“这个数据集里出现过哪些路径、中文释义是什么”，
+  diagnoses数组_每个对象 等）。它记录“这个数据集里出现过哪些路径、释义是什么”，
   不是每个病人都有这些字段。BRCA 扫到 144 个路径。
 
   CONCH-main/projects/rawdata_stats/TCGA-BRCA/field_stats.csv
@@ -109,7 +109,7 @@ python projects/scripts/run_time_stats.py --dataset all
 
 对纳入病例做深度遍历，把所有出现过的 key 做成并集。嵌套对象写成 `project.xxx`，数组写成 `diagnoses[]`、`diagnoses[].treatments[]` 这类路径。不同病人字段不完全一致，所以这里是并集，不是每个病人都有的字段。
 
-中文释义优先从 `templates/field_labels.json` 对齐；对不上的标成“扫描发现的字段（待标注）”，`*_id` 默认标成 UUID。
+释义优先从 `ClinicDatasets/gdc_clinical/field_tables/gdc_clinical_dictionary.csv` 按 entity/field 对齐；description 为空时用通用说明，再不行标成“扫描发现的字段（待标注）”，`*_id` 默认标成 UUID。`templates/field_labels.json` 已停用。
 
 `scanned_fields.json` 按分区组织，例如：
 
@@ -166,11 +166,11 @@ python projects/scripts/run_time_stats.py --dataset all
 | 规则 | 作用 | 当前触发规模 |
 | --- | --- | --- |
 | R0 标签泄漏 | 丢掉 `vital_status`、`days_to_death`、`days_to_last_follow_up`、复发/进展/治疗结局、其它 `days_to_*`（`days_to_birth` 除外），以及 `lost_to_followup`、整支 `follow_ups[]`、部分治疗过程字段（`number_of_cycles` / `number_of_fractions` / `regimen_or_line_of_therapy` / `timepoint_category` / `treatment_type_administered`） | 212 行 |
-| R1 行政字段 | 丢掉 `submitter_id`、`*_id`、时间戳、`project_id`、`primary_site`、容器叶子，以及 `pathology_details[].consistent_pathology_review`、`diagnoses[].figo_staging_edition_year` | 414 行 |
+| R1 行政字段 | 丢掉 `submitter_id`、`*_id`、时间戳、`project_id`、`primary_site`、`consent_type`、`index_date`、`batch_id` 和容器叶子。GDC 标成 clinical 的字段不再因 R1 删除。`state` / `lost_to_followup` 等仍走 R0 | 414 行 |
 | R2 时间位置 | 路径落在 `follow_ups` / `other_clinical_attributes` 标 `follow_up`，其余 `baseline`。R0 已整支删除 `follow_ups[]` 后，该标记主要落在 `other_clinical_attributes` | 只打标 |
 | R3 覆盖率 | `coverage < --R3_coverage`（默认 0.30） | 171 行 |
 | R4 退化 | 有效取值 `n_unique < --R4_n_unique`（默认 2），或众数占比 `> --R4_mode_share`（默认 0.95） | 104 行 |
-| R5 可派生 | 按 `templates/field_filter_rules.json` 的 `drop` 名单删除：`age_at_index` / `days_to_birth`（keep `age_at_diagnosis`）、`ajcc_pathologic_stage`（keep `ajcc_pathologic_t` / `ajcc_pathologic_n` / `ajcc_pathologic_m`）、`ajcc_staging_system_edition`、`year_of_diagnosis`。`keep` 只写入 exclusion_log，不参与匹配 | 43 行 |
+| R5 可派生 | 按 `templates/field_filter_rules.json` 的 `drop` 名单删除：`age_at_index` / `days_to_birth`（keep `age_at_diagnosis`）、`ajcc_pathologic_stage`（keep pathologic T/N/M）、`ajcc_clinical_stage`（keep clinical T/N/M）、`gender`（keep `sex_at_birth`）。`year_of_diagnosis` / `ajcc_staging_system_edition` 不再走 R5。`keep` 只写入 exclusion_log，不参与匹配 | 43 行 |
 | R6 可移植性 | 按该字段在多少个数据集上被保留，标 `universal` / `common` / `local` | 只打标 |
 
 跨 9 个数据集一共扫到 211 个唯一字段路径，筛后保留 84 个。其中 13 个在全部或几乎全部数据集都留下（`universal`），10 个比较常见（`common`），其余 61 个是癌种局部字段。
@@ -226,21 +226,8 @@ python projects/scripts/run_time_stats.py --dataset all
 
 ### t_record 实现表
 
-单元格是相对 index 的天数。归一化：`days / last_time_days`，不再减日历 `t0`。
-主判据优先；备选只在主判据缺失时使用。父级继承只指向直接父对象。
-`follow_ups[].other_clinical_attributes[]` 两个 days 都有时用 `days_to_comorbidity`。
-
-| 实体 | 主判据 | 备选判据 | 兜底 | 产物列名 |
-| --- | --- | --- | --- | --- |
-| `diagnoses[]` | `days_to_diagnosis` | — | 缺失则排除 | `diagnoses_record{i}` |
-| `diagnoses[].treatments[]` | `days_to_treatment_start` | `timepoint_category` 命中 treatments 窄表则继承父诊断 `days_to_diagnosis` | 两者均缺则排除 | `diagnoses_treatments_record{i}` |
-| `diagnoses[].pathology_details[]` | `days_to_pathology_detail` | `timepoint_category` 命中 pathology 窄表则继承父诊断 `days_to_diagnosis` | 两者均缺则排除 | `diagnoses_pathology_details_record{i}` |
-| `follow_ups[]` | `days_to_follow_up` | — | 缺失则排除 | `follow_ups_record{i}` |
-| `follow_ups[].molecular_tests[]` | `days_to_test` | 继承父 follow-up `days_to_follow_up` | 两者均缺则排除 | `follow_ups_molecular_tests_record{i}` |
-| `follow_ups[].other_clinical_attributes[]` | `days_to_comorbidity`，否则 `days_to_risk_factor` | 继承父 follow-up `days_to_follow_up` | 两者均缺则排除 | `follow_ups_other_clinical_attributes_record{i}` |
-
-窄表（strip 后大小写不敏感、整串相等）：treatments = `Prior to Diagnosis` / `Preoperative` / `Prior to Procurement` / `Pretreatment` / `Pre-treatment`；pathology = `Initial Diagnosis` / `Prior to Diagnosis`。
-不算基线：`Postoperative`、`Recurrence`、`Progression`、`First Treatment`、`Prior to Adjuvant Therapy`。
+`t_record` 是区间；CSV 写有限 `t_hi`，归一化 `t_hi / last_time_days`。landmark 只收 `point` / `bounded` 且 `t_hi <= T`。完整规则见 [`TIME_CRITERIA.md`](TIME_CRITERIA.md)。
+`diagnoses[].treatments[]` 中 `treatment_or_therapy=no` 不编号、不进覆盖率、也不进 landmark。需要 biospecimen 的分子检测记 `unlocated`。覆盖率按 `point` / `bounded` / `lo_only` / `unlocated` / `non_informative` 拆分。
 
 当前各数据集生存概况：
 

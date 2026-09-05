@@ -1,10 +1,10 @@
-"""CLI for human-defined L0-L5 / D0-D5 / HGCN_clinic scheme workflows."""
+"""CLI for human-defined L0-L5 / D0-D5 / paper-scheme / HGCN_clinic workflows."""
 
 import argparse
 
 from pathlib import Path
 
-from .clinical_io import load_clinical_cases
+from common.clinical_io import load_clinical_cases
 from .datasets import dataset_jobs, load_dataset_configs, resolve_dataset_names
 from .paths import (
     DEFAULT_BASELINE_OUT_ROOT,
@@ -20,23 +20,30 @@ from .paths import (
 from .baseline import (
     build_baseline_feature_schema,
     build_patient_rows,
-    fit_nominal_mappings,
+    fit_onehot_mappings,
     global_mapping_dir,
+    load_baseline_scheme_fields,
     resolve_baseline_schemes,
     run_baseline_encode,
     save_global_baseline_metadata,
 )
-from .config import load_custom_schemes, resolve_scheme_names
+from .config import load_custom_schemes, resolve_scheme_names, schemes_for_dataset
 from .encode import run_encode
 from .json2prompt import run_json2prompt
-from .hgcn_clinic import prepare_hgcn_nominal_mappings, resolve_hgcn_schemes, run_hgcn_clinic
+from .hgcn_clinic import (
+    load_hgcn_scheme_fields,
+    prepare_hgcn_nominal_mappings,
+    resolve_hgcn_schemes,
+    run_hgcn_clinic,
+)
+from .config import SCHEME_FIELDS
 
 
 def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--scheme",
         default="all",
-        help="方案名；文本/HGCN 流程支持 L0-L5，baseline 流程支持 D0-D5。all 表示运行当前命令支持的全部方案。",
+        help="方案名。文本流程: L0-L5 与论文方案; baseline: D0-D5 与论文方案; HGCN clinic 仅 L0-L5。all 只跑当前命令的默认方案，不含论文方案。",
     )
     parser.add_argument(
         "--dataset",
@@ -57,10 +64,12 @@ def _add_common_args(parser: argparse.ArgumentParser):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="A_pipeline: JSON → Prompt CSV → CONCH embedding / D0-D5 baseline / HGCN clinic",
+        description="A_pipeline: JSON → Prompt CSV → CONCH embedding / D0-D5+paper baseline / HGCN clinic",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "L0-L5 / D0-D5 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
+            "L0-L5 / D0-D5 / 论文方案 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
+            "--scheme all 只跑 L0-L5 或 D0-D5；论文方案需显式指定。HGCN clinic 不接论文方案。\n"
+            "论文方案可在 templates/{scheme}/fields.json 的 datasets 字段绑定队列；未绑定的 dataset 会跳过。\n"
             "产物写到 outputs/{dataset}/A_manual。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
         ),
     )
@@ -69,13 +78,20 @@ def main(argv=None):
         ("json2prompt", "JSON → prompt CSV"),
         ("encode", "prompt CSV → CONCH embedding"),
         ("pipeline", "json2prompt + encode"),
-        ("baseline", "JSON → D0-D5 baseline vectors"),
+        ("baseline", "JSON → D0-D5 / paper-scheme baseline vectors"),
         ("hgcn_clinic", "JSON → HGCN clinic graph-node pkl"),
     ]:
         p = sub.add_parser(name, help=help_text)
         _add_common_args(p)
 
     args = parser.parse_args(argv)
+
+    load_custom_schemes(args.template_dir)
+    try:
+        load_baseline_scheme_fields(SCHEME_FIELDS)
+        load_hgcn_scheme_fields(SCHEME_FIELDS)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.cmd == "baseline":
         try:
@@ -88,7 +104,6 @@ def main(argv=None):
         except ValueError as exc:
             parser.error(str(exc))
     else:
-        load_custom_schemes(args.template_dir)
         try:
             schemes = resolve_scheme_names(args.scheme)
         except ValueError as exc:
@@ -121,7 +136,7 @@ def main(argv=None):
             cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
             merged_rows.extend(build_patient_rows(cases))
 
-        shared_nominal_mappings = fit_nominal_mappings(
+        shared_nominal_mappings = fit_onehot_mappings(
             merged_rows,
             min_count=args.baseline_nominal_min_count,
             collapse_rare=True,
@@ -149,11 +164,18 @@ def main(argv=None):
         )
 
     for job in jobs:
+        job_schemes = schemes_for_dataset(schemes, job["name"], datasets)
+        skipped = [scheme for scheme in schemes if scheme not in job_schemes]
         if job["name"]:
             print(f"\n######## Dataset: {job['name']} ########")
+        if skipped:
+            print(f"  skip unbound schemes: {skipped}")
+        if not job_schemes:
+            print("  当前 dataset 没有可跑的绑定方案，跳过。")
+            continue
 
         if args.cmd in ("json2prompt", "pipeline"):
-            for scheme in schemes:
+            for scheme in job_schemes:
                 run_json2prompt(
                     json_path=job["json_paths"],
                     scheme=scheme,
@@ -164,7 +186,7 @@ def main(argv=None):
                 )
 
         if args.cmd in ("encode", "pipeline"):
-            for scheme in schemes:
+            for scheme in job_schemes:
                 run_encode(
                     scheme=scheme,
                     prompt_dir=job["prompt_dir"],
@@ -176,7 +198,7 @@ def main(argv=None):
         if args.cmd == "baseline":
             run_baseline_encode(
                 json_paths=job["json_paths"],
-                schemes=schemes,
+                schemes=job_schemes,
                 out_root=job["baseline_out_dir"],
                 project_ids=job["project_ids"],
                 stats_dir=args.baseline_stats_dir,
@@ -200,7 +222,7 @@ def main(argv=None):
                 hgcn_out_root = str(Path(job["out_dir"]) / "HGCN_clinic")
             run_hgcn_clinic(
                 json_paths=job["json_paths"],
-                schemes=schemes,
+                schemes=job_schemes,
                 out_root=hgcn_out_root,
                 project_ids=job["project_ids"],
                 nominal_min_count=args.baseline_nominal_min_count,

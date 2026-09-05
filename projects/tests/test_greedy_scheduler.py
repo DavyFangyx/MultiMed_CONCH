@@ -156,17 +156,27 @@ def test_cli_stub_writes_artifacts(tmp_path):
 
     fields = [
         "diagnoses[].age_at_diagnosis",
+        "demographic.country_of_residence_at_enrollment",
+        "demographic.ethnicity",
         "demographic.sex_at_birth",
-        "demographic.race",
+        "diagnoses[].ajcc_pathologic_t",
     ]
-    assert _resolve_init_idx(fields, "age_at_diagnosis,sex_at_birth") == [0, 1]
-    assert _resolve_init_idx(fields, "{demographic.sex_at_birth,demographic.race}") == [1, 2]
-    assert _resolve_init_idx(fields, "demographic.race") == [2]
+    assert _resolve_init_idx(fields, "age_at_diagnosis,sex_at_birth") == [0, 3]
+    assert _resolve_init_idx(fields, "{demographic.sex_at_birth,demographic.ethnicity}") == [3, 2]
+    assert _resolve_init_idx(fields, "demographic.ethnicity") == [2]
+    assert _resolve_init_idx(fields, "demographic.") == [1, 2, 3]
+    assert _resolve_init_idx(fields, "{demographic.}") == [1, 2, 3]
+    assert _resolve_init_idx(fields, "{demographic.,diagnoses[].age_at_diagnosis}") == [1, 2, 3, 0]
     try:
-        _resolve_init_idx(fields, "{demographic.ethnicity,demographic.sex_at_birth}")
+        _resolve_init_idx(fields, "{demographic.race,demographic.sex_at_birth}")
         assert False, "missing init field should exit"
     except SystemExit as exc:
-        assert str(exc) == "not found demographic.ethnicity field"
+        assert str(exc) == "not found demographic.race field"
+    try:
+        _resolve_init_idx(fields, "follow_ups.")
+        assert False, "missing init prefix should exit"
+    except SystemExit as exc:
+        assert str(exc) == "not found follow_ups. field"
 
 
 if __name__ == "__main__":

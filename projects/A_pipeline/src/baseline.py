@@ -1,4 +1,4 @@
-"""Encode D0-D5 mixed baseline vectors from clinical JSON."""
+"""Encode D0-D5 and paper-scheme mixed baseline vectors from clinical JSON."""
 
 from __future__ import annotations
 
@@ -9,11 +9,17 @@ import re
 
 import numpy as np
 
-from .clinical_io import load_clinical_cases, normalize_json_paths
-from .missingness import is_missing_token
-from .paths import global_mapping_dir as shared_global_mapping_dir
-
+from common.clinical_io import load_clinical_cases, normalize_json_paths
+from common.fields import DERIVED_FIELD_TYPES, HUMAN_SCHEME_FIELDS, field_gdc_path
+from common.missingness import is_missing_token
+from discovery.onehot import (
+    _load_gdc_dictionary,
+    classify_gdc_types,
+    gdc_lookup_key,
+    parse_gdc_types,
+)
 from .extract import extract_values
+from .paths import global_mapping_dir as shared_global_mapping_dir
 
 
 BASELINE_ENCODING_NAME = "onehot_ordinary"
@@ -21,98 +27,138 @@ BASELINE_MISSING_TOKEN = "__MISSING__"
 BASELINE_OTHER_TOKEN = "__OTHER__"
 
 BASELINE_CONTINUOUS_FIELDS = {
-    "AGE",
-    "YEAR_OF_DIAGNOSIS",
-    "AGE_AT_DIAGNOSIS",
-    "LYMPH_NODES_TESTED",
-    "LYMPH_NODES_POSITIVE",
-    "BMI",
+    "demographic.age_at_index",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].pathology_details[].lymph_nodes_tested",
+    "diagnoses[].pathology_details[].lymph_nodes_positive",
+    "follow_ups[].other_clinical_attributes[].bmi",
 }
 
 BASELINE_ORDINAL_FIELDS = {
-    "TUMOR_GRADE",
-    "AJCC_PATHOLOGIC_T",
-    "AJCC_PATHOLOGIC_N",
-    "AJCC_PATHOLOGIC_M",
-    "AJCC_PATHOLOGIC_STAGE",
-    "ECOG_PERFORMANCE_STATUS",
+    "diagnoses[].tumor_grade",
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "diagnoses[].ajcc_pathologic_stage",
+    "follow_ups[].ecog_performance_status",
 }
 
 BASELINE_NOMINAL_FIELDS = {
-    "SEX_AT_BIRTH",
-    "RACE",
-    "ETHNICITY",
-    "PRIMARY_DIAGNOSIS",
-    "MORPHOLOGY",
-    "TISSUE_OR_ORGAN_OF_ORIGIN",
-    "LATERALITY",
-    "PRIOR_MALIGNANCY",
-    "SYNCHRONOUS_MALIGNANCY",
-    "PRIOR_TREATMENT",
-    "AJCC_STAGING_SYSTEM_EDITION",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "diagnoses[].prior_treatment",
+    "diagnoses[].ajcc_staging_system_edition",
 }
 
-BASELINE_SCHEME_FIELDS = {
-    "D0": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-    ],
-    "D1": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-        "PRIMARY_DIAGNOSIS", "MORPHOLOGY", "TISSUE_OR_ORGAN_OF_ORIGIN",
-        "LATERALITY", "YEAR_OF_DIAGNOSIS", "AGE_AT_DIAGNOSIS",
-    ],
-    "D2": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-        "PRIMARY_DIAGNOSIS", "MORPHOLOGY", "TISSUE_OR_ORGAN_OF_ORIGIN",
-        "LATERALITY", "YEAR_OF_DIAGNOSIS", "AGE_AT_DIAGNOSIS",
-        "TUMOR_GRADE", "PRIOR_MALIGNANCY",
-        "SYNCHRONOUS_MALIGNANCY", "PRIOR_TREATMENT",
-    ],
-    "D3": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-        "PRIMARY_DIAGNOSIS", "MORPHOLOGY", "TISSUE_OR_ORGAN_OF_ORIGIN",
-        "LATERALITY", "YEAR_OF_DIAGNOSIS", "AGE_AT_DIAGNOSIS",
-        "TUMOR_GRADE", "PRIOR_MALIGNANCY",
-        "SYNCHRONOUS_MALIGNANCY", "PRIOR_TREATMENT",
-        "AJCC_PATHOLOGIC_T", "AJCC_PATHOLOGIC_N",
-        "AJCC_PATHOLOGIC_M", "AJCC_PATHOLOGIC_STAGE",
-        "AJCC_STAGING_SYSTEM_EDITION",
-    ],
-    "D4": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-        "PRIMARY_DIAGNOSIS", "MORPHOLOGY", "TISSUE_OR_ORGAN_OF_ORIGIN",
-        "LATERALITY", "YEAR_OF_DIAGNOSIS", "AGE_AT_DIAGNOSIS",
-        "TUMOR_GRADE", "PRIOR_MALIGNANCY",
-        "SYNCHRONOUS_MALIGNANCY", "PRIOR_TREATMENT",
-        "AJCC_PATHOLOGIC_T", "AJCC_PATHOLOGIC_N",
-        "AJCC_PATHOLOGIC_M", "AJCC_PATHOLOGIC_STAGE",
-        "AJCC_STAGING_SYSTEM_EDITION",
-        "LYMPH_NODES_TESTED", "LYMPH_NODES_POSITIVE",
-    ],
-    "D5": [
-        "AGE", "SEX_AT_BIRTH", "RACE", "ETHNICITY",
-        "PRIMARY_DIAGNOSIS", "MORPHOLOGY", "TISSUE_OR_ORGAN_OF_ORIGIN",
-        "LATERALITY", "YEAR_OF_DIAGNOSIS", "AGE_AT_DIAGNOSIS",
-        "TUMOR_GRADE", "PRIOR_MALIGNANCY",
-        "SYNCHRONOUS_MALIGNANCY", "PRIOR_TREATMENT",
-        "AJCC_PATHOLOGIC_T", "AJCC_PATHOLOGIC_N",
-        "AJCC_PATHOLOGIC_M", "AJCC_PATHOLOGIC_STAGE",
-        "AJCC_STAGING_SYSTEM_EDITION",
-        "LYMPH_NODES_TESTED", "LYMPH_NODES_POSITIVE",
-        "ECOG_PERFORMANCE_STATUS", "BMI",
-    ],
+DEFAULT_BASELINE_SCHEMES = ["D0", "D1", "D2", "D3", "D4", "D5"]
+PAPER_BASELINE_SCHEMES = [
+    "MULTISURV",
+    "SURVPGC",
+    "MMSURV",
+    "INTEGRATIVE_DNN",
+    "HGCN_KIRC",
+    "HGCN_LIHC",
+    "HGCN_ESCA",
+    "HGCN_LUSC",
+    "HGCN_LUAD",
+    "HGCN_UCEC",
+]
+D_SCHEME_BY_TEXT_SCHEME = {
+    "L0": "D0",
+    "L1": "D1",
+    "L2": "D2",
+    "L3": "D3",
+    "L4": "D4",
+    "L5": "D5",
 }
+
+# project.project_id is not in the GDC dictionary dump used here.
+PAPER_FIELD_TYPES = {
+    "project.project_id": "nominal",
+    **DERIVED_FIELD_TYPES,
+}
+
+BASELINE_SCHEME_FIELDS = {}
+
+
+def load_baseline_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> None:
+    BASELINE_SCHEME_FIELDS.clear()
+    for text_scheme, d_scheme in D_SCHEME_BY_TEXT_SCHEME.items():
+        if text_scheme not in text_scheme_fields:
+            raise ValueError(f"缺少文本方案 {text_scheme}，无法派生 {d_scheme}")
+        BASELINE_SCHEME_FIELDS[d_scheme] = list(text_scheme_fields[text_scheme])
+    for name in PAPER_BASELINE_SCHEMES:
+        if name not in text_scheme_fields:
+            raise ValueError(f"缺少论文方案 {name}，无法注册 baseline 字段")
+        BASELINE_SCHEME_FIELDS[name] = list(text_scheme_fields[name])
+
 
 BASELINE_EXTRA_MISSING = {"stage x", "tx", "nx", "mx"}
+
+# Frozen HGCN field-type sets above. D-group vectors use dictionary types below.
+
+
+def _classify_field(field: str, dictionary: dict[tuple[str, str], str]) -> str:
+    if field in PAPER_FIELD_TYPES:
+        return PAPER_FIELD_TYPES[field]
+    field_path = field_gdc_path(field)
+    gdc_type = dictionary.get(gdc_lookup_key(field_path), "")
+    classified = classify_gdc_types(parse_gdc_types(gdc_type))
+    if classified is None:
+        raise ValueError(
+            f"GDC dictionary 无法分类人工方案字段 {field} ({field_path}): type={gdc_type!r}"
+        )
+    return classified
+
+
+def _load_dictionary_field_types() -> dict[str, str]:
+    dictionary = _load_gdc_dictionary()
+    return {
+        field: _classify_field(field, dictionary)
+        for field in HUMAN_SCHEME_FIELDS
+    }
+
+
+BASELINE_DICTIONARY_FIELD_TYPES = _load_dictionary_field_types()
+BASELINE_ORDINARY_FIELDS = {
+    field for field, kind in BASELINE_DICTIONARY_FIELD_TYPES.items() if kind == "continuous"
+}
+BASELINE_ONEHOT_FIELDS = {
+    field for field, kind in BASELINE_DICTIONARY_FIELD_TYPES.items() if kind == "nominal"
+}
 
 
 def resolve_baseline_schemes(scheme: str) -> list[str]:
     known = list(BASELINE_SCHEME_FIELDS.keys())
     if scheme == "all":
-        return known
+        return list(DEFAULT_BASELINE_SCHEMES)
     if scheme not in BASELINE_SCHEME_FIELDS:
         raise ValueError(f"未知 baseline 方案: '{scheme}'。可用方案: {sorted(known)}")
     return [scheme]
+
+
+def baseline_scheme_output_dir(out_root: str | Path, scheme: str) -> Path:
+    root = Path(out_root)
+    if scheme in DEFAULT_BASELINE_SCHEMES:
+        return root / scheme
+    return root / "baseline" / scheme
+
+
+
+def baseline_field_encoding(field: str) -> str:
+    if field in BASELINE_ORDINARY_FIELDS:
+        return "ordinary"
+    if field in BASELINE_ONEHOT_FIELDS:
+        return "onehot"
+    raise KeyError(f"未知 baseline 字段: {field}")
 
 
 def _split_collapsed_values(raw_value) -> list[str]:
@@ -154,14 +200,14 @@ def _aggregate_continuous_value(field: str, raw_value) -> float | None:
     nums = _extract_numeric_values(raw_value)
     if not nums:
         return None
-    if field == "AGE_AT_DIAGNOSIS":
+    if field == "diagnoses[].age_at_diagnosis":
         nums = [x / 365.25 if x > 365 else x for x in nums]
     return float(np.median(nums))
 
 
 def _fit_continuous_stats(patient_rows: list[dict]) -> dict:
     stats = {}
-    for field in sorted(BASELINE_CONTINUOUS_FIELDS):
+    for field in sorted(BASELINE_ORDINARY_FIELDS):
         vals = [
             v for v in (_aggregate_continuous_value(field, row.get(field)) for row in patient_rows)
             if v is not None
@@ -244,12 +290,12 @@ def _encode_ecog(token: str) -> int:
 
 def _encode_ordinal_value(field: str, raw_value) -> int:
     encoders = {
-        "TUMOR_GRADE": _encode_tumor_grade,
-        "AJCC_PATHOLOGIC_T": _encode_t_stage,
-        "AJCC_PATHOLOGIC_N": _encode_n_stage,
-        "AJCC_PATHOLOGIC_M": _encode_m_stage,
-        "AJCC_PATHOLOGIC_STAGE": _encode_overall_stage,
-        "ECOG_PERFORMANCE_STATUS": _encode_ecog,
+        "diagnoses[].tumor_grade": _encode_tumor_grade,
+        "diagnoses[].ajcc_pathologic_t": _encode_t_stage,
+        "diagnoses[].ajcc_pathologic_n": _encode_n_stage,
+        "diagnoses[].ajcc_pathologic_m": _encode_m_stage,
+        "diagnoses[].ajcc_pathologic_stage": _encode_overall_stage,
+        "follow_ups[].ecog_performance_status": _encode_ecog,
     }
     encoder = encoders[field]
     codes = []
@@ -262,9 +308,9 @@ def _encode_ordinal_value(field: str, raw_value) -> int:
     return max(codes) if codes else 0
 
 
-def _count_nominal_categories(patient_rows: list[dict]) -> dict[str, Counter]:
+def _count_categories(patient_rows: list[dict], fields: set[str] | list[str]) -> dict[str, Counter]:
     counts = {}
-    for field in sorted(BASELINE_NOMINAL_FIELDS):
+    for field in sorted(fields):
         counter = Counter()
         for row in patient_rows:
             value = _canonical_nominal_value(row.get(field))
@@ -274,15 +320,16 @@ def _count_nominal_categories(patient_rows: list[dict]) -> dict[str, Counter]:
     return counts
 
 
-def fit_nominal_mappings(
+def _fit_category_mappings(
     patient_rows: list[dict],
+    fields: set[str] | list[str],
     *,
     min_count: int = 1,
     collapse_rare: bool = False,
 ) -> dict:
     mappings = {}
-    counts = _count_nominal_categories(patient_rows)
-    for field in sorted(BASELINE_NOMINAL_FIELDS):
+    counts = _count_categories(patient_rows, fields)
+    for field in sorted(fields):
         if collapse_rare:
             categories = sorted(
                 category
@@ -301,6 +348,36 @@ def fit_nominal_mappings(
     return mappings
 
 
+def fit_nominal_mappings(
+    patient_rows: list[dict],
+    *,
+    min_count: int = 1,
+    collapse_rare: bool = False,
+) -> dict:
+    """HGCN-facing helper: only the frozen nominal field set."""
+    return _fit_category_mappings(
+        patient_rows,
+        BASELINE_NOMINAL_FIELDS,
+        min_count=min_count,
+        collapse_rare=collapse_rare,
+    )
+
+
+def fit_onehot_mappings(
+    patient_rows: list[dict],
+    *,
+    min_count: int = 1,
+    collapse_rare: bool = False,
+) -> dict:
+    """D-group helper: dictionary enum/boolean fields."""
+    return _fit_category_mappings(
+        patient_rows,
+        BASELINE_ONEHOT_FIELDS,
+        min_count=min_count,
+        collapse_rare=collapse_rare,
+    )
+
+
 def _encode_nominal_value(field: str, raw_value, mappings: dict) -> int:
     mapping = mappings[field]
     value = _canonical_nominal_value(raw_value)
@@ -317,11 +394,10 @@ def _build_baseline_vector(
 ) -> np.ndarray:
     vec = []
     for field in fields:
-        if field in BASELINE_CONTINUOUS_FIELDS:
+        encoding = baseline_field_encoding(field)
+        if encoding == "ordinary":
             vec.append(_normalize_continuous_value(field, row.get(field), continuous_stats))
-        elif field in BASELINE_ORDINAL_FIELDS:
-            vec.append(float(_encode_ordinal_value(field, row.get(field))))
-        elif field in BASELINE_NOMINAL_FIELDS:
+        elif encoding == "onehot":
             code = _encode_nominal_value(field, row.get(field), nominal_mappings)
             onehot = np.zeros(len(nominal_mappings[field]), dtype=np.float32)
             onehot[code] = 1.0
@@ -337,21 +413,15 @@ def build_baseline_feature_schema(nominal_mappings: dict) -> dict:
         cursor = 0
         features = []
         for field in fields:
-            if field in BASELINE_NOMINAL_FIELDS:
-                dim = len(nominal_mappings[field])
-            else:
-                dim = 1
+            encoding = baseline_field_encoding(field)
+            dim = len(nominal_mappings[field]) if encoding == "onehot" else 1
             feature = {
                 "field": field,
-                "field_type": (
-                    "continuous" if field in BASELINE_CONTINUOUS_FIELDS else
-                    "ordinal" if field in BASELINE_ORDINAL_FIELDS else
-                    "nominal"
-                ),
+                "field_type": encoding,
                 "start": cursor,
                 "dim": dim,
             }
-            if field in BASELINE_NOMINAL_FIELDS:
+            if encoding == "onehot":
                 feature["categories"] = [
                     key for key, _ in sorted(nominal_mappings[field].items(), key=lambda kv: kv[1])
                 ]
@@ -504,7 +574,7 @@ def run_baseline_encode(
         print(f"  复用统计量 : {stats_dir}")
     else:
         print("  复用统计量 : 否（当前运行数据拟合）")
-    print(f"  nominal 阈值: >= {nominal_min_count} 保留，否则合并到 {BASELINE_OTHER_TOKEN}")
+    print(f"  onehot 阈值: >= {nominal_min_count} 保留，否则合并到 {BASELINE_OTHER_TOKEN}")
     print(f"{'='*55}")
 
     print("\n[1/3] 读取 JSON ...")
@@ -519,7 +589,7 @@ def run_baseline_encode(
         if shared_nominal_mappings is not None:
             nominal_mappings = shared_nominal_mappings
         else:
-            nominal_mappings = fit_nominal_mappings(
+            nominal_mappings = fit_onehot_mappings(
                 patient_rows,
                 min_count=nominal_min_count,
                 collapse_rare=True,
@@ -545,7 +615,7 @@ def run_baseline_encode(
 
     print("\n[3/3] 逐患者写入 .pt ...")
     for scheme in schemes:
-        pt_dir = Path(out_root) / scheme / "embeddings" / "pt"
+        pt_dir = baseline_scheme_output_dir(out_root, scheme) / "embeddings" / "pt"
         pt_dir.mkdir(parents=True, exist_ok=True)
         fields = BASELINE_SCHEME_FIELDS[scheme]
         for row in patient_rows:

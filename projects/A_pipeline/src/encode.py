@@ -1,4 +1,4 @@
-"""Encode L0-L5 prompt CSVs with CONCH."""
+"""Encode L0-L5 / paper-scheme prompt CSVs with CONCH."""
 
 import os
 import sys

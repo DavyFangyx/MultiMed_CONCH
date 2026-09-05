@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_dir, validate_encoding
+from common.paths import PROJECT_ROOT, dataset_greedy_dir, encoding_and_landmark_tag_from_path, experiment_from_path, require_landmark_tag, validate_encoding
 
 from .clinic import evaluate_clinic_dir
 from .data import load_field_bank
@@ -34,6 +34,9 @@ class ClinicSubsetEvaluator:
         extra_args: list[str] | None = None,
         overwrite_embeddings: bool = False,
         split_dir: Path | str | None = None,
+        landmark_tag: str | None = None,
+        experiment: str | None = None,
+        exp_group: str | None = None,
     ):
         self.dataset = dataset
         self.fields = list(fields)
@@ -44,14 +47,26 @@ class ClinicSubsetEvaluator:
         else:
             self.splits = [splits]
         self.split = self.splits[0] if self.splits else splits
-        bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset)
+        bank = Path(field_bank_dir) if field_bank_dir else None
+        if bank is None:
+            raise ValueError("ClinicSubsetEvaluator 需要 field_bank_dir，才能确定 encoding 和 landmark_tag")
         self.field_bank_dir = bank
+        inferred_encoding, inferred_tag = encoding_and_landmark_tag_from_path(bank)
         if bank.exists():
-            self.encoding = load_field_bank(bank)["encoding"]
+            loaded = load_field_bank(bank)
+            self.encoding = loaded["encoding"]
         else:
-            self.encoding = validate_encoding(bank.name if bank.name in {"prompt", "onehot"} else "prompt")
+            self.encoding = validate_encoding(inferred_encoding or "prompt")
+        self.landmark_tag = require_landmark_tag(landmark_tag or inferred_tag)
+        self.experiment = experiment if experiment is not None else experiment_from_path(bank)
+        self.exp_group = str(exp_group or ("longitudinal" if self.experiment else "greedy"))
         self.embeddings_root = Path(embeddings_root or (PROJECT_ROOT / "outputs"))
-        self.work_dir = Path(work_dir or dataset_greedy_dir(dataset, self.encoding))
+        self.work_dir = Path(
+            work_dir
+            or dataset_greedy_dir(
+                dataset, self.encoding, self.landmark_tag, experiment=self.experiment
+            )
+        )
         self.modality = modality
         self.seed = int(seed)
         self.for_test = bool(for_test)
@@ -76,7 +91,14 @@ class ClinicSubsetEvaluator:
             }
 
         scheme = subset_scheme_name(idx)
-        clinic_dir = subset_embedding_dir(self.dataset, scheme, self.embeddings_root, encoding=self.encoding)
+        clinic_dir = subset_embedding_dir(
+            self.dataset,
+            scheme,
+            self.embeddings_root,
+            encoding=self.encoding,
+            landmark_tag=self.landmark_tag,
+            experiment=self.experiment,
+        )
         materialize_subset_embeddings_with_python(
             self.conch_python,
             self.field_bank_dir,
@@ -97,7 +119,7 @@ class ClinicSubsetEvaluator:
             dataset=self.dataset,
             scheme=run_tag,
             modality=self.modality,
-            exp_group="greedy",
+            exp_group=self.exp_group,
             python_exe=self.analyzer_python,
             analyzer_dir=self.analyzer_dir,
             k=k,
@@ -129,6 +151,9 @@ def make_clinic_evaluator_factory(
     analyzer_python: Path | str | None = None,
     extra_args: list[str] | None = None,
     split_dir: Path | str | None = None,
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
+    exp_group: str | None = None,
 ):
     def factory(split, seed=0, for_test=False):
         return ClinicSubsetEvaluator(
@@ -145,6 +170,9 @@ def make_clinic_evaluator_factory(
             analyzer_python=analyzer_python,
             extra_args=extra_args,
             split_dir=split_dir,
+            landmark_tag=landmark_tag,
+            experiment=experiment,
+            exp_group=exp_group,
         )
 
     return factory

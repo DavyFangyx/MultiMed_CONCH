@@ -1,0 +1,28 @@
+{
+  "description": "L4：L3 + lymph_nodes_tested + lymph_nodes_positive",
+  "prompt_file": "prompts.csv",
+  "dirname": "L4",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].tumor_grade",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "diagnoses[].prior_treatment",
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition",
+    "diagnoses[].pathology_details[].lymph_nodes_tested",
+    "diagnoses[].pathology_details[].lymph_nodes_positive"
+  ]
+}

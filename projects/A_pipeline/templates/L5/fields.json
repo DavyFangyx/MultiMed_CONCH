@@ -1,0 +1,30 @@
+{
+  "description": "L5：L4 + ecog_performance_status + bmi（baseline）",
+  "prompt_file": "prompts.csv",
+  "dirname": "L5",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].tumor_grade",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "diagnoses[].prior_treatment",
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition",
+    "diagnoses[].pathology_details[].lymph_nodes_tested",
+    "diagnoses[].pathology_details[].lymph_nodes_positive",
+    "follow_ups[].ecog_performance_status",
+    "follow_ups[].other_clinical_attributes[].bmi"
+  ]
+}

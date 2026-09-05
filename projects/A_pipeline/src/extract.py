@@ -1,25 +1,101 @@
-"""Extract placeholder values for human-defined L0-L5 schemes."""
+"""Extract human-scheme field values from clinical JSON."""
 
-from .fields import (
+from __future__ import annotations
+
+from common.fields import (
     get_follow_ups,
     get_other_clinical_attributes,
     get_pathology_details,
     get_primary_diagnosis,
-    get_treatments,
     unique_join,
 )
-from .missingness import clean_value
+from common.missingness import clean_value
+from common.types import to_numeric
+
+
+PHARMA_TREATMENT_TYPE = "pharmaceutical therapy, nos"
+RADIATION_TREATMENT_TYPE = "radiation therapy, nos"
+
+
+def _first_nonempty(values: list, fallback: str) -> str:
+    for value in values:
+        cleaned = clean_value(value, "")
+        if cleaned:
+            return cleaned
+    return fallback
+
+
+def _ordered_diagnoses(case: dict) -> list[dict]:
+    diagnoses = list(case.get("diagnoses", []) or [])
+    if not diagnoses:
+        return []
+    primary = get_primary_diagnosis(diagnoses)
+    rest = [item for item in diagnoses if item is not primary]
+    return [primary, *rest]
+
+
+def _all_treatments(case: dict) -> list[dict]:
+    treatments = []
+    for diagnosis in _ordered_diagnoses(case):
+        treatments.extend(diagnosis.get("treatments", []) or [])
+    treatments.extend(case.get("treatments", []) or [])
+    return treatments
+
+
+def _therapy_flag(case: dict, treatment_type: str, fallback: str = "unknown") -> str:
+    matched = []
+    for treatment in _all_treatments(case):
+        raw_type = str(treatment.get("treatment_type", "")).strip().lower()
+        if raw_type != treatment_type:
+            continue
+        token = clean_value(treatment.get("treatment_or_therapy", ""), "")
+        if token:
+            matched.append(token.lower())
+    if any(token == "yes" for token in matched):
+        return "yes"
+    if any(token == "no" for token in matched):
+        return "no"
+    return fallback
+
+
+def _exposure_values(case: dict, key: str) -> list:
+    return [item.get(key) for item in (case.get("exposures", []) or [])]
+
+
+def _format_number(value) -> str:
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return str(number)
+
+
+def _years_smoked(case: dict, year_of_diagnosis, age_at_index) -> str:
+    for exposure in case.get("exposures", []) or []:
+        duration = to_numeric(exposure.get("exposure_duration_years"))
+        if duration is not None:
+            return _format_number(duration)
+
+        onset_year = to_numeric(exposure.get("tobacco_smoking_onset_year"))
+        quit_year = to_numeric(exposure.get("tobacco_smoking_quit_year"))
+        diagnosis_year = to_numeric(year_of_diagnosis)
+        if onset_year is not None and quit_year is not None:
+            return _format_number(quit_year - onset_year)
+        if onset_year is not None and diagnosis_year is not None:
+            return _format_number(diagnosis_year - onset_year)
+
+        age_at_onset = to_numeric(exposure.get("age_at_onset"))
+        index_age = to_numeric(age_at_index)
+        if age_at_onset is not None and index_age is not None:
+            return _format_number(index_age - age_at_onset)
+    return "unknown"
 
 
 def extract_values(case: dict) -> dict:
     diag = get_primary_diagnosis(case.get("diagnoses", []))
-    treatments = get_treatments(case)
     pathology_details = get_pathology_details(case)
     follow_ups = get_follow_ups(case)
     other_attrs = get_other_clinical_attributes(case)
-
-    def treatment_vals(key):
-        return unique_join([t.get(key, "") for t in treatments])
+    demographic = case.get("demographic", {}) or {}
 
     def pathology_vals(key):
         return unique_join([p.get(key, "") for p in pathology_details])
@@ -30,48 +106,50 @@ def extract_values(case: dict) -> dict:
     def other_attr_vals(key):
         return unique_join([a.get(key, "") for a in other_attrs])
 
-    subtype_raw = diag.get("primary_diagnosis", "") or case.get("disease_type", "")
-    subtype = clean_value(subtype_raw, "Unknown Neoplasm")
-
-    edition_raw = diag.get("ajcc_staging_system_edition", "")
-    if edition_raw:
-        edition = str(edition_raw).replace("th", "").replace("st", "").replace("nd", "").replace("rd", "").strip()
-    else:
-        edition = "6"
+    age = clean_value(demographic.get("age_at_index"), "unknown")
+    year_of_diagnosis = clean_value(diag.get("year_of_diagnosis", ""), "not reported")
+    sex = _first_nonempty(
+        [demographic.get("sex_at_birth", ""), demographic.get("gender", "")],
+        "not reported",
+    )
+    primary_diagnosis = clean_value(diag.get("primary_diagnosis", ""), "Unknown Neoplasm")
+    pathologic_stage = clean_value(diag.get("ajcc_pathologic_stage", ""), "")
+    staging_edition = clean_value(diag.get("ajcc_staging_system_edition", ""), "")
 
     return {
-        "SUBTYPE": subtype,
-        "TUMORSTAGE": clean_value(diag.get("ajcc_pathologic_stage", ""), "Stage X"),
-        "EDITION": edition,
-        "RACE": clean_value(case.get("demographic", {}).get("race", ""), "not reported"),
-        "DIAGNOSIS": clean_value(diag.get("primary_diagnosis", ""), "Unknown Neoplasm"),
-        "AGE": clean_value(case.get("demographic", {}).get("age_at_index"), "unknown"),
-        "SEX": clean_value(case.get("demographic", {}).get("gender", ""), "not reported"),
-        "SEX_AT_BIRTH": clean_value(case.get("demographic", {}).get("sex_at_birth", ""), "not reported"),
-        "ETHNICITY": clean_value(case.get("demographic", {}).get("ethnicity", ""), "not reported"),
-        "PRIMARY_SITE": clean_value(case.get("primary_site", ""), "not reported"),
-        "PRIMARY_DIAGNOSIS": clean_value(diag.get("primary_diagnosis", ""), "Unknown Neoplasm"),
-        "MORPHOLOGY": clean_value(diag.get("morphology", ""), "not reported"),
-        "TISSUE_OR_ORGAN_OF_ORIGIN": clean_value(diag.get("tissue_or_organ_of_origin", ""), "not reported"),
-        "LATERALITY": clean_value(diag.get("laterality", ""), "not reported"),
-        "YEAR_OF_DIAGNOSIS": clean_value(diag.get("year_of_diagnosis", ""), "not reported"),
-        "AGE_AT_DIAGNOSIS": clean_value(diag.get("age_at_diagnosis", ""), "unknown"),
-        "AJCC_PATHOLOGIC_STAGE": clean_value(diag.get("ajcc_pathologic_stage", ""), "Stage X"),
-        "AJCC_PATHOLOGIC_T": clean_value(diag.get("ajcc_pathologic_t", ""), "TX"),
-        "AJCC_PATHOLOGIC_N": clean_value(diag.get("ajcc_pathologic_n", ""), "NX"),
-        "AJCC_PATHOLOGIC_M": clean_value(diag.get("ajcc_pathologic_m", ""), "MX"),
-        "AJCC_STAGING_SYSTEM_EDITION": clean_value(diag.get("ajcc_staging_system_edition", ""), "not reported"),
-        "TUMOR_GRADE": clean_value(diag.get("tumor_grade", ""), "not reported"),
-        "PRIOR_MALIGNANCY": clean_value(diag.get("prior_malignancy", ""), "not reported"),
-        "SYNCHRONOUS_MALIGNANCY": clean_value(diag.get("synchronous_malignancy", ""), "not reported"),
-        "TREATMENT_TYPE": treatment_vals("treatment_type"),
-        "TREATMENT_OR_THERAPY": treatment_vals("treatment_or_therapy"),
-        "TREATMENT_INTENT_TYPE": treatment_vals("treatment_intent_type"),
-        "PRIOR_TREATMENT": clean_value(diag.get("prior_treatment", ""), "not reported"),
-        "TOBACCO_SMOKING_STATUS": clean_value(diag.get("tobacco_smoking_status", ""), "not reported"),
-        "PROGRESSION_OR_RECURRENCE": clean_value(diag.get("progression_or_recurrence", ""), "not reported"),
-        "LYMPH_NODES_TESTED": pathology_vals("lymph_nodes_tested"),
-        "LYMPH_NODES_POSITIVE": pathology_vals("lymph_nodes_positive"),
-        "ECOG_PERFORMANCE_STATUS": followup_vals("ecog_performance_status"),
-        "BMI": other_attr_vals("bmi"),
+        "demographic.age_at_index": age,
+        "demographic.sex_at_birth": sex,
+        "demographic.race": clean_value(demographic.get("race", ""), "not reported"),
+        "demographic.ethnicity": clean_value(demographic.get("ethnicity", ""), "not reported"),
+        "diagnoses[].primary_diagnosis": primary_diagnosis,
+        "diagnoses[].morphology": clean_value(diag.get("morphology", ""), "not reported"),
+        "diagnoses[].tissue_or_organ_of_origin": clean_value(diag.get("tissue_or_organ_of_origin", ""), "not reported"),
+        "diagnoses[].laterality": clean_value(diag.get("laterality", ""), "not reported"),
+        "diagnoses[].year_of_diagnosis": year_of_diagnosis,
+        "diagnoses[].age_at_diagnosis": clean_value(diag.get("age_at_diagnosis", ""), "unknown"),
+        "diagnoses[].tumor_grade": clean_value(diag.get("tumor_grade", ""), "not reported"),
+        "diagnoses[].prior_malignancy": clean_value(diag.get("prior_malignancy", ""), "not reported"),
+        "diagnoses[].synchronous_malignancy": clean_value(diag.get("synchronous_malignancy", ""), "not reported"),
+        "diagnoses[].prior_treatment": clean_value(diag.get("prior_treatment", ""), "not reported"),
+        "diagnoses[].ajcc_pathologic_t": clean_value(diag.get("ajcc_pathologic_t", ""), "TX"),
+        "diagnoses[].ajcc_pathologic_n": clean_value(diag.get("ajcc_pathologic_n", ""), "NX"),
+        "diagnoses[].ajcc_pathologic_m": clean_value(diag.get("ajcc_pathologic_m", ""), "MX"),
+        "diagnoses[].ajcc_pathologic_stage": pathologic_stage or clean_value(diag.get("figo_stage", ""), "Stage X"),
+        "diagnoses[].ajcc_staging_system_edition": staging_edition
+        or clean_value(diag.get("figo_staging_edition_year", ""), "not reported"),
+        "diagnoses[].pathology_details[].lymph_nodes_tested": pathology_vals("lymph_nodes_tested"),
+        "diagnoses[].pathology_details[].lymph_nodes_positive": pathology_vals("lymph_nodes_positive"),
+        "follow_ups[].ecog_performance_status": followup_vals("ecog_performance_status"),
+        "follow_ups[].other_clinical_attributes[].bmi": other_attr_vals("bmi"),
+        "project.project_id": clean_value(case.get("project", {}).get("project_id", ""), "not reported"),
+        "derived.pharmaceutical_therapy": _therapy_flag(case, PHARMA_TREATMENT_TYPE),
+        "derived.radiation_therapy": _therapy_flag(case, RADIATION_TREATMENT_TYPE),
+        "exposures[].pack_years_smoked": unique_join(_exposure_values(case, "pack_years_smoked"), "unknown"),
+        "derived.years_smoked": _years_smoked(case, year_of_diagnosis, age),
+        "exposures[].cigarettes_per_day": unique_join(_exposure_values(case, "cigarettes_per_day"), "unknown"),
+        "exposures[].alcohol_history": unique_join(_exposure_values(case, "alcohol_history"), "not reported"),
+        "diagnoses[].site_of_resection_or_biopsy": clean_value(
+            diag.get("site_of_resection_or_biopsy", ""),
+            "not reported",
+        ),
     }

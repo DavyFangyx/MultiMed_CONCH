@@ -1,0 +1,17 @@
+{
+  "description": "L1：L0 + primary_diagnosis + morphology + tissue_or_organ_of_origin + laterality + year_of_diagnosis + age_at_diagnosis",
+  "prompt_file": "prompts.csv",
+  "dirname": "L1",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis"
+  ]
+}

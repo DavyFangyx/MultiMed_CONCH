@@ -1,26 +1,27 @@
-"""Generate L0-L5 prompt CSVs from clinical JSON."""
+"""Generate L0-L5 / paper-scheme prompt CSVs from clinical JSON."""
 
 from pathlib import Path
 
 import pandas as pd
 
-from .clinical_io import load_clinical_cases, normalize_json_paths
+from common.clinical_io import load_clinical_cases, normalize_json_paths
+from common.fields import field_output_col
 
 from .config import SCHEME_CONFIG, resolve_scheme_template_file
 from .extract import extract_values
+
+
+def _fill_template(template: str, value: str) -> str:
+    return str(template).replace("{}", str(value), 1)
 
 
 def generate_prompt_row(case: dict, templates: dict, scheme: str) -> dict:
     cfg = SCHEME_CONFIG[scheme]
     vals = extract_values(case)
     row = {"patient_id": case["submitter_id"]}
-    for tpl_col, placeholder, out_col in zip(
-        cfg["template_cols"], cfg["placeholders"], cfg["output_cols"]
-    ):
-        tpl_str = templates[tpl_col]
-        if placeholder:
-            tpl_str = tpl_str.replace(placeholder, vals.get(placeholder, "not reported"))
-        row[out_col] = tpl_str
+    for field in cfg["fields"]:
+        out_col = field_output_col(field)
+        row[out_col] = _fill_template(templates[field], vals.get(field, "not reported"))
     return row
 
 
@@ -52,7 +53,8 @@ def run_json2prompt(
     print("[2/3] 读取模板 ...")
     tpl_df = pd.read_csv(template_file)
     templates = {}
-    for col in cfg["template_cols"]:
+    for field in cfg["fields"]:
+        col = field_output_col(field)
         if col not in tpl_df.columns:
             raise ValueError(
                 f"模板文件缺少列: '{col}'，请确认 {template_file.name} 与方案 {scheme} 对应。"
@@ -61,8 +63,10 @@ def run_json2prompt(
         sentence = str(col_values[0]).strip() if col_values else ""
         if not sentence:
             raise ValueError(f"模板列 '{col}' 为空，请检查模板文件。")
-        templates[col] = sentence
-        print(f"      {col}: {templates[col]}")
+        if "{}" not in sentence:
+            raise ValueError(f"模板列 '{col}' 缺少 {{}} 占位符。")
+        templates[field] = sentence
+        print(f"      {field}: {templates[field]}")
 
     print("[3/3] 生成 prompts ...")
     records, skipped = [], 0

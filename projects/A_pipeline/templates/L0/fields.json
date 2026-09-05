@@ -1,0 +1,11 @@
+{
+  "description": "L0：age_at_index + sex_at_birth + race + ethnicity",
+  "prompt_file": "prompts.csv",
+  "dirname": "L0",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity"
+  ]
+}

@@ -14,9 +14,11 @@ from common.paths import (
     dataset_field_registry_path,
     dataset_filter_log_dir,
     dataset_kept_fields_path,
+    dataset_stats_dir,
     shared_field_stats_path,
     shared_kept_fields_path,
 )
+from .landmark import iter_landmark_args, landmark_dir_tag, parse_landmark_options
 
 
 DEFAULT_R3_COVERAGE = 0.30
@@ -84,6 +86,7 @@ def apply_rules(
     min_unique: int = DEFAULT_R4_N_UNIQUE,
     max_mode_share: float = DEFAULT_R4_MODE_SHARE,
     rules: dict | None = None,
+    no_landmark: bool = False,
 ) -> tuple[str | None, str]:
     """Apply R0-R5 in document order. R2/R6 are markers, not drop rules."""
     field_path = str(row["field_path"])
@@ -109,7 +112,7 @@ def apply_rules(
             return "R0_label_leak", leaf
         if any(token in leaf or token in norm for token in _as_lower_set(r0.get("substrings"))):
             return "R0_label_leak", leaf
-        if any(_path_has_token(field_path, token) for token in (r0.get("path_contains") or [])):
+        if no_landmark and any(_path_has_token(field_path, token) for token in (r0.get("path_contains") or [])):
             return "R0_label_leak", f"path_contains:{leaf}"
         if any(_path_matches_suffix(field_path, suffix) for suffix in (r0.get("path_suffixes") or [])):
             return "R0_label_leak", leaf
@@ -226,6 +229,16 @@ def run_field_filter(args):
         wanted = {x.strip() for x in args.dataset.split(",") if x.strip()}
         df = df[df["dataset"].astype(str).isin(wanted)].copy()
 
+    datasets = sorted(df["dataset"].astype(str).unique().tolist())
+    scan_roots = [dataset_stats_dir(dataset) for dataset in datasets]
+    for landmark_args in iter_landmark_args(args, scan_roots=scan_roots, context="field filter"):
+        _run_field_filter_one(landmark_args, df)
+
+
+def _run_field_filter_one(args, df: pd.DataFrame) -> None:
+    tag = landmark_dir_tag(args)
+    args.landmark_tag = tag
+
     exclusion_rows = []
     keep_rows = []
     for _, row in df.iterrows():
@@ -235,6 +248,7 @@ def run_field_filter(args):
             min_unique=getattr(args, "R4_n_unique", DEFAULT_R4_N_UNIQUE),
             max_mode_share=getattr(args, "R4_mode_share", DEFAULT_R4_MODE_SHARE),
             rules=load_filter_rules(getattr(args, "filter_rules", None)),
+            no_landmark=not parse_landmark_options(args)[0],
         )
         item = {
             "dataset": row["dataset"],
@@ -296,7 +310,7 @@ def run_field_filter(args):
 
     datasets = sorted(df["dataset"].astype(str).unique().tolist())
     for dataset in datasets:
-        log_dir = dataset_filter_log_dir(dataset)
+        log_dir = dataset_filter_log_dir(dataset, tag)
         log_dir.mkdir(parents=True, exist_ok=True)
 
         ds_exclusion = (
@@ -331,13 +345,13 @@ def run_field_filter(args):
             )
         ds_registry = pd.DataFrame(ds_registry_rows).sort_values(["keep", "field"], ascending=[False, True])
 
-        exclusion_path = dataset_exclusion_log_path(dataset)
-        registry_path = dataset_field_registry_path(dataset)
+        exclusion_path = dataset_exclusion_log_path(dataset, tag)
+        registry_path = dataset_field_registry_path(dataset, tag)
         ds_exclusion.to_csv(exclusion_path, index=False)
         ds_registry.to_csv(registry_path, index=False)
 
         payload = active.get(dataset, {"n_patients": 0, "fields": [], "coverage": {}})
-        kept_path = dataset_kept_fields_path(dataset)
+        kept_path = dataset_kept_fields_path(dataset, tag)
         kept_path.parent.mkdir(parents=True, exist_ok=True)
         with open(kept_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -354,7 +368,7 @@ def run_field_filter(args):
                 "n_patients": payload.get("n_patients", 0),
                 "fields": list(payload.get("fields", [])),
             }
-        summary_path = shared_kept_fields_path()
+        summary_path = shared_kept_fields_path(tag)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
@@ -375,6 +389,6 @@ def run_field_filter(args):
             write_field_bank_template_skeleton(
                 dataset_name=dataset,
                 fields=payload["fields"],
-                out_dir=dataset_field_bank_template_dir(dataset),
+                out_dir=dataset_field_bank_template_dir(dataset, tag),
                 examples=examples,
             )

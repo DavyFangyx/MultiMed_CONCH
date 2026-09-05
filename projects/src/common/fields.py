@@ -12,6 +12,58 @@ def is_array_field(field_path: str) -> bool:
     return "[]" in (field_path or "")
 
 
+L5_FIELDS = [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "demographic.race",
+    "demographic.ethnicity",
+    "diagnoses[].primary_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].tissue_or_organ_of_origin",
+    "diagnoses[].laterality",
+    "diagnoses[].year_of_diagnosis",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].tumor_grade",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "diagnoses[].prior_treatment",
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition",
+    "diagnoses[].pathology_details[].lymph_nodes_tested",
+    "diagnoses[].pathology_details[].lymph_nodes_positive",
+    "follow_ups[].ecog_performance_status",
+    "follow_ups[].other_clinical_attributes[].bmi",
+]
+
+PAPER_FIELDS = [
+    "project.project_id",
+    "diagnoses[].primary_diagnosis",
+    "derived.pharmaceutical_therapy",
+    "derived.radiation_therapy",
+    "exposures[].pack_years_smoked",
+    "derived.years_smoked",
+    "exposures[].cigarettes_per_day",
+    "exposures[].alcohol_history",
+    "diagnoses[].site_of_resection_or_biopsy",
+]
+
+HUMAN_SCHEME_FIELDS = list(dict.fromkeys([*L5_FIELDS, *PAPER_FIELDS]))
+
+# Derived fields reuse a source GDC path for dictionary lookup / stats labels,
+# but keep a unique field id so they do not collide with that source field.
+DERIVED_FIELD_SOURCE_PATH = {
+    "derived.pharmaceutical_therapy": "diagnoses[].treatments[].treatment_or_therapy",
+    "derived.radiation_therapy": "diagnoses[].treatments[].treatment_or_therapy",
+    "derived.years_smoked": "exposures[].exposure_duration_years",
+}
+
+DERIVED_FIELD_TYPES = {
+    "derived.years_smoked": "continuous",
+}
+
 L5_FIELD_PATH_BY_PLACEHOLDER = {
     "AGE": "demographic.age_at_index",
     "SEX_AT_BIRTH": "demographic.sex_at_birth",
@@ -40,6 +92,14 @@ L5_FIELD_PATH_BY_PLACEHOLDER = {
 L5_PLACEHOLDER_BY_FIELD_PATH = {
     path: placeholder for placeholder, path in L5_FIELD_PATH_BY_PLACEHOLDER.items()
 }
+
+
+def field_output_col(field: str) -> str:
+    return str(field).replace(".", "_").replace("[]", "") + "_template"
+
+
+def field_gdc_path(field: str) -> str:
+    return DERIVED_FIELD_SOURCE_PATH.get(field, field)
 
 
 def parse_field_path(field_path: str) -> list[tuple[str, bool]]:

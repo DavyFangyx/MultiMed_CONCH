@@ -1,0 +1,16 @@
+{
+  "description": "HGCN_LIHC：race + age + gender + BMI + radiation + pharma",
+  "prompt_file": "prompts.csv",
+  "dirname": "HGCN_LIHC",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "follow_ups[].other_clinical_attributes[].bmi",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA_LIHC"
+  ]
+}

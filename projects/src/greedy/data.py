@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.paths import dataset_field_bank_dir, dataset_kept_fields_path, validate_encoding
+from common.paths import dataset_field_bank_dir, dataset_kept_fields_path, encoding_and_landmark_tag_from_path, require_landmark_tag, validate_encoding
 
 
 STUDY_BY_DISPLAY = {
@@ -68,11 +68,13 @@ def load_json(path: Path | str):
 
 
 def _encoding_from_dirname(path: Path) -> str | None:
-    for part in reversed(Path(path).parts):
-        name = part.lower()
-        if name in {"prompt", "onehot"}:
-            return name
-    return None
+    encoding, _ = encoding_and_landmark_tag_from_path(path)
+    return encoding
+
+
+def _landmark_tag_from_dirname(path: Path) -> str | None:
+    _, tag = encoding_and_landmark_tag_from_path(path)
+    return tag
 
 
 def load_field_bank(field_bank_dir: Path | str, encoding: str | None = None) -> dict:
@@ -125,6 +127,8 @@ def load_candidate_fields(
     kept_fields_path: Path | str | None = None,
     field_index_path: Path | str | None = None,
     encoding: str = "prompt",
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
 ) -> list[str]:
     if field_index_path:
         payload = load_json(field_index_path)
@@ -133,11 +137,13 @@ def load_candidate_fields(
             raise ValueError(f"field_index has no fields: {field_index_path}")
         return list(fields)
 
-    bank_index = dataset_field_bank_dir(dataset, encoding) / "field_index.json"
-    if bank_index.exists():
-        return load_candidate_fields(dataset, field_index_path=bank_index)
+    tag = require_landmark_tag(landmark_tag) if landmark_tag is not None else None
+    if tag is not None:
+        bank_index = dataset_field_bank_dir(dataset, encoding, tag, experiment=experiment) / "field_index.json"
+        if bank_index.exists():
+            return load_candidate_fields(dataset, field_index_path=bank_index)
 
-    path = Path(kept_fields_path or dataset_kept_fields_path(dataset))
+    path = Path(kept_fields_path or dataset_kept_fields_path(dataset, tag))
     payload = load_json(path)
     if isinstance(payload, dict) and "fields" in payload:
         return list(payload["fields"])
@@ -162,8 +168,13 @@ def load_patient_ids_from_field_bank(
     dataset: str,
     field_bank_dir: Path | str | None = None,
     encoding: str = "prompt",
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
 ) -> list[str]:
-    bank = Path(field_bank_dir) if field_bank_dir else dataset_field_bank_dir(dataset, encoding)
+    if field_bank_dir:
+        bank = Path(field_bank_dir)
+    else:
+        bank = dataset_field_bank_dir(dataset, encoding, landmark_tag, experiment=experiment)
     if bank.exists():
         loaded = load_field_bank(bank, encoding=encoding)
         bank = loaded["dir"]
@@ -217,8 +228,11 @@ def resolve_patient_universe(
     field_bank_dir: Path | str | None = None,
     label_file: Path | str | None = None,
     encoding: str = "prompt",
+    landmark_tag: str | None = None,
 ) -> tuple[list[str], dict[str, int]]:
-    bank_ids = load_patient_ids_from_field_bank(dataset, field_bank_dir=field_bank_dir, encoding=encoding)
+    bank_ids = load_patient_ids_from_field_bank(
+        dataset, field_bank_dir=field_bank_dir, encoding=encoding, landmark_tag=landmark_tag
+    )
     try:
         labels = load_survival_table(dataset, label_file=label_file)
         label_ids = unique_ids(labels["case_id"].tolist())

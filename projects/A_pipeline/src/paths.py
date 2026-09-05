@@ -1,4 +1,4 @@
-"""Paths for the isolated A_manual L0-L5 / D0-D5 / HGCN_clinic pipeline."""
+"""Paths for the isolated A_manual L0-L5 / D0-D5 / paper-scheme / HGCN_clinic pipeline."""
 
 from pathlib import Path
 

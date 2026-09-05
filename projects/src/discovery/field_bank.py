@@ -16,6 +16,13 @@ from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, l
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
 from common.missingness import classify_raw_value, clean_value
 from .converters import convert_value, known_converters
+from .landmark import (
+    extract_from_objects,
+    landmark_policy,
+    parse_landmark_options,
+    passing_family_objects,
+    resolve_landmark,
+)
 from .field_bank_spec import SHARED_SPEC_PATH, fill_from_spec, load_shared_spec
 from common.paths import (
     DEFAULT_CKPT,
@@ -24,6 +31,9 @@ from common.paths import (
     dataset_field_bank_dir,
     dataset_field_bank_template_dir,
     dataset_kept_fields_path,
+    dataset_stats_dir,
+    landmark_tag_from_args,
+    require_landmark_tag,
     validate_encoding,
 )
 
@@ -84,8 +94,9 @@ def write_field_bank_template_skeleton(
     fields: list[str],
     out_dir: Path | None = None,
     examples: dict[str, str] | None = None,
+    landmark_tag: str | None = None,
 ) -> Path:
-    out_dir = Path(out_dir or dataset_field_bank_template_dir(dataset_name))
+    out_dir = Path(out_dir or dataset_field_bank_template_dir(dataset_name, landmark_tag))
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "FIELD_BANK.csv"
     map_path = out_dir / "FIELD_BANK_columns.json"
@@ -152,7 +163,7 @@ def _normalize_kept_payload(payload, dataset_name: str | None = None, path: Path
     raise ValueError(f"无法从 {path} 读取 {dataset_name or 'dataset'} 的 kept fields")
 
 
-def load_kept_fields(dataset_name: str | None = None, path: Path | None = None) -> dict:
+def load_kept_fields(dataset_name: str | None = None, path: Path | None = None, landmark_tag: str | None = None) -> dict:
     if path is not None:
         path = Path(path)
         if not path.exists():
@@ -169,7 +180,7 @@ def load_kept_fields(dataset_name: str | None = None, path: Path | None = None) 
 
     if not dataset_name:
         raise ValueError("load_kept_fields 需要 dataset_name 或显式 path")
-    path = dataset_kept_fields_path(dataset_name)
+    path = dataset_kept_fields_path(dataset_name, landmark_tag)
     if not path.exists():
         raise FileNotFoundError(
             f"未找到 {path}。请先运行 python projects/scripts/run_field_filter.py --dataset {dataset_name}"
@@ -183,8 +194,13 @@ def _fill_template(template: str, value: str) -> str:
     return str(template).replace("{}", str(value), 1)
 
 
-def load_field_bank_template(dataset_name: str, *, require_templates: bool = True) -> dict:
-    template_dir = dataset_field_bank_template_dir(dataset_name)
+def load_field_bank_template(
+    dataset_name: str,
+    *,
+    require_templates: bool = True,
+    landmark_tag: str | None = None,
+) -> dict:
+    template_dir = dataset_field_bank_template_dir(dataset_name, landmark_tag)
     template_file = template_dir / "FIELD_BANK.csv"
     map_path = template_dir / "FIELD_BANK_columns.json"
     if not template_file.exists():
@@ -250,45 +266,82 @@ def load_field_bank_template(dataset_name: str, *, require_templates: bool = Tru
 
 
 
-def extract_field_bank_raw_values(case: dict, field_path: str) -> list:
-    """Return valid raw JSON values using the same Field Bank extract rules."""
-    raw_vals = extract_path_values(case, field_path)
+def _valid_raw_values(
+    case: dict,
+    field_path: str,
+    objects: list | None,
+    remainder: str,
+    family: str | None = None,
+) -> list:
+    if objects is not None:
+        raw_vals = extract_from_objects(objects, remainder)
+    else:
+        raw_vals = extract_path_values(case, field_path)
     if not raw_vals:
         return []
-    if field_path.startswith("diagnoses[]") and isinstance(case.get("diagnoses"), list):
-        primary = get_primary_diagnosis(case.get("diagnoses", []))
-        remainder = field_path[len("diagnoses[]"):].lstrip(".")
+
+    use_primary = family == "diagnoses" or (
+        family is None and field_path.startswith("diagnoses[]")
+    )
+    if use_primary:
+        diagnoses = objects if objects is not None else case.get("diagnoses", [])
+        diag_remainder = remainder if family == "diagnoses" else field_path[len("diagnoses[]"):].lstrip(".")
         leaf = field_path.split(".")[-1].replace("[]", "")
-        if primary and "." not in remainder and leaf in primary:
-            value = primary.get(leaf)
-            return [value] if classify_raw_value(value) == "valid" else []
+        if "." not in diag_remainder:
+            primary = get_primary_diagnosis(diagnoses if isinstance(diagnoses, list) else [])
+            if primary and leaf in primary:
+                value = primary.get(leaf)
+                return [value] if classify_raw_value(value) == "valid" else []
     return [value for value in raw_vals if classify_raw_value(value) == "valid"]
 
 
-def extract_field_bank_value(case: dict, field_path: str) -> tuple[str, bool]:
-    raw_vals = extract_path_values(case, field_path)
-    if not raw_vals:
-        return "not reported", False
-    if field_path.startswith("diagnoses[]") and isinstance(case.get("diagnoses"), list):
-        primary = get_primary_diagnosis(case.get("diagnoses", []))
-        remainder = field_path[len("diagnoses[]"):].lstrip(".")
-        leaf = field_path.split(".")[-1].replace("[]", "")
-        if primary and "." not in remainder and leaf in primary:
-            state = classify_raw_value(primary.get(leaf))
-            return clean_value(primary.get(leaf), "not reported"), state == "valid"
-    states = [classify_raw_value(v) for v in raw_vals]
-    valid_vals = [v for v, st in zip(raw_vals, states) if st == "valid"]
+def extract_field_bank_raw_values(case: dict, field_path: str, landmark=True, landmark_time=None) -> list:
+    """Return valid raw JSON values using the same Field Bank extract rules."""
+    from .landmark import timed_family_for_field
+    from .longitudinal import FOLLOW_UP_FAMILIES, extract_derived_raw_values, is_derived_field
+
+    if is_derived_field(field_path):
+        return extract_derived_raw_values(field_path, landmark=landmark)
+
+    landmark_state = resolve_landmark(case, landmark, landmark_time=landmark_time)
+    if isinstance(landmark_state, dict) and "current_follow_up" in landmark_state:
+        family, remainder = timed_family_for_field(field_path)
+        if family in FOLLOW_UP_FAMILIES:
+            current = landmark_state.get("current_follow_up")
+            if not isinstance(current, dict):
+                return []
+            if family == "follow_ups":
+                objects = [current]
+            elif family == "follow_ups_molecular_tests":
+                objects = [item for item in (current.get("molecular_tests") or []) if isinstance(item, dict)]
+            elif family == "follow_ups_other_clinical_attributes":
+                objects = [item for item in (current.get("other_clinical_attributes") or []) if isinstance(item, dict)]
+            else:
+                objects = [current]
+            return _valid_raw_values(case, field_path, objects, remainder, family=family)
+    if landmark_state is not None and not (isinstance(landmark_state, dict) and landmark_state.get("no_mask")):
+        family, remainder, objects = passing_family_objects(field_path, landmark_state)
+        if family is not None:
+            return _valid_raw_values(case, field_path, objects, remainder, family=family)
+    return _valid_raw_values(case, field_path, None, "")
+
+
+def extract_field_bank_value(case: dict, field_path: str, landmark=True, landmark_time=None) -> tuple[str, bool]:
+    valid_vals = extract_field_bank_raw_values(
+        case, field_path, landmark=landmark, landmark_time=landmark_time
+    )
     if not valid_vals:
         return "not reported", False
     return unique_join(valid_vals, fallback="not reported"), True
 
 
-def generate_field_bank_prompt_row(case: dict, cfg: dict) -> dict:
+def generate_field_bank_prompt_row(case: dict, cfg: dict, landmark=True, landmark_time=None) -> dict:
     row = {"patient_id": case["submitter_id"]}
     mask = {}
     converts = cfg.get("converts") or {}
+    landmark_state = resolve_landmark(case, landmark, landmark_time=landmark_time)
     for out_col, field_path in zip(cfg["output_cols"], cfg["fields"]):
-        value, valid = extract_field_bank_value(case, field_path)
+        value, valid = extract_field_bank_value(case, field_path, landmark=landmark_state)
         if valid:
             value = convert_value(value, converts.get(field_path, ""))
         row[out_col] = _fill_template(cfg["templates"][field_path], value)
@@ -329,99 +382,125 @@ def run_field_bank(args):
     if not names:
         raise ValueError("FIELD_BANK 需要 --dataset，例如 --dataset TCGA-READ 或 --dataset all")
 
+    from .landmark import iter_landmark_args
+
     for name in names:
-        print(f"\n######## Dataset: {name} ########")
-        kept = load_kept_fields(
+        for landmark_args in iter_landmark_args(
+            args,
+            scan_roots=dataset_stats_dir(name),
+            context=f"field bank {name}",
+        ):
+            _run_field_bank_one(landmark_args, name, datasets, encoding, onehot_encoder)
+
+
+def _run_field_bank_one(args, name, datasets, encoding, onehot_encoder) -> None:
+    use_landmark, landmark_time = parse_landmark_options(args)
+    tag = landmark_tag_from_args(args)
+    args.landmark_tag = tag
+    print(f"\n######## Dataset: {name}  {tag} ########")
+    kept = load_kept_fields(
+        dataset_name=name,
+        path=Path(args.kept_fields) if args.kept_fields else None,
+        landmark_tag=tag,
+    )
+    if name not in kept:
+        raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name, tag)} 中。请先跑 run_field_filter.py")
+    cfg = load_field_bank_template(
+        name,
+        require_templates=(encoding != "onehot"),
+        landmark_tag=tag,
+    )
+    expected = list(kept[name]["fields"])
+    if cfg["fields"] != expected:
+        print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
+
+    cases = load_clinical_cases(
+        get_dataset_clinic_files(name, datasets),
+        project_ids=get_dataset_project_ids(name, datasets),
+    )
+    if encoding == "onehot":
+        onehot_encoder(
             dataset_name=name,
-            path=Path(args.kept_fields) if args.kept_fields else None,
+            cfg=cfg,
+            cases=cases,
+            out_dir=dataset_field_bank_dir(name, encoding, tag),
+            rare_threshold=int(getattr(args, "rare_freq_threshold", 5)),
+            landmark=use_landmark,
+            landmark_time=landmark_time,
         )
-        if name not in kept:
-            raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name)} 中。请先跑 run_field_filter.py")
-        cfg = load_field_bank_template(
-            name,
-            require_templates=(encoding != "onehot"),
+        return
+
+    records = [
+        generate_field_bank_prompt_row(
+            case, cfg, landmark=use_landmark, landmark_time=landmark_time
         )
-        expected = list(kept[name]["fields"])
-        if cfg["fields"] != expected:
-            print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
+        for case in cases
+        if "submitter_id" in case
+    ]
+    out_dir = dataset_field_bank_dir(name, encoding, tag)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = out_dir / "prompts.csv"
+    prompt_rows = []
+    for rec in records:
+        row = {"patient_id": rec["patient_id"]}
+        row.update({col: rec[col] for col in cfg["output_cols"]})
+        prompt_rows.append(row)
+    pd.DataFrame(prompt_rows).to_csv(prompt_path, index=False)
+    print(f"✅ prompts.csv: {prompt_path}  ({len(prompt_rows)} 行)")
 
-        cases = load_clinical_cases(
-            get_dataset_clinic_files(name, datasets),
-            project_ids=get_dataset_project_ids(name, datasets),
-        )
-        if encoding == "onehot":
-            onehot_encoder(
-                dataset_name=name,
-                cfg=cfg,
-                cases=cases,
-                out_dir=dataset_field_bank_dir(name, encoding),
-                rare_threshold=int(getattr(args, "rare_freq_threshold", 5)),
-            )
-            continue
+    if args.prompts_only:
+        return
 
-        records = [generate_field_bank_prompt_row(case, cfg) for case in cases if "submitter_id" in case]
-        out_dir = dataset_field_bank_dir(name, encoding)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        prompt_path = out_dir / "prompts.csv"
-        prompt_rows = []
-        for rec in records:
-            row = {"patient_id": rec["patient_id"]}
-            row.update({col: rec[col] for col in cfg["output_cols"]})
-            prompt_rows.append(row)
-        pd.DataFrame(prompt_rows).to_csv(prompt_path, index=False)
-        print(f"✅ prompts.csv: {prompt_path}  ({len(prompt_rows)} 行)")
+    os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
+    torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
+    from tqdm import tqdm
 
-        if args.prompts_only:
-            continue
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, _ = create_model_from_pretrained(model_cfg="conch_ViT-B-16", checkpoint_path=args.ckpt)
+    model = model.to(device).eval()
+    tokenizer = get_tokenizer()
 
-        os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
-        torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
-        from tqdm import tqdm
+    patient_ids = [rec["patient_id"] for rec in records]
+    patient_prompts = [[rec[col] for col in cfg["output_cols"]] for rec in records]
+    flat_prompts = [sentence for sentences in patient_prompts for sentence in sentences]
+    encoded = tokenizer(flat_prompts, padding=True, truncation=True, return_tensors="pt")
+    all_tokens = encoded["input_ids"]
+    all_embeddings = []
+    with torch.inference_mode():
+        for i in tqdm(range(0, len(flat_prompts), args.batch_size), desc=f"Encoding {name}"):
+            tokens = all_tokens[i : i + args.batch_size].to(device)
+            feats = model.encode_text(tokens, embed_cls=False)
+            feats = feats / feats.norm(dim=-1, keepdim=True)
+            all_embeddings.append(feats.cpu().float().numpy())
+    embeddings = np.concatenate(all_embeddings, axis=0).reshape(len(patient_ids), len(cfg["fields"]), -1)
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model, _ = create_model_from_pretrained(model_cfg="conch_ViT-B-16", checkpoint_path=args.ckpt)
-        model = model.to(device).eval()
-        tokenizer = get_tokenizer()
-
-        patient_ids = [rec["patient_id"] for rec in records]
-        patient_prompts = [[rec[col] for col in cfg["output_cols"]] for rec in records]
-        flat_prompts = [sentence for sentences in patient_prompts for sentence in sentences]
-        encoded = tokenizer(flat_prompts, padding=True, truncation=True, return_tensors="pt")
-        all_tokens = encoded["input_ids"]
-        all_embeddings = []
-        with torch.inference_mode():
-            for i in tqdm(range(0, len(flat_prompts), args.batch_size), desc=f"Encoding {name}"):
-                tokens = all_tokens[i : i + args.batch_size].to(device)
-                feats = model.encode_text(tokens, embed_cls=False)
-                feats = feats / feats.norm(dim=-1, keepdim=True)
-                all_embeddings.append(feats.cpu().float().numpy())
-        embeddings = np.concatenate(all_embeddings, axis=0).reshape(len(patient_ids), len(cfg["fields"]), -1)
-
-        pt_dir = out_dir / "embeddings" / "pt"
-        pt_dir.mkdir(parents=True, exist_ok=True)
-        for rec, emb in zip(records, embeddings):
-            mask = [bool(rec["_mask"][col]) for col in cfg["output_cols"]]
-            payload = {
-                "matrix": torch.from_numpy(emb),
-                "mask": torch.tensor(mask, dtype=torch.bool),
-                "patient_id": rec["patient_id"],
-            }
-            torch.save(payload, pt_dir / f"{rec['patient_id']}.pt")
-
-        index = {
-            "dataset": name,
-            "fields": cfg["fields"],
-            "n_fields": len(cfg["fields"]),
-            "embed_dim": int(embeddings.shape[-1]),
-            "encoder": "CONCH",
-            "ckpt": str(args.ckpt),
-            "missing_policy": "placeholder_sentence",
-            "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "n_patients": len(patient_ids),
+    pt_dir = out_dir / "embeddings" / "pt"
+    pt_dir.mkdir(parents=True, exist_ok=True)
+    for rec, emb in zip(records, embeddings):
+        mask = [bool(rec["_mask"][col]) for col in cfg["output_cols"]]
+        payload = {
+            "matrix": torch.from_numpy(emb),
+            "mask": torch.tensor(mask, dtype=torch.bool),
+            "patient_id": rec["patient_id"],
         }
-        index_path = out_dir / "field_index.json"
-        with open(index_path, "w", encoding="utf-8") as f:
-            json.dump(index, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-        print(f"✅ field_index.json: {index_path}")
-        print(f"✅ pt dir: {pt_dir}")
+        torch.save(payload, pt_dir / f"{rec['patient_id']}.pt")
+
+    index = {
+        "dataset": name,
+        "fields": cfg["fields"],
+        "n_fields": len(cfg["fields"]),
+        "embed_dim": int(embeddings.shape[-1]),
+        "encoder": "CONCH",
+        "ckpt": str(args.ckpt),
+        "missing_policy": "placeholder_sentence",
+        "landmark_policy": landmark_policy(use_landmark),
+        "landmark_time": landmark_time,
+        "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "n_patients": len(patient_ids),
+    }
+    index_path = out_dir / "field_index.json"
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print(f"✅ field_index.json: {index_path}")
+    print(f"✅ pt dir: {pt_dir}")

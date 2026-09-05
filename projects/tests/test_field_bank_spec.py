@@ -27,7 +27,9 @@ LIHC_TEMPLATES = {
     "diagnoses[].ajcc_pathologic_m": "Pathologic M stage is {}.",
     "diagnoses[].ajcc_pathologic_n": "Pathologic N stage is {}.",
     "diagnoses[].ajcc_pathologic_t": "Pathologic T stage is {}.",
+    "diagnoses[].ajcc_staging_system_edition": "AJCC Staging System Edition is {}.",
     "diagnoses[].child_pugh_classification": "Child-Pugh classification is {}.",
+    "diagnoses[].classification_of_tumor": "Classification Of Tumor is {}.",
     "diagnoses[].diagnosis_is_primary_disease": "The diagnosis is the primary disease: {}.",
     "diagnoses[].ishak_fibrosis_score": "Ishak fibrosis score is {}.",
     "diagnoses[].morphology": "Tumor morphology is {}.",
@@ -38,26 +40,12 @@ LIHC_TEMPLATES = {
     "diagnoses[].prior_treatment": "Prior treatment before diagnosis is {}.",
     "diagnoses[].residual_disease": "Residual disease is {}.",
     "diagnoses[].tissue_or_organ_of_origin": "Tissue or organ of origin is {}.",
-    "diagnoses[].treatments[].initial_disease_status": "Initial disease status is {}.",
     "diagnoses[].treatments[].treatment_anatomic_sites": "Treatment anatomic sites are {}.",
     "diagnoses[].treatments[].treatment_type": "Treatment type is {}.",
     "diagnoses[].tumor_grade": "Tumor grade is {}.",
+    "diagnoses[].tumor_of_origin": "Tumor Of Origin is {}.",
+    "diagnoses[].year_of_diagnosis": "Year Of Diagnosis is {}.",
     "family_histories[].relative_with_cancer_history": "Relative with cancer history is {}.",
-    "follow_ups[].disease_response": "Disease response is {}.",
-    "follow_ups[].ecog_performance_status": "ECOG performance status is {}.",
-    "follow_ups[].molecular_tests[].blood_test_normal_range_lower": "Blood test normal range lower is {}.",
-    "follow_ups[].molecular_tests[].blood_test_normal_range_upper": "Blood test normal range upper is {}.",
-    "follow_ups[].molecular_tests[].laboratory_test": "Laboratory test is {}.",
-    "follow_ups[].molecular_tests[].test_units": "Test units are {}.",
-    "follow_ups[].molecular_tests[].test_value": "Test value is {}.",
-    "follow_ups[].other_clinical_attributes[].bmi": "BMI is {}.",
-    "follow_ups[].other_clinical_attributes[].height": "Height is {} cm.",
-    "follow_ups[].other_clinical_attributes[].risk_factors": "Risk factors are {}.",
-    "follow_ups[].other_clinical_attributes[].timepoint_category": "Other clinical attribute timepoint category is {}.",
-    "follow_ups[].other_clinical_attributes[].viral_hepatitis_serology_tests": "Viral hepatitis serology tests are {}.",
-    "follow_ups[].other_clinical_attributes[].weight": "Weight is {} kg.",
-    "follow_ups[].timepoint_category": "Follow-up timepoint category is {}.",
-    "lost_to_followup": "Lost to follow-up is {}.",
 }
 
 ALLOWED_CONVERT = {"", "days_to_years", "int"}
@@ -82,8 +70,8 @@ def _all_fields():
 def test_shared_spec_covers_all_kept_fields():
     fields = _all_fields()
     spec = load_shared_spec()
-    assert set(spec) == fields
-    assert len(spec) == 194
+    assert fields <= set(spec)
+    assert len(spec) == 406
 
 
 def test_convert_and_unit_are_shared():
@@ -173,7 +161,7 @@ def test_write_templates_preserves_filled_rows(tmp_path):
     assert by_field["diagnoses[].age_at_diagnosis"].template == "Age at diagnosis is {} years."
     assert by_field["diagnoses[].age_at_diagnosis"].example == "8900.0"
     assert by_field["demographic.race"].template == "Race is {}."
-    assert by_field["diagnoses[].figo_stage"].template == "FIGO stage is {}."
+    assert by_field["diagnoses[].figo_stage"].template == "The FIGO stage is {}."
     assert by_field["diagnoses[].figo_stage"].example == "Stage I"
 
 

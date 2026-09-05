@@ -1,0 +1,2 @@
+demographic_age_at_index_template,demographic_sex_at_birth_template,demographic_race_template,demographic_ethnicity_template,diagnoses_primary_diagnosis_template,diagnoses_morphology_template,diagnoses_tissue_or_organ_of_origin_template,diagnoses_laterality_template,diagnoses_year_of_diagnosis_template,diagnoses_age_at_diagnosis_template
+The patient is {} years old at index.,Sex at birth is {}.,Race is {}.,Ethnicity is {}.,Primary diagnosis is {}.,Tumor morphology is {}.,Tissue or organ of origin is {}.,Tumor laterality is {}.,Year of diagnosis is {}.,Age at diagnosis is {}.

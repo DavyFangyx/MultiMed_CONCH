@@ -163,5 +163,15 @@
     "clinic_files": [
       "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/TCGA-UVM.json"
     ]
+  },
+  "MMRF-COMMPASS": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/MMRF-COMMPASS.json"
+    ]
+  },
+  "CPTAC-3": {
+    "clinic_files": [
+      "/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/ClinicDatasets/gdc_clinical/raw_json/CPTAC-3.json"
+    ]
   }
 }

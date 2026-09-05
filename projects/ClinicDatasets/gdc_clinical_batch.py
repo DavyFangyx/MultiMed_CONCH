@@ -85,13 +85,14 @@ CLINICAL_SKIP_PREFIXES = (
     "diagnoses.annotations.",
     "follow_ups.annotations.",
 )
-GDC_CASES_PAGE = 10000
+GDC_CASES_PAGE = 10000  # CPTAC/MMRF 大嵌套 JSON 会被门户附件截断，用 --page-size 改小
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "gdc_clinical"
 RAW_JSON_DIR = OUT_DIR / "raw_json"
 BIOTAB_DIR = OUT_DIR / "biotab"
 DETAIL_PATH = ROOT / "gdc_download_detail.json"
+META_PATH = OUT_DIR / "run_metadata.json"
 
 # ---------------------------------------------------------------- HTTP
 
@@ -136,6 +137,35 @@ def load_download_detail():
     return {}
 
 
+def load_run_metadata():
+    """旧版是单次 run 对象；新版是 {updated_utc, runs:[...]}。读的时候都收成 runs 列表。"""
+    if META_PATH.exists():
+        try:
+            data = json.loads(META_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            data = None
+        if isinstance(data, list):
+            return {"runs": data}
+        if isinstance(data, dict):
+            if isinstance(data.get("runs"), list):
+                return data
+            if data:
+                return {"runs": [data]}
+    return {"runs": []}
+
+
+def write_run_metadata(run_meta):
+    """追加一次下载日志，不覆盖历史 run。"""
+    meta = load_run_metadata()
+    meta["updated_utc"] = datetime.now(timezone.utc).isoformat()
+    runs = list(meta.get("runs") or [])
+    runs.append(run_meta)
+    meta["runs"] = runs
+    META_PATH.parent.mkdir(parents=True, exist_ok=True)
+    META_PATH.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta
+
+
 def file_md5(path: Path, chunk=1024 * 1024):
     h = hashlib.md5()
     with open(path, "rb") as f:
@@ -162,9 +192,9 @@ def file_record(branch, project, path: Path, data_release, downloaded_utc, extra
     return rec
 
 
-def write_download_detail(status, branches, file_rows):
+def write_download_detail(status, branches, file_rows, run_meta=None):
     """A/B 跑完后把每个落盘文件的 md5、下载日期、GDC data release 写到 ClinicDatasets/gdc_download_detail.json。
-    分两次跑 A、B 时，按 branch+path 覆盖，其余记录保留。"""
+    分两次跑 A、B 时，按 branch+path 覆盖，其余记录保留。runs 只追加，不覆盖历史。"""
     detail = load_download_detail()
     now = datetime.now(timezone.utc).isoformat()
     detail["updated_utc"] = now
@@ -177,6 +207,34 @@ def write_download_detail(status, branches, file_rows):
     replace = {(r.get("branch"), r.get("path")) for r in file_rows}
     kept = [r for r in (detail.get("files") or []) if (r.get("branch"), r.get("path")) not in replace]
     detail["files"] = kept + file_rows
+    if "A" in branches:
+        a = detail.setdefault("A", {"dir": str(RAW_JSON_DIR), "n_cases_per_project": {}, "files": {}})
+        a["dir"] = str(RAW_JSON_DIR)
+        cases = a.setdefault("n_cases_per_project", {})
+        files = a.setdefault("files", {})
+        for row in file_rows:
+            if row.get("branch") != "A":
+                continue
+            pid = row.get("project_id")
+            if not pid:
+                continue
+            if "n_cases" in row:
+                cases[pid] = row["n_cases"]
+            files[pid] = Path(row["path"]).name
+    if run_meta is not None:
+        runs = list(detail.get("runs") or [])
+        run_row = {
+            "run_utc": run_meta.get("run_utc"),
+            "branches": list(branches),
+            "data_release": status.get("data_release"),
+            "projects": run_meta.get("projects"),
+        }
+        if run_meta.get("n_cases_per_project"):
+            run_row["n_cases_per_project"] = run_meta["n_cases_per_project"]
+        if run_meta.get("args") is not None:
+            run_row["args"] = run_meta["args"]
+        runs.append(run_row)
+        detail["runs"] = runs
     DETAIL_PATH.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
     ver = status.get("data_release_version") or {}
     ver_s = ".".join(str(ver[k]) for k in ("major", "minor") if k in ver) or "?"
@@ -285,7 +343,7 @@ def clinical_json_filename(project):
     return f"{project}.json"
 
 
-def download_clinical_json(sess, project, fields, dest: Path, expected=None, verbose=True):
+def download_clinical_json(sess, project, fields, dest: Path, expected=None, verbose=True, page_size=None):
     """按 GDC 门户同样的附件接口拉 clinical JSON，原样落盘。"""
     filters = json.dumps({
         "op": "in",
@@ -294,13 +352,14 @@ def download_clinical_json(sess, project, fields, dest: Path, expected=None, ver
     collected = []
     bodies = []
     frm = 0
+    page_size = int(page_size or GDC_CASES_PAGE)
     while True:
         data = {
             "filters": filters,
             "fields": ",".join(fields),
             "format": "JSON",
             "pretty": "true",
-            "size": str(GDC_CASES_PAGE),
+            "size": str(page_size),
             "from": str(frm),
             "attachment": "true",
             "filename": f"clinical.project-{project.lower()}.json",
@@ -315,11 +374,11 @@ def download_clinical_json(sess, project, fields, dest: Path, expected=None, ver
         if verbose:
             shown = expected if expected is not None else "?"
             print(f"    {project}: {len(collected)}/{shown}", end="\r", flush=True)
-        if len(chunk) < GDC_CASES_PAGE:
+        if len(chunk) < page_size:
             break
         if expected is not None and len(collected) >= expected:
             break
-        frm += GDC_CASES_PAGE
+        frm += page_size
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     if len(bodies) == 1:
@@ -440,7 +499,8 @@ def main():
                     help="B 只落原始 biotab，不写字段清单；A 本身就是原始 JSON")
     ap.add_argument("--manifest-only", action="store_true", help="只出 gdc-client manifest，不下文件")
     ap.add_argument("--cdr", help=argparse.SUPPRESS)  # 旧开关，A 不再出拉平表
-    ap.add_argument("--page-size", type=int, default=100, help=argparse.SUPPRESS)
+    ap.add_argument("--page-size", type=int, default=GDC_CASES_PAGE,
+                    help="A 分支每次从 /cases 拉多少例。默认 10000；CPTAC/MMRF 这类嵌套很大的 JSON 需要改小，例如 100")
     ap.add_argument("--retries", type=int, default=5)
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--dry-run", action="store_true", help="只报计数，不下载")
@@ -489,7 +549,8 @@ def main():
         for p in projects:
             dest = RAW_JSON_DIR / clinical_json_filename(p)
             expected = count_cases(sess, [p])
-            hits = download_clinical_json(sess, p, fields, dest, expected=expected)
+            hits = download_clinical_json(
+                sess, p, fields, dest, expected=expected, page_size=args.page_size)
             run_meta.setdefault("n_cases_per_project", {})[p] = len(hits)
             file_rows.append(file_record(
                 "A", p, dest, data_release, downloaded_utc,
@@ -540,10 +601,8 @@ def main():
     if not args.skip_biotab:
         ran_branches.append("B")
 
-    write_download_detail(status, ran_branches, file_rows)
-
-    (OUT_DIR / "run_metadata.json").write_text(
-        json.dumps(run_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_download_detail(status, ran_branches, file_rows, run_meta=run_meta)
+    write_run_metadata(run_meta)
     print(f"\n完成。输出在 {OUT_DIR}")
 
 

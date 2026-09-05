@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from timeit import default_timer as timer
 
 from common.datasets import load_dataset_configs, resolve_dataset_names
-from common.paths import DEFAULT_DATASETS_CONFIG, VALID_ENCODINGS, dataset_field_bank_dir, dataset_greedy_dir, validate_encoding
+from common.paths import DEFAULT_DATASETS_CONFIG, VALID_ENCODINGS, dataset_field_bank_dir, dataset_greedy_dir, experiment_from_args, landmark_tag_from_args, validate_encoding
+from discovery.landmark import add_landmark_cli_args
+
+from .queue import (
+    claim_job,
+    enqueue_jobs,
+    load_job,
+    mark_done,
+    mark_failed,
+    merge_job_args,
+)
 
 from .clinic import (
     DEFAULT_INNER_MODALITY,
@@ -96,6 +107,16 @@ def _resolve_init_idx(fields: list[str], raw: str | None) -> list[int]:
     seen = set()
     missing = []
     for name in names:
+        if name.endswith(".") and name != ".":
+            matched = [i for i, field in enumerate(fields) if field.startswith(name)]
+            if not matched:
+                missing.append(name)
+                continue
+            for chosen in matched:
+                if chosen not in seen:
+                    seen.add(chosen)
+                    idx.append(chosen)
+            continue
         if name in by_name:
             chosen = by_name[name]
         elif name in by_leaf and len(by_leaf[name]) == 1:
@@ -134,7 +155,14 @@ def _score_outer_modalities(
     scheme = subset_scheme_name(subset_idx)
     from common.paths import PROJECT_ROOT
     encoding = validate_encoding(getattr(args, "encoding", "prompt"))
-    clinic_dir = subset_embedding_dir(dataset, scheme, PROJECT_ROOT / "outputs", encoding=encoding)
+    clinic_dir = subset_embedding_dir(
+        dataset,
+        scheme,
+        PROJECT_ROOT / "outputs",
+        encoding=encoding,
+        landmark_tag=getattr(args, "landmark_tag", None),
+        experiment=getattr(args, "experiment", None),
+    )
     for modality in outer_modalities:
         if modality == inner_modality and last.get("c_index") is not None:
             scores[modality] = {
@@ -148,7 +176,7 @@ def _score_outer_modalities(
             dataset=dataset,
             scheme=scheme,
             modality=modality,
-            exp_group="greedy",
+            exp_group=("longitudinal" if getattr(args, "experiment", None) else "greedy"),
             python_exe=args.analyzer_python,
             k=n_folds,
             k_start=0,
@@ -180,6 +208,9 @@ def make_clinic_factory(dataset: str, field_bank_dir: Path, work_dir: Path, args
         analyzer_python=args.analyzer_python,
         extra_args=[],
         split_dir=split_dir,
+        landmark_tag=getattr(args, "landmark_tag", None),
+        experiment=getattr(args, "experiment", None),
+        exp_group=("longitudinal" if getattr(args, "experiment", None) else "greedy"),
     )
 
 
@@ -266,7 +297,9 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
         "n_patients": len(patient_ids),
         "n_folds": result["n_folds"],
         "encoding": getattr(args, "encoding", "prompt"),
-        "field_bank_dir": str(Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, getattr(args, "encoding", "prompt"))),
+        "experiment": getattr(args, "experiment", None) or "",
+        "landmark_tag": getattr(args, "landmark_tag", None),
+        "field_bank_dir": str(Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, getattr(args, "encoding", "prompt"), getattr(args, "landmark_tag", None), experiment=getattr(args, "experiment", None))),
         "kept_fields": args.kept_fields,
         "splits": split_source,
         "max_epochs": args.max_epochs,
@@ -292,31 +325,36 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
 
 
 def run_one(args, dataset: str) -> Path:
+    encoding = validate_encoding(getattr(args, "encoding", "prompt"))
+    args.encoding = encoding
+    tag = landmark_tag_from_args(args)
+    args.landmark_tag = tag
+    experiment = experiment_from_args(args)
+    args.experiment = experiment
     if args.out:
         out_dir = Path(args.out)
         if getattr(args, "_multi_dataset", False):
-            out_dir = out_dir / dataset
+            out_dir = out_dir / dataset / tag
     else:
-        out_dir = dataset_greedy_dir(dataset, getattr(args, "encoding", "prompt"))
+        out_dir = dataset_greedy_dir(dataset, encoding, tag, experiment=experiment)
     out_dir.mkdir(parents=True, exist_ok=True)
     started = timer()
-
-    encoding = validate_encoding(getattr(args, "encoding", "prompt"))
-    args.encoding = encoding
     fields = load_candidate_fields(
         dataset,
         kept_fields_path=args.kept_fields,
         field_index_path=args.field_index,
         encoding=encoding,
+        landmark_tag=tag,
+        experiment=experiment,
     )
     if args.exclude_post_baseline:
         fields = [f for f in fields if "follow_ups" not in f and "other_clinical_attributes" not in f]
 
     args._fields = fields
 
-    field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding)
+    field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding, tag, experiment=experiment)
     patient_ids, events = resolve_patient_universe(
-        dataset, field_bank_dir=field_bank_dir, label_file=args.label_file, encoding=encoding
+        dataset, field_bank_dir=field_bank_dir, label_file=args.label_file, encoding=encoding, landmark_tag=tag
     )
 
     splits, split_source = _load_splits(args, dataset)
@@ -359,17 +397,17 @@ def run_one(args, dataset: str) -> Path:
     return out_dir
 
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="5-fold greedy forward selection: slice Field Bank embeddings, "
         "run Clinic_Analyzer, then search on returned c-index."
     )
-    parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表")
+    parser.add_argument("--dataset", required=True, help="数据集名；支持 all 或逗号分隔列表。调度器按这个列表自动生成 conf，不用手写。")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
     parser.add_argument(
         "--kept_fields",
         default=None,
-        help="覆盖默认 rawdata_stats/{dataset}/kept_fields.json",
+        help="覆盖默认 rawdata_stats/{dataset}/{landmark_tag}/kept_fields.json",
     )
     parser.add_argument("--field_index", default=None)
     parser.add_argument(
@@ -378,6 +416,12 @@ def main(argv=None):
         choices=list(VALID_ENCODINGS),
     )
     parser.add_argument("--field_bank_dir", default=None)
+    parser.add_argument(
+        "--experiment",
+        default="",
+        help="空=默认 Field Bank 实验；longitudinal=走 outputs/{dataset}/longitudinal/...",
+    )
+    add_landmark_cli_args(parser, extraction=True)
     parser.add_argument("--label_file", default=None)
     parser.add_argument(
         "--splits",
@@ -389,7 +433,7 @@ def main(argv=None):
         "--init_field",
         default=None,
         nargs="+",
-        help="贪婪起点字段，使用 FIELD_BANK.csv 的 field 路径。多个字段请加引号：--init_field '{demographic.ethnicity,demographic.sex_at_birth}'",
+        help="贪婪起点字段，写在大括号里。family 前缀：--init_field '{demographic.}' 会展开成该 dataset Field Bank 里所有 demographic.* 字段；也可写完整路径：--init_field '{demographic.ethnicity,demographic.sex_at_birth}'",
     )
     parser.add_argument(
         "--inner_modality",
@@ -421,12 +465,60 @@ def main(argv=None):
     parser.add_argument("--max_epochs", type=int, default=None)
     parser.add_argument("--conch_python", default="/data/fangyuxuan/miniconda3/envs/conch/bin/python")
     parser.add_argument("--analyzer_python", default="/data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python")
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--queue_root",
+        default=None,
+        help="greedy conf 队列根目录。默认 Clinic_Analyzer/configs/greedy/{queue,running,done,failed}",
+    )
+    return parser
 
+
+def resolve_dataset_list(args) -> list[str]:
     datasets = load_dataset_configs(args.datasets_config)
     names = resolve_dataset_names(args.dataset, datasets)
     if not names:
         names = [args.dataset]
-    args._multi_dataset = len(names) > 1
-    for name in names:
-        run_one(args, name)
+    return names
+
+
+def run_claimed_jobs(args) -> None:
+    names = resolve_dataset_list(args)
+    queued = enqueue_jobs(args, names)
+    root = queued["root"]
+    job_key = queued["job_key"]
+    print(
+        f"[queue] root={root} job_key={job_key} "
+        f"created={len(queued['created'])} existing={len(queued['existing'])}"
+    )
+    while True:
+        claimed = claim_job(root, job_key)
+        if claimed is None:
+            print(f"[queue] idle job_key={job_key}")
+            return
+        job = load_job(claimed)
+        dataset = job["dataset"]
+        gpu = job.get("cuda_visible_devices") or os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        landmark = job.get("landmark_tag") or job.get("landmark_time") or ""
+        print(f"[queue] claim {claimed.name} dataset={dataset} landmark={landmark} gpu={gpu}")
+        job_args = merge_job_args(args, job)
+        try:
+            run_one(job_args, dataset)
+        except Exception as exc:
+            dest = mark_failed(claimed, error=f"{type(exc).__name__}: {exc}")
+            print(f"[queue] fail {dest.name} dataset={dataset} landmark={landmark}: {exc}")
+            continue
+        dest = mark_done(claimed)
+        print(f"[queue] done {dest.name} dataset={dataset} landmark={landmark}")
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    names = resolve_dataset_list(args)
+    args._multi_dataset = (
+        len(names) > 1
+        or str(args.dataset) == "all"
+        or "," in str(args.landmark_time)
+        or str(args.landmark_time).strip().lower() == "all"
+    )
+    run_claimed_jobs(args)
