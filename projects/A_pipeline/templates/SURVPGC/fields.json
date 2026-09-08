@@ -2,6 +2,7 @@
   "description": "SURVPGC：subtype + age + sex + tumor stage + stage edition + race",
   "prompt_file": "prompts.csv",
   "dirname": "SURVPGC",
+  "source": "gdc",
   "fields": [
     "diagnoses[].primary_diagnosis",
     "demographic.age_at_index",
@@ -11,9 +12,38 @@
     "demographic.race"
   ],
   "datasets": [
-    "TCGA_LIHC",
+    "TCGA-ACC",
+    "TCGA-BLCA",
+    "TCGA-BRCA",
+    "TCGA-CESC",
+    "TCGA-CHOL",
     "TCGA-COAD",
+    "TCGA-DLBC",
+    "TCGA-ESCA",
+    "TCGA-GBM",
+    "TCGA-HNSC",
+    "TCGA-KICH",
+    "TCGA-KIRC",
+    "TCGA-KIRP",
+    "TCGA-LAML",
+    "TCGA-LGG",
+    "TCGA_LIHC",
+    "TCGA-LUAD",
+    "TCGA-LUSC",
+    "TCGA-MESO",
+    "TCGA-OV",
+    "TCGA-PAAD",
+    "TCGA-PCPG",
+    "TCGA-PRAD",
     "TCGA-READ",
-    "TCGA-BRCA"
+    "TCGA-SARC",
+    "TCGA-SKCM",
+    "TCGA-STAD",
+    "TCGA-TGCT",
+    "TCGA-THCA",
+    "TCGA-THYM",
+    "TCGA-UCEC",
+    "TCGA-UCS",
+    "TCGA-UVM"
   ]
 }

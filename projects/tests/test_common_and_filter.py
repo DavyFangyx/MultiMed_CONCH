@@ -11,7 +11,22 @@ if str(SRC) not in sys.path:
 
 from common.fields import extract_path_values, get_primary_diagnosis
 from common.missingness import classify_raw_value
-from common.paths import PROJECT_ROOT, dataset_field_bank_dir, dataset_greedy_dir, dataset_linear_probe_dir, dataset_univariate_dir, normalize_experiment, validate_encoding
+from common.paths import (
+    PROJECT_ROOT,
+    dataset_field_bank_dir,
+    dataset_greedy_dir,
+    dataset_greedy_results_dir,
+    dataset_greedy_run_dir,
+    dataset_linear_probe_dir,
+    dataset_linear_probe_results_dir,
+    dataset_univariate_dir,
+    dataset_univariate_results_dir,
+    dataset_univariate_run_dir,
+    display_results_dir,
+    normalize_experiment,
+    result_experiment_name,
+    validate_encoding,
+)
 from common.types import infer_type
 from discovery.cli import build_field_bank_parser, field_bank_main
 from discovery.filter import apply_rules, timepoint
@@ -506,6 +521,30 @@ def test_dataset_linear_probe_dir_prompt():
     assert dataset_linear_probe_dir("TCGA_LIHC", "prompt", "landmark_none") == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "landmark_none"
 
 
+def test_dataset_results_dirs():
+    assert dataset_greedy_results_dir("TCGA-BRCA", "onehot", "landmark_0") == PROJECT_ROOT / "results" / "greedy" / "onehot" / "landmark_0" / "TCGA-BRCA"
+    assert dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365") == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
+    assert dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_none") == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "landmark_none" / "TCGA_LIHC"
+    assert dataset_greedy_results_dir(
+        "TCGA-BRCA", "onehot", "landmark_none", experiment="longitudinal"
+    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "landmark_none" / "TCGA-BRCA"
+    assert dataset_greedy_run_dir(
+        "CPTAC", "prompt", "landmark_730", "G4_37770ad1bc", "mlp_clinic_flatten"
+    ) == PROJECT_ROOT / "results" / "greedy" / "prompt" / "landmark_730" / "CPTAC" / "runs" / "G4_37770ad1bc" / "mlp_clinic_flatten"
+    assert dataset_univariate_run_dir(
+        "TCGA_LIHC", "prompt", "landmark_365", "G1_deadbeef12", "mlp_clinic_flatten"
+    ) == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
+    assert dataset_greedy_run_dir(
+        "TCGA-BRCA", "onehot", "landmark_none", "G2_abc", "mlp_clinic_flatten", experiment="longitudinal"
+    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "landmark_none" / "TCGA-BRCA" / "runs" / "G2_abc" / "mlp_clinic_flatten"
+    assert dataset_univariate_results_dir(
+        "TCGA_LIHC", "prompt", "landmark_365", experiment="longitudinal"
+    ) == PROJECT_ROOT / "results" / "longitudinal_univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
+    assert display_results_dir("greedy", "prompt", "landmark_0") == PROJECT_ROOT / "results_display" / "greedy" / "prompt" / "landmark_0"
+    assert result_experiment_name("greedy", "") == "greedy"
+    assert result_experiment_name("univariate", "longitudinal") == "longitudinal_univariate"
+
+
 def test_dataset_dirs_include_longitudinal_experiment():
     assert dataset_field_bank_dir(
         "TCGA-BRCA", "prompt", "landmark_365", experiment="longitudinal"
@@ -532,7 +571,14 @@ def test_invalid_encoding_raises():
         dataset_greedy_dir("TCGA-BRCA", "hash")
     with pytest.raises(ValueError, match="unsupported encoding"):
         dataset_univariate_dir("TCGA-BRCA", "hash")
+    with pytest.raises(ValueError, match="unsupported encoding"):
         dataset_linear_probe_dir("TCGA-BRCA", "hash")
+    with pytest.raises(ValueError, match="unsupported encoding"):
+        dataset_greedy_results_dir("TCGA-BRCA", "hash", "landmark_none")
+    with pytest.raises(ValueError, match="unsupported encoding"):
+        dataset_linear_probe_results_dir("TCGA-BRCA", "hash", "landmark_none")
+    with pytest.raises(ValueError, match="no longitudinal results tree"):
+        dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_none", experiment="longitudinal")
 
 
 def test_field_bank_main_rejects_unknown_encoding():

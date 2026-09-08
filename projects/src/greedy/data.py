@@ -45,6 +45,8 @@ STUDY_BY_DISPLAY = {
     "TCGA-UCEC": "tcga_ucec",
     "TCGA-UCS": "tcga_ucs",
     "TCGA-UVM": "tcga_uvm",
+    "CPTAC": "cptac",
+    "MMRF": "mmrf",
 }
 
 DEFAULT_SURVPGC_ROOT = Path("/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init")

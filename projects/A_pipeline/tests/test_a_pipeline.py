@@ -27,15 +27,18 @@ from src.baseline import (  # noqa: E402
     load_baseline_scheme_fields,
     resolve_baseline_schemes,
 )
+from src.cindex import claim_conf, conf_text, enqueue_cindex_jobs, expand_cindex_jobs, parse_conf, resolve_cindex_schemes, result_table_dir, run_claimed_conf, scheme_output_dir, summarize_dataset  # noqa: E402
 from src.cli import main as a_pipeline_main  # noqa: E402
-from src.config import DEFAULT_TEXT_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, SCHEME_TEMPLATE, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
-from src.datasets import dataset_jobs, load_dataset_configs, resolve_dataset_names  # noqa: E402
+from src.config import ALL_TCGA_DATASETS, ALL_TEXT_SCHEMES, DEFAULT_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, SCHEME_TEMPLATE, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
+from src.config import SCHEME_CONFIG, scheme_source  # noqa: E402
+from src.datasets import dataset_jobs, expand_source_jobs, load_dataset_configs, load_source_dataset_configs, resolve_dataset_names  # noqa: E402
 from src.extract import extract_values  # noqa: E402
 from src.hgcn_clinic import field_type_name, load_hgcn_scheme_fields, resolve_hgcn_schemes  # noqa: E402
 from src.json2prompt import run_json2prompt  # noqa: E402
 from src.paths import (  # noqa: E402
     A_PIPELINE_ROOT,
     DEFAULT_DATASETS_CONFIG,
+    DEFAULT_GDC_DATASETS_CONFIG,
     DEFAULT_JSON_PATH,
     DEFAULT_TEMPLATE_DIR,
     dataset_baseline_embedding_dir,
@@ -68,26 +71,38 @@ def test_scheme_dirs_load_fields_and_templates():
 def test_scheme_dataset_bindings():
     _load_scheme_fields()
     assert SCHEME_DATASETS["L0"] is None
-    assert SCHEME_DATASETS["HGCN_KIRC"] == ["TCGA-KIRC"]
-    assert SCHEME_DATASETS["HGCN_LIHC"] == ["TCGA_LIHC"]
-    assert "TCGA-BRCA" in SCHEME_DATASETS["MMSURV"]
-    assert "TCGA-ESCA" in SCHEME_DATASETS["MMSURV"]
-    assert "TCGA-READ" in SCHEME_DATASETS["SURVPGC"]
-    assert "TCGA-BRCA" in SCHEME_DATASETS["MULTISURV"]
-    assert len(SCHEME_DATASETS["MULTISURV"]) == 33
-    assert len(SCHEME_DATASETS["INTEGRATIVE_DNN"]) == 33
-    datasets = {"TCGA-KIRC": {}, "TCGA-READ": {}, "TCGA_LIHC": {}}
-    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-KIRC", datasets) == ["L0", "HGCN_KIRC"]
-    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-READ", datasets) == ["L0"]
+    assert SCHEME_DATASETS["L5"] is None
+    assert "D0" not in SCHEME_DATASETS
+    assert len(ALL_TCGA_DATASETS) == 33
+    for name in PAPER_SCHEMES:
+        assert SCHEME_DATASETS[name] == list(ALL_TCGA_DATASETS)
+    datasets = {name: {} for name in ALL_TCGA_DATASETS}
+    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-KIRC", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
+    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-READ", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
+    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-ESCA", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
     assert schemes_for_dataset(["D0", "HGCN_KIRC"], "TCGA-KIRC", datasets) == ["D0", "HGCN_KIRC"]
-    assert schemes_for_dataset(["D0", "HGCN_KIRC"], "TCGA-READ", datasets) == ["D0"]
+    assert schemes_for_dataset(["D0", "HGCN_KIRC"], "TCGA-READ", datasets) == ["D0", "HGCN_KIRC"]
     assert schemes_for_dataset(["HGCN_LIHC"], "TCGA-LIHC", datasets) == ["HGCN_LIHC"]
     assert schemes_for_dataset(["HGCN_KIRC"], None, datasets) == ["HGCN_KIRC"]
 
 
+def test_scheme_sources_are_lizhe_or_gdc():
+    _load_scheme_fields()
+    for name in DEFAULT_TEXT_SCHEMES:
+        assert SCHEME_CONFIG[name]["source"] == "lizhe"
+        assert scheme_source(name) == "lizhe"
+        d_name = name.replace("L", "D", 1)
+        assert scheme_source(d_name) == "lizhe"
+    for name in PAPER_SCHEMES:
+        assert SCHEME_CONFIG[name]["source"] == "gdc"
+        assert scheme_source(name) == "gdc"
+
+
 def test_scheme_loader_skips_field_bank():
     _load_scheme_fields()
-    assert resolve_scheme_names("all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert resolve_scheme_names("manual") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert resolve_scheme_names("paper") == list(PAPER_SCHEMES)
+    assert resolve_scheme_names("all") == list(ALL_TEXT_SCHEMES)
     assert resolve_scheme_names("MULTISURV") == ["MULTISURV"]
     try:
         resolve_scheme_names("FIELD_BANK")
@@ -121,6 +136,61 @@ def test_default_datasets_are_lizhe_nine():
         assert all(path.startswith("/data/lizhe/") for path in cfg["clinic_files"])
 
 
+def test_expand_source_jobs_uses_scheme_source():
+    _load_scheme_fields()
+    source_datasets = load_source_dataset_configs(
+        lizhe_config=DEFAULT_DATASETS_CONFIG,
+        gdc_config=DEFAULT_GDC_DATASETS_CONFIG,
+    )
+    jobs = expand_source_jobs(
+        "all",
+        ["L0", "MULTISURV", "HGCN_ESCA"],
+        source_datasets,
+        json_path="unused.json",
+        prompt_dir="/tmp/unused_prompt",
+        out_dir="/tmp/unused_out",
+        baseline_out="/tmp/outputs",
+    )
+    by_key = {(job["source"], job["name"]): job for job in jobs}
+    assert ("lizhe", "TCGA-BRCA") in by_key
+    assert ("gdc", "TCGA-BRCA") in by_key
+    assert by_key[("lizhe", "TCGA-BRCA")]["schemes"] == ["L0"]
+    assert "MULTISURV" in by_key[("gdc", "TCGA-BRCA")]["schemes"]
+    assert by_key[("lizhe", "TCGA-BRCA")]["json_paths"][0].startswith("/data/lizhe/")
+    assert "gdc_clinical/raw_json" in by_key[("gdc", "TCGA-BRCA")]["json_paths"][0]
+    assert by_key[("gdc", "TCGA-ESCA")]["schemes"] == ["MULTISURV", "HGCN_ESCA"]
+    assert "MULTISURV" in by_key[("gdc", "TCGA-GBM")]["schemes"]
+    assert "HGCN_ESCA" in by_key[("gdc", "TCGA-GBM")]["schemes"]
+    assert ("lizhe", "TCGA-ESCA") not in by_key
+    assert ("lizhe", "TCGA-GBM") not in by_key
+
+    esca_manual = expand_source_jobs(
+        "TCGA-ESCA",
+        ["L0"],
+        source_datasets,
+        json_path="unused.json",
+        prompt_dir="/tmp/unused_prompt",
+        out_dir="/tmp/unused_out",
+        baseline_out="/tmp/outputs",
+    )
+    assert esca_manual == []
+
+    paper_jobs = expand_source_jobs(
+        "all",
+        ["SURVPGC"],
+        source_datasets,
+        json_path="unused.json",
+        prompt_dir="/tmp/unused_prompt",
+        out_dir="/tmp/unused_out",
+        baseline_out="/tmp/outputs",
+    )
+    paper_names = [job["name"] for job in paper_jobs if job["source"] == "gdc"]
+    assert paper_names == sorted(ALL_TCGA_DATASETS)
+    assert set(paper_names) == set(ALL_TCGA_DATASETS)
+    assert len(paper_names) == 33
+    assert all(job["schemes"] == ["SURVPGC"] for job in paper_jobs)
+
+
 def test_dataset_jobs_write_to_a_manual():
     jobs = dataset_jobs(
         "TCGA-READ",
@@ -141,7 +211,9 @@ def test_dataset_jobs_write_to_a_manual():
 
 def test_baseline_schemes_are_d0_d5():
     _load_scheme_fields()
-    assert resolve_baseline_schemes("all") == ["D0", "D1", "D2", "D3", "D4", "D5"]
+    assert resolve_baseline_schemes("manual") == ["D0", "D1", "D2", "D3", "D4", "D5"]
+    assert resolve_baseline_schemes("paper") == list(PAPER_SCHEMES)
+    assert resolve_baseline_schemes("all") == ["D0", "D1", "D2", "D3", "D4", "D5"] + list(PAPER_SCHEMES)
     assert resolve_baseline_schemes("D0") == ["D0"]
     assert resolve_baseline_schemes("MULTISURV") == ["MULTISURV"]
     assert str(baseline_scheme_output_dir("/tmp/out", "D0")) == "/tmp/out/D0"
@@ -153,6 +225,8 @@ def test_global_mapping_dir_lives_in_a_pipeline():
     assert mapping_dir == A_PIPELINE_ROOT / "baseline_onehot_mapping_tables"
     assert mapping_dir.parent == A_PIPELINE_ROOT
     assert "outputs" not in mapping_dir.parts[-3:]
+    assert global_mapping_dir("lizhe") == mapping_dir
+    assert global_mapping_dir("gdc") == mapping_dir / "gdc"
 
 
 def test_json2prompt_writes_a_manual(tmp_path):
@@ -353,6 +427,12 @@ def test_hgcn_keeps_old_field_types_and_cli():
         "follow_ups[].other_clinical_attributes[].bmi",
     }
     assert resolve_hgcn_schemes("all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert resolve_hgcn_schemes("manual") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    try:
+        resolve_hgcn_schemes("paper")
+        raise AssertionError("hgcn paper should be rejected")
+    except ValueError as exc:
+        assert "L0-L5" in str(exc)
     try:
         a_pipeline_main(["hgcn_clinic", "--help"])
     except SystemExit as exc:
@@ -400,3 +480,227 @@ def test_d_group_onehot_mapping_does_not_change_hgcn_nominal_fit():
     onehot = vector[grade_start:]
     assert int(onehot.sum()) == 1
     assert onehot[d_mapping["diagnoses[].tumor_grade"]["g2"]] == 1.0
+
+
+def test_cindex_jobs_follow_scheme_bindings():
+    _load_scheme_fields()
+    datasets = {"TCGA-KIRC": {}, "TCGA-READ": {}, "TCGA_LIHC": {}}
+    schemes = resolve_cindex_schemes("all", "all")
+    assert schemes[:6] == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert "D0" not in schemes
+    assert "MULTISURV" in schemes
+    assert "HGCN_KIRC" in schemes
+    assert resolve_cindex_schemes("all", "text") == schemes
+    assert resolve_cindex_schemes("all", "baseline") == schemes
+    assert resolve_cindex_schemes("manual", "all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert [job["scheme"] for job in expand_cindex_jobs(resolve_cindex_schemes("manual", "text"), "text")] == [
+        "L0", "L1", "L2", "L3", "L4", "L5"
+    ]
+    assert [job["scheme"] for job in expand_cindex_jobs(resolve_cindex_schemes("manual", "baseline"), "baseline")] == [
+        "D0", "D1", "D2", "D3", "D4", "D5"
+    ]
+    assert resolve_cindex_schemes("paper", "text") == [
+        "MULTISURV",
+        "SURVPGC",
+        "MMSURV",
+        "INTEGRATIVE_DNN",
+        "HGCN_KIRC",
+        "HGCN_LIHC",
+        "HGCN_ESCA",
+        "HGCN_LUSC",
+        "HGCN_LUAD",
+        "HGCN_UCEC",
+    ]
+    assert schemes_for_dataset(["L0", "D0", "HGCN_KIRC"], "TCGA-KIRC", datasets) == ["L0", "D0", "HGCN_KIRC"]
+    assert schemes_for_dataset(["L0", "D0", "HGCN_KIRC"], "TCGA-READ", datasets) == ["L0", "D0", "HGCN_KIRC"]
+    jobs = expand_cindex_jobs(["HGCN_KIRC"], "all")
+    assert [job["scheme"] for job in jobs] == ["HGCN_KIRC", "baseline__HGCN_KIRC"]
+    jobs = expand_cindex_jobs(["HGCN_KIRC"], "baseline")
+    assert [job["scheme"] for job in jobs] == ["baseline__HGCN_KIRC"]
+    jobs = expand_cindex_jobs(["L4"], "all")
+    assert [job["scheme"] for job in jobs] == ["L4", "D4"]
+    jobs = expand_cindex_jobs(["L4"], "baseline")
+    assert [job["scheme"] for job in jobs] == ["D4"]
+
+
+def test_cindex_output_paths():
+    prompt_dir = scheme_output_dir("TCGA-READ", "L0", "/tmp/outputs")
+    baseline_dir = scheme_output_dir("TCGA-READ", "D0", "/tmp/outputs")
+    paper_baseline_dir = scheme_output_dir("TCGA-KIRC", "baseline__HGCN_KIRC", "/tmp/outputs")
+    assert str(prompt_dir).endswith("/outputs/TCGA-READ/A_manual/L0/embeddings/pt")
+    assert str(baseline_dir) == "/tmp/outputs/TCGA-READ/A_manual/D0/embeddings/pt"
+    assert str(paper_baseline_dir) == "/tmp/outputs/TCGA-KIRC/A_manual/baseline/HGCN_KIRC/embeddings/pt"
+    table_dir = result_table_dir("TCGA-READ")
+    assert table_dir.as_posix().endswith("/results/A_manual/TCGA-READ")
+    assert "Clinic_Analyzer" not in table_dir.parts
+
+
+
+def test_cindex_queue_conf_and_claim(tmp_path, monkeypatch):
+    queue_root = tmp_path / "queue_root"
+    clinic_dir = tmp_path / "clinic"
+    clinic_dir.mkdir()
+    split_dir = tmp_path / "splits"
+    split_dir.mkdir()
+    results_base = tmp_path / "results"
+    jobs = [
+        {
+            "study": "tcga_read",
+            "scheme": "L0",
+            "modality": "mlp_clinic_flatten",
+            "clinic_dir": clinic_dir,
+            "split_dir": split_dir,
+            "results_base": results_base,
+            "seed": 0,
+            "max_epochs": 2,
+            "conf_name": "tcga_read__L0__mlp_clinic_flatten.conf",
+        }
+    ]
+    queued = enqueue_cindex_jobs(jobs, queue_root=queue_root)
+    assert len(queued["created"]) == 1
+    conf_path = queued["created"][0]
+    payload = parse_conf(conf_path)
+    assert payload["EXP_GROUP"] == "A_manual/runs"
+    assert payload["RUN_NAME"] == "tcga_read__L0"
+    assert payload["PRESET"] == "mlp_clinic_flatten"
+    assert payload["STUDY"] == "tcga_read"
+    assert payload["CLINIC_DIR_PATH"] == str(clinic_dir)
+    assert payload["SPLIT_DIR_PATH"] == str(split_dir)
+    assert payload["RESULTS_BASE"] == str(results_base)
+    assert payload["SEED"] == "0"
+    assert payload["MAX_EPOCHS"] == "2"
+    assert payload["WANDB_MODE"] == "disabled"
+    assert "CLINIC_DIR_PATH=" in conf_text(
+        study="tcga_read",
+        scheme="L0",
+        modality="mlp_clinic_flatten",
+        clinic_dir=clinic_dir,
+        split_dir=split_dir,
+        results_base=results_base,
+    )
+
+    again = enqueue_cindex_jobs(jobs, queue_root=queue_root)
+    assert again["created"] == []
+    assert len(again["existing"]) == 1
+
+    claimed = claim_conf(queue_root)
+    assert claimed is not None
+    assert claimed.parent.name == "running"
+    assert not (queue_root / "queue" / claimed.name).exists()
+    assert claim_conf(queue_root) is None
+
+    out_dir = results_base / "A_manual" / "runs" / "tcga_read__L0" / "mlp_clinic_flatten"
+    out_dir.mkdir(parents=True)
+    (out_dir / "val_result_fold0.csv").write_text("val_cindex\n0.7\n", encoding="utf-8")
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("run.sh should not be called on reuse")
+
+    monkeypatch.setattr("src.cindex.subprocess.run", _boom)
+    dest = run_claimed_conf(claimed, reuse=True)
+    assert dest.parent.name == "done"
+    assert dest.name == claimed.name
+    assert (out_dir / "run.log").as_posix().endswith("/A_manual/runs/tcga_read__L0/mlp_clinic_flatten/run.log")
+
+    failed = queue_root / "failed" / dest.name
+    failed.parent.mkdir(parents=True, exist_ok=True)
+    dest.replace(failed)
+    retried = enqueue_cindex_jobs(jobs, queue_root=queue_root)
+    assert len(retried["created"]) == 1
+    assert retried["created"][0].parent.name == "queue"
+    assert not failed.exists()
+
+
+def test_cindex_workers_claim_in_parallel(tmp_path, monkeypatch):
+    from src.cindex import drain_queue, enqueue_cindex_jobs
+
+    queue_root = tmp_path / "queue_root"
+    clinic_dir = tmp_path / "clinic"
+    clinic_dir.mkdir()
+    split_dir = tmp_path / "splits"
+    split_dir.mkdir()
+    results_base = tmp_path / "results"
+    jobs = []
+    for idx, modality in enumerate(["mlp_clinic_flatten", "snn_clinic_flatten"]):
+        jobs.append(
+            {
+                "study": "tcga_read",
+                "scheme": "L0",
+                "modality": modality,
+                "clinic_dir": clinic_dir,
+                "split_dir": split_dir,
+                "results_base": results_base,
+                "seed": 0,
+                "conf_name": f"tcga_read__L0__{modality}.conf",
+            }
+        )
+        out_dir = results_base / "A_manual" / "runs" / "tcga_read__L0" / modality
+        out_dir.mkdir(parents=True)
+        (out_dir / "val_result_fold0.csv").write_text("val_cindex\n0.7\n", encoding="utf-8")
+        (out_dir / "run.log").write_text("ok\n", encoding="utf-8")
+    enqueue_cindex_jobs(jobs, queue_root=queue_root)
+    seen = []
+
+    def _record(claimed, reuse=True):
+        seen.append(claimed.name)
+        from src.cindex import mark_done
+        return mark_done(claimed)
+
+    monkeypatch.setattr("src.cindex.run_claimed_conf", _record)
+    drain_queue(queue_root, reuse=True, poll_seconds=0.01, workers=2)
+    assert sorted(seen) == [
+        "tcga_read__L0__mlp_clinic_flatten.conf",
+        "tcga_read__L0__snn_clinic_flatten.conf",
+    ]
+    assert not list((queue_root / "queue").glob("*.conf"))
+    assert sorted(path.name for path in (queue_root / "done").glob("*.conf")) == sorted(seen)
+
+
+def test_summarize_dataset_adds_new_modality_without_overwriting(tmp_path):
+    results_root = tmp_path / "results"
+    table_dir = results_root / "A_manual" / "TCGA_LIHC"
+    table_dir.mkdir(parents=True)
+    existing = [
+        {
+            "dataset": "TCGA_LIHC",
+            "scheme": "MULTISURV",
+            "encoding": "prompt",
+            "modality": "mlp_clinic_flatten",
+            "clinic_dir": "old_clinic",
+            "results_dir": "old_results",
+            "log_path": "old.log",
+            "skipped": True,
+            "val_c_index_mean": 0.62,
+            "val_c_index_std": 0.01,
+            "test_c_index_mean": 0.62,
+            "test_c_index_std": 0.01,
+            "source": "val",
+        }
+    ]
+    from src.cindex import _write_csv, _write_json
+    _write_csv(table_dir / "cindex.csv", existing)
+    _write_json(table_dir / "run_config.json", {"dataset": "TCGA_LIHC", "rows": existing, "modalities": ["mlp_clinic_flatten"]})
+    cox_dir = results_root / "A_manual" / "runs" / "tcga_lihc__MULTISURV" / "clinic_cox"
+    cox_dir.mkdir(parents=True)
+    (cox_dir / "val_result_fold0.csv").write_text("val_cindex\n0.55\n", encoding="utf-8")
+    (cox_dir / "run.log").write_text("ok\n", encoding="utf-8")
+    jobs = [
+        {
+            "scheme": "MULTISURV",
+            "encoding": "prompt",
+            "modality": "clinic_cox",
+            "clinic_dir": tmp_path / "clinic",
+            "out_dir": cox_dir,
+        }
+    ]
+    rows = summarize_dataset(
+        dataset_name="TCGA_LIHC",
+        jobs=jobs,
+        results_root=results_root,
+        encoding="text",
+        modality="clinic_cox",
+    )
+    modalities = [row["modality"] for row in rows]
+    assert modalities == ["mlp_clinic_flatten", "clinic_cox"]
+    assert rows[0]["val_c_index_mean"] == 0.62
+    assert float(rows[1]["val_c_index_mean"]) == 0.55

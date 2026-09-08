@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from common.paths import PROJECT_ROOT, dataset_linear_probe_dir
+from common.paths import PROJECT_ROOT, dataset_linear_probe_dir, dataset_linear_probe_results_dir
 from discovery.linear_probe import (
     collect_continuous_targets,
     is_numeric_gdc_type,
@@ -41,7 +41,9 @@ def _write_prompt_bank(bank: Path, fields: list[str], embeddings: dict[str, np.n
 def test_dataset_linear_probe_dir_prompt():
     path = dataset_linear_probe_dir("TCGA_LIHC", "prompt", "landmark_none")
     assert path == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "landmark_none"
-    assert path.as_posix().endswith("outputs/TCGA_LIHC/linear_probe/prompt/landmark_none")
+    results = dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_none")
+    assert results == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "landmark_none" / "TCGA_LIHC"
+    assert results.as_posix().endswith("results/linear_probe/prompt/landmark_none/TCGA_LIHC")
 
 
 def test_encoding_onehot_raises():

@@ -1,18 +1,25 @@
 # results_display
 
-把各数据集 greedy 产物抽到这里做展示，不改 `outputs/`。
-
-当前只汇总 prompt greedy 的 `cindex_by_n_fields.png` / `cindex_by_n_fields.csv`。
+把各数据集 `results/` 里的评测表抽到这里做展示，不改 `outputs/`。
 
 ```bash
-python results_display/scripts/collect_greedy_cindex.py --dataset all --landmark_time 0
+python results_display/scripts/collect_greedy_cindex.py --dataset all --landmark_time 730
 python results_display/scripts/collect_greedy_cindex.py --dataset TCGA-STAD,TCGA-BRCA --landmark_time none
+python results_display/scripts/collect_univariate_cindex.py --dataset all --landmark_time none
+python results_display/scripts/collect_linear_probe_r2.py --dataset all --landmark_time 730
+python results_display/scripts/FigA_Other_Paper_Works.py --dataset all --landmark_time 730
 ```
 
-产物写到 `results_display/greedy/{encoding}/{landmark_tag}/`：
+产物写到 `results_display/{experiment}/{encoding}/{landmark_tag}/`：
 
-- `cindex_by_n_fields.png`：按 `datasets.json` 顺序拼成 6 列网格，每格顶部写数据集名
-- `cindex_by_n_fields.csv`：原 greedy 步级明细纵向拼接，并加 `dataset,encoding,landmark_tag`
-- `field_gain_matrix.png` / `field_gain_matrix.csv`：后续 greedy 步里真正抬升 c-index 的字段 × 数据集；格子颜色是该字段带来的 Δ c-index，空白表示没有增长
+- greedy：`cindex_by_n_fields.png/.csv`，以及 `field_gain_matrix.png/.csv`
+- univariate：`field_cindex.csv`
+- linear_probe：`numeric_r2.csv`
+- FigA other paper works：`results_display/FigA_Other_Paper_Works/{encoding}/{landmark_tag}/`
+  - 分数据集 PNG：`per_dataset/{dataset}.png`
+  - 33 宫格：`cindex_by_n_fields.png`
+  - 论文参考线表：`paper_reference_cindex.csv`
 
-`--dataset` 默认 `all`；`--landmark_time` 必填，和 greedy CLI 一样写成天数或 `none`。
+FigA 只画 TCGA。蓝色实线是 greedy 增长曲线；论文字段组合按绑定癌种画彩色水平参考线。缺 c-index 的绑定方案会写进 CSV，但不画线。默认 modality 是 `mlp_clinic_flatten`。
+
+`--dataset` 默认 `all`；`--landmark_time` 必填，和 CLI 一样写成天数或 `none`。纵向实验加 `--experiment longitudinal`。

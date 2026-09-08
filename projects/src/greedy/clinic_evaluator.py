@@ -59,7 +59,8 @@ class ClinicSubsetEvaluator:
             self.encoding = validate_encoding(inferred_encoding or "prompt")
         self.landmark_tag = require_landmark_tag(landmark_tag or inferred_tag)
         self.experiment = experiment if experiment is not None else experiment_from_path(bank)
-        self.exp_group = str(exp_group or ("longitudinal" if self.experiment else "greedy"))
+        self.kind = "univariate" if str(exp_group or "").find("univariate") >= 0 else "greedy"
+        self.exp_group = exp_group
         self.embeddings_root = Path(embeddings_root or (PROJECT_ROOT / "outputs"))
         self.work_dir = Path(
             work_dir
@@ -132,6 +133,10 @@ class ClinicSubsetEvaluator:
             prefer_val=not self.for_test,
             reuse=True,
             job_log=job_log,
+            encoding=self.encoding,
+            landmark_tag=self.landmark_tag,
+            experiment=self.experiment,
+            kind=self.kind,
         )
         payload["subset_idx"] = idx
         payload["scheme"] = scheme

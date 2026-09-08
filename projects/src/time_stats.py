@@ -68,6 +68,8 @@ STALE_OUTPUTS = (
     "ground_truth_time_distribution_all.png",
 )
 
+MAX_PLOT_SLOTS = 24
+
 TIME_FAMILIES = [
     "diagnoses",
     "diagnoses_treatments",
@@ -1048,6 +1050,13 @@ def _setup_matplotlib():
     return plt
 
 
+def _tight_layout(fig) -> None:
+    try:
+        fig.tight_layout()
+    except Exception:
+        pass
+
+
 def plot_patient_time_stats(df: pd.DataFrame, output_dir: Path, dataset_name: str) -> Path:
     plt = _setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1081,7 +1090,7 @@ def plot_patient_time_stats(df: pd.DataFrame, output_dir: Path, dataset_name: st
     else:
         ax.text(0.5, 0.5, "No ground-truth time", ha="center", va="center")
         ax.set_axis_off()
-    fig.tight_layout()
+    _tight_layout(fig)
     path = output_dir / "patient_time_stats.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -1119,6 +1128,15 @@ def _apply_decade_yaxis(ax, values) -> None:
     ax.set_ylabel("Normalized update time (x10; 1 = clinical end)")
 
 
+
+def _limit_plot_slots(cols: list[str], dataset_name: str, label: str) -> list[str]:
+    if len(cols) <= MAX_PLOT_SLOTS:
+        return cols
+    print(
+        f"  plot {label}: {dataset_name} 只画前 {MAX_PLOT_SLOTS}/{len(cols)} 个槽，CSV 仍保留全部"
+    )
+    return cols[:MAX_PLOT_SLOTS]
+
 def plot_normalized_update_time(
     wide: pd.DataFrame,
     output_dir: Path,
@@ -1146,6 +1164,7 @@ def plot_normalized_update_time(
         plotted_cols.append(col)
     if not plotted_cols:
         return None
+    plotted_cols = _limit_plot_slots(plotted_cols, dataset_name, "normalized_update_time")
 
     colors = _column_colors(plt, plotted_cols)
     n = len(plot_df)
@@ -1169,7 +1188,7 @@ def plot_normalized_update_time(
     if n > 40:
         ax.set_xticks([1, n])
         ax.set_xticklabels(["1", str(n)])
-    fig.tight_layout()
+    _tight_layout(fig)
     path = output_dir / "normalized_update_time.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -1197,6 +1216,12 @@ def plot_normalized_update_time_boxplot(
         labels.append(col)
     if not data:
         return None
+    if len(labels) > MAX_PLOT_SLOTS:
+        print(
+            f"  plot boxplot: {dataset_name} 只画前 {MAX_PLOT_SLOTS}/{len(labels)} 个槽，CSV 仍保留全部"
+        )
+        data = data[:MAX_PLOT_SLOTS]
+        labels = labels[:MAX_PLOT_SLOTS]
 
     fig_w = max(10, min(24, 1.15 * len(labels) + 3))
     fig, ax = plt.subplots(figsize=(fig_w, 6))
@@ -1222,7 +1247,7 @@ def plot_normalized_update_time_boxplot(
     for label in ax.get_xticklabels():
         label.set_ha("right")
         label.set_fontsize(8)
-    fig.tight_layout()
+    _tight_layout(fig)
     path = output_dir / "normalized_update_time_boxplot.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -1271,6 +1296,7 @@ def plot_sequence_family_times(
             ys_all.extend(y.dropna().tolist())
         if not plotted_cols:
             continue
+        plotted_cols = _limit_plot_slots(plotted_cols, dataset_name, family)
 
         n_rows, n_cols = _subplot_grid(len(plotted_cols))
         fig_w = max(8.0, 4.2 * n_cols)
@@ -1309,7 +1335,7 @@ def plot_sequence_family_times(
         )
         fig.supxlabel("Patients")
         fig.supylabel("Normalized update time (1 = clinical end)")
-        fig.tight_layout()
+        _tight_layout(fig)
         path = Path(output_dir) / f"{family}.png"
         fig.savefig(path, dpi=150)
         plt.close(fig)
@@ -1322,9 +1348,14 @@ def plot_missing_family(df: pd.DataFrame, output_dir: Path, family: str, dataset
         return None
     plt = _setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
-    labels = [str(v) for v in df["path"].tolist()]
-    covered = pd.to_numeric(df["covered"], errors="coerce").fillna(0)
-    present = pd.to_numeric(df["present"], errors="coerce").fillna(0)
+    plot_df = df.head(MAX_PLOT_SLOTS).copy() if len(df) > MAX_PLOT_SLOTS else df
+    if len(df) > MAX_PLOT_SLOTS:
+        print(
+            f"  plot missing {family}: {dataset_name} 只画前 {MAX_PLOT_SLOTS}/{len(df)} 个槽，CSV 仍保留全部"
+        )
+    labels = [str(v) for v in plot_df["path"].tolist()]
+    covered = pd.to_numeric(plot_df["covered"], errors="coerce").fillna(0)
+    present = pd.to_numeric(plot_df["present"], errors="coerce").fillna(0)
     x = range(len(labels))
     fig_w = max(8.0, min(22.0, 1.2 * len(labels) + 3))
     fig, ax = plt.subplots(figsize=(fig_w, 5.2))
@@ -1336,10 +1367,10 @@ def plot_missing_family(df: pd.DataFrame, output_dir: Path, family: str, dataset
         RECORD_STATUS_UNLOCATED: "#E15759",
         RECORD_STATUS_NON_INFORMATIVE: "#B07AA1",
     }
-    if all(level in df.columns for level in RECORD_STATUS_LEVELS):
+    if all(level in plot_df.columns for level in RECORD_STATUS_LEVELS):
         bottom = [0.0] * len(labels)
         for level in RECORD_STATUS_LEVELS:
-            vals = pd.to_numeric(df[level], errors="coerce").fillna(0).tolist()
+            vals = pd.to_numeric(plot_df[level], errors="coerce").fillna(0).tolist()
             if not any(vals):
                 continue
             ax.bar(x, vals, bottom=bottom, color=status_colors[level], label=level)
@@ -1351,11 +1382,27 @@ def plot_missing_family(df: pd.DataFrame, output_dir: Path, family: str, dataset
     ax.set_ylabel("Patients")
     ax.set_title(f"{dataset_name} {family} slot coverage")
     ax.legend(frameon=False)
-    fig.tight_layout()
+    _tight_layout(fig)
     path = Path(output_dir) / f"{family}.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return path
+
+
+def _collect_patient_time_frames(output_root: Path, preferred_names: list[str] | None = None) -> list[tuple[str, pd.DataFrame]]:
+    found = {}
+    for dataset_dir in Path(output_root).iterdir():
+        if not dataset_dir.is_dir() or dataset_dir.name.startswith("_"):
+            continue
+        csv_path = dataset_dir / "time_write" / "patient_time_stats.csv"
+        if not csv_path.exists():
+            continue
+        found[dataset_dir.name] = pd.read_csv(csv_path)
+    names = []
+    if preferred_names:
+        names.extend(name for name in preferred_names if name in found)
+    names.extend(sorted(name for name in found if name not in set(names)))
+    return [(name, found[name]) for name in names]
 
 
 def plot_patient_time_stats_all(dataset_frames: list[tuple[str, pd.DataFrame]], output_dir: Path) -> Path | None:
@@ -1379,7 +1426,7 @@ def plot_patient_time_stats_all(dataset_frames: list[tuple[str, pd.DataFrame]], 
     ax.set_ylabel("Number of patients")
     ax.set_title("Ground-truth time by dataset")
     ax.legend(fontsize=8)
-    fig.tight_layout()
+    _tight_layout(fig)
     path = output_dir / "patient_time_stats_all.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -1724,9 +1771,11 @@ def run(args):
     shared_dir = output_root / "_shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_stale_outputs(shared_dir)
-    combined = plot_patient_time_stats_all(frames, shared_dir)
+    preferred = list(datasets.keys()) if dataset_names else [name for name, _ in frames]
+    all_frames = _collect_patient_time_frames(output_root, preferred) or frames
+    combined = plot_patient_time_stats_all(all_frames, shared_dir)
     if combined is not None:
-        print(f"patient_time_stats_all: {combined}")
+        print(f"patient_time_stats_all: {combined}  ({len(all_frames)} 个数据集)")
 
 
 def main():

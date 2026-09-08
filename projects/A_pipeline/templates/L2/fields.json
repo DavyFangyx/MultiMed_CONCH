@@ -1,8 +1,9 @@
 {
   "description": "L2：L1 + tumor_grade + prior_malignancy + synchronous_malignancy + prior_treatment",
   "prompt_file": "prompts.csv",
-  "dirname": "L2",
-  "fields": [
+ "dirname": "L2",
+  "source": "lizhe",
+ "fields": [
     "demographic.age_at_index",
     "demographic.sex_at_birth",
     "demographic.race",

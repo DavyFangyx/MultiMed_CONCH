@@ -10,7 +10,17 @@ from pathlib import Path
 from timeit import default_timer as timer
 
 from common.datasets import load_dataset_configs, resolve_dataset_names
-from common.paths import DEFAULT_DATASETS_CONFIG, VALID_ENCODINGS, dataset_field_bank_dir, dataset_greedy_dir, experiment_from_args, landmark_tag_from_args, validate_encoding
+from common.paths import (
+    DEFAULT_DATASETS_CONFIG,
+    VALID_ENCODINGS,
+    dataset_field_bank_dir,
+    dataset_greedy_dir,
+    dataset_greedy_results_dir,
+    experiment_from_args,
+    landmark_tag_from_args,
+    resolve_cli_out_dir,
+    validate_encoding,
+)
 from discovery.landmark import add_landmark_cli_args
 
 from .queue import (
@@ -53,6 +63,46 @@ def _json_default(obj):
     if isinstance(obj, Path):
         return str(obj)
     raise TypeError(f"not json serializable: {type(obj)}")
+
+
+def _json_load(path: Path):
+    path = Path(path)
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _unique_keep_order(items) -> list:
+    out = []
+    seen = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _merge_greedy_summaries(
+    out_dir: Path,
+    *,
+    existing_config: dict,
+    new_outer_scores: dict,
+    outer_modalities: list[str],
+) -> dict:
+    config = dict(existing_config or {})
+    scores = dict(config.get("outer_scores") or {})
+    added = {name: payload for name, payload in (new_outer_scores or {}).items() if name not in scores}
+    if added:
+        scores.update(added)
+        config["outer_scores"] = scores
+        config["outer_modalities"] = _unique_keep_order(
+            list(config.get("outer_modalities") or []) + list(outer_modalities)
+        )
+        config["built_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _json_dump(out_dir / "run_config.json", config)
+    return added
 
 
 def _path_payload(path: list[dict]) -> list[dict]:
@@ -176,7 +226,6 @@ def _score_outer_modalities(
             dataset=dataset,
             scheme=scheme,
             modality=modality,
-            exp_group=("longitudinal" if getattr(args, "experiment", None) else "greedy"),
             python_exe=args.analyzer_python,
             k=n_folds,
             k_start=0,
@@ -187,6 +236,10 @@ def _score_outer_modalities(
             prefer_val=False,
             reuse=True,
             job_log=work_dir / "jobs" / f"{scheme}__{modality}.json",
+            encoding=encoding,
+            landmark_tag=getattr(args, "landmark_tag", None),
+            experiment=getattr(args, "experiment", None),
+            kind="greedy",
         )
         scores[modality] = {
             "c_index_mean": payload.get("test_c_index_mean", payload.get("c_index_mean")),
@@ -210,7 +263,6 @@ def make_clinic_factory(dataset: str, field_bank_dir: Path, work_dir: Path, args
         split_dir=split_dir,
         landmark_tag=getattr(args, "landmark_tag", None),
         experiment=getattr(args, "experiment", None),
-        exp_group=("longitudinal" if getattr(args, "experiment", None) else "greedy"),
     )
 
 
@@ -249,7 +301,7 @@ def _load_splits(args, dataset: str):
     return splits, str(split_path.resolve())
 
 
-def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits, result, args, split_source, started, inner_modality: str, outer_modalities: list[str]):
+def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits, result, args, split_source, started, inner_modality: str, outer_modalities: list[str], *, work_dir: Path | None = None):
     path_payload = {
         "dataset": dataset,
         "encoding": getattr(args, "encoding", "prompt"),
@@ -308,6 +360,8 @@ def _write_run_outputs(out_dir: Path, dataset: str, fields, patient_ids, splits,
         "elapsed_sec": timer() - started,
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "points": result["points"],
+        "work_dir": str(work_dir or out_dir),
+        "results_dir": str(out_dir),
     }
     _json_dump(out_dir / "run_config.json", config)
     print(f"\n######## Dataset: {dataset}  inner={inner_modality} ########")
@@ -331,12 +385,14 @@ def run_one(args, dataset: str) -> Path:
     args.landmark_tag = tag
     experiment = experiment_from_args(args)
     args.experiment = experiment
-    if args.out:
-        out_dir = Path(args.out)
-        if getattr(args, "_multi_dataset", False):
-            out_dir = out_dir / dataset / tag
-    else:
-        out_dir = dataset_greedy_dir(dataset, encoding, tag, experiment=experiment)
+    work_dir = dataset_greedy_dir(dataset, encoding, tag, experiment=experiment)
+    out_dir = resolve_cli_out_dir(
+        args,
+        dataset_greedy_results_dir(dataset, encoding, tag, experiment=experiment),
+        dataset,
+        tag,
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     started = timer()
     fields = load_candidate_fields(
@@ -368,7 +424,34 @@ def run_one(args, dataset: str) -> Path:
         outer_modalities = parse_modalities(raw_outer)
     ensure_modalities_allowed(dataset, [inner_modality, *outer_modalities])
     args.inner_modality = inner_modality
-    factory = make_clinic_factory(dataset, field_bank_dir, out_dir, args, split_dir)
+    existing_config = _json_load(out_dir / "run_config.json") or {}
+    existing_path = _json_load(out_dir / "path.json") or {}
+    if existing_config and existing_path.get("path"):
+        missing_outer = [name for name in outer_modalities if name not in (existing_config.get("outer_scores") or {})]
+        if not missing_outer:
+            print(f"[greedy] reuse existing results: {out_dir}")
+            return out_dir
+        print(f"[greedy] keep existing path.json, add outer={missing_outer}")
+        new_scores = _score_outer_modalities(
+            dataset=dataset,
+            path=existing_path.get("path") or [],
+            outer_modalities=missing_outer,
+            inner_modality=inner_modality,
+            work_dir=work_dir,
+            split_dir=split_dir,
+            args=args,
+            n_folds=max(len(splits), 1),
+        )
+        added = _merge_greedy_summaries(
+            out_dir,
+            existing_config=existing_config,
+            new_outer_scores=new_scores,
+            outer_modalities=missing_outer,
+        )
+        print(f"  added outer_scores={list(added)}")
+        print(f"  elapsed={timer() - started:.2f}s")
+        return out_dir
+    factory = make_clinic_factory(dataset, field_bank_dir, work_dir, args, split_dir)
     init_idx = _resolve_init_idx(fields, getattr(args, "init_field", None))
     result = run_nested_greedy(
         factory,
@@ -386,13 +469,13 @@ def run_one(args, dataset: str) -> Path:
         path=result.get("path") or [],
         outer_modalities=outer_modalities,
         inner_modality=inner_modality,
-        work_dir=out_dir,
+        work_dir=work_dir,
         split_dir=split_dir,
         args=args,
         n_folds=max(len(splits), 1),
     )
     _write_run_outputs(
-        out_dir, dataset, fields, patient_ids, splits, result, args, split_source, started, inner_modality, outer_modalities
+        out_dir, dataset, fields, patient_ids, splits, result, args, split_source, started, inner_modality, outer_modalities, work_dir=work_dir
     )
     return out_dir
 
@@ -443,7 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--outer_modalities",
         default=None,
-        help="外层复评 greedy 路径的 modality 列表，逗号分隔；单模态默认 mlp/snn，多模态默认全部 Analyzer 模型",
+        help="外层复评 greedy 路径的 modality 列表，逗号分隔；单模态默认 mlp/snn，多模态默认 mlp/snn + survgc_f/survpgc_f",
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)

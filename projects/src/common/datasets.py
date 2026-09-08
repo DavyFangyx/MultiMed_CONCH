@@ -8,6 +8,8 @@ from pathlib import Path
 # Historical display name kept so existing outputs/templates/analyzer paths stay valid.
 DATASET_ALIASES = {
     "TCGA-LIHC": "TCGA_LIHC",
+    "CPTAC-3": "CPTAC",
+    "MMRF-COMMPASS": "MMRF",
 }
 
 

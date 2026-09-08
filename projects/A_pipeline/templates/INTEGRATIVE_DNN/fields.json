@@ -2,6 +2,7 @@
   "description": "INTEGRATIVE_DNN：age + gender + stage",
   "prompt_file": "prompts.csv",
   "dirname": "INTEGRATIVE_DNN",
+  "source": "gdc",
   "fields": [
     "demographic.age_at_index",
     "demographic.sex_at_birth",

@@ -18,6 +18,7 @@ from common.paths import (
     shared_field_stats_path,
     shared_kept_fields_path,
 )
+from common.tables import upsert_json_mapping
 from .landmark import iter_landmark_args, landmark_dir_tag, parse_landmark_options
 
 
@@ -225,17 +226,18 @@ def run_field_filter(args):
     if "dataset" not in df.columns:
         df = df.copy()
         df.insert(0, "dataset", args.dataset or "custom")
-    if args.dataset and args.dataset not in {"all", ""}:
-        wanted = {x.strip() for x in args.dataset.split(",") if x.strip()}
-        df = df[df["dataset"].astype(str).isin(wanted)].copy()
 
-    datasets = sorted(df["dataset"].astype(str).unique().tolist())
+    write_datasets = None
+    if args.dataset and args.dataset not in {"all", ""}:
+        write_datasets = [x.strip() for x in args.dataset.split(",") if x.strip()]
+
+    datasets = write_datasets or sorted(df["dataset"].astype(str).unique().tolist())
     scan_roots = [dataset_stats_dir(dataset) for dataset in datasets]
     for landmark_args in iter_landmark_args(args, scan_roots=scan_roots, context="field filter"):
-        _run_field_filter_one(landmark_args, df)
+        _run_field_filter_one(landmark_args, df, write_datasets=write_datasets)
 
 
-def _run_field_filter_one(args, df: pd.DataFrame) -> None:
+def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | None = None) -> None:
     tag = landmark_dir_tag(args)
     args.landmark_tag = tag
 
@@ -309,7 +311,12 @@ def _run_field_filter_one(args, df: pd.DataFrame) -> None:
             }
 
     datasets = sorted(df["dataset"].astype(str).unique().tolist())
-    for dataset in datasets:
+    if write_datasets is None:
+        output_datasets = datasets
+    else:
+        wanted = set(write_datasets)
+        output_datasets = [name for name in datasets if name in wanted]
+    for dataset in output_datasets:
         log_dir = dataset_filter_log_dir(dataset, tag)
         log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -360,25 +367,24 @@ def _run_field_filter_one(args, df: pd.DataFrame) -> None:
         print(f"✅ field_registry: {registry_path}  ({len(ds_registry)} 行, keep={int(ds_registry['keep'].sum()) if not ds_registry.empty else 0})")
         print(f"✅ kept_fields   : {kept_path}  ({len(payload.get('fields', []))} 字段)")
 
-    if str(getattr(args, "dataset", "all") or "all") == "all":
-        summary = {}
-        for dataset in datasets:
-            payload = active.get(dataset, {"n_patients": 0, "fields": []})
-            summary[dataset] = {
-                "n_patients": payload.get("n_patients", 0),
-                "fields": list(payload.get("fields", [])),
-            }
-        summary_path = shared_kept_fields_path(tag)
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-        print(f"✅ kept_fields 总表: {summary_path}  ({len(summary)} 个数据集)")
+    summary = {}
+    for dataset in output_datasets:
+        payload = active.get(dataset, {"n_patients": 0, "fields": []})
+        summary[dataset] = {
+            "n_patients": payload.get("n_patients", 0),
+            "fields": list(payload.get("fields", [])),
+        }
+    summary_path = shared_kept_fields_path(tag)
+    merged = upsert_json_mapping(summary_path, summary)
+    print(f"✅ kept_fields 总表: {summary_path}  ({len(merged)} 个数据集)")
 
     if args.write_templates:
         from .field_bank import write_field_bank_template_skeleton
 
+        output_set = set(output_datasets)
         for dataset, payload in active.items():
+            if dataset not in output_set:
+                continue
             src = df[df["dataset"].astype(str) == str(dataset)]
             examples = {}
             wanted = set(payload["fields"])

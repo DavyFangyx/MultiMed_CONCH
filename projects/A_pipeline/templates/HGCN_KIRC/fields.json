@@ -2,6 +2,7 @@
   "description": "HGCN_KIRC：race + age + gender + prior malignancy + pack years + years smoked + radiation + pharma",
   "prompt_file": "prompts.csv",
   "dirname": "HGCN_KIRC",
+  "source": "gdc",
   "fields": [
     "demographic.race",
     "demographic.age_at_index",
@@ -13,6 +14,38 @@
     "derived.pharmaceutical_therapy"
   ],
   "datasets": [
-    "TCGA-KIRC"
+    "TCGA-ACC",
+    "TCGA-BLCA",
+    "TCGA-BRCA",
+    "TCGA-CESC",
+    "TCGA-CHOL",
+    "TCGA-COAD",
+    "TCGA-DLBC",
+    "TCGA-ESCA",
+    "TCGA-GBM",
+    "TCGA-HNSC",
+    "TCGA-KICH",
+    "TCGA-KIRC",
+    "TCGA-KIRP",
+    "TCGA-LAML",
+    "TCGA-LGG",
+    "TCGA_LIHC",
+    "TCGA-LUAD",
+    "TCGA-LUSC",
+    "TCGA-MESO",
+    "TCGA-OV",
+    "TCGA-PAAD",
+    "TCGA-PCPG",
+    "TCGA-PRAD",
+    "TCGA-READ",
+    "TCGA-SARC",
+    "TCGA-SKCM",
+    "TCGA-STAD",
+    "TCGA-TGCT",
+    "TCGA-THCA",
+    "TCGA-THYM",
+    "TCGA-UCEC",
+    "TCGA-UCS",
+    "TCGA-UVM"
   ]
 }

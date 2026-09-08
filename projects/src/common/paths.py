@@ -373,6 +373,26 @@ def dataset_greedy_results_dir(
     )
 
 
+def dataset_greedy_runs_dir(
+    dataset_name: str,
+    encoding: str = "prompt",
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
+) -> Path:
+    return dataset_greedy_results_dir(dataset_name, encoding, landmark_tag, experiment) / "runs"
+
+
+def dataset_greedy_run_dir(
+    dataset_name: str,
+    encoding: str,
+    landmark_tag: str | None,
+    scheme: str,
+    modality: str,
+    experiment: str | None = None,
+) -> Path:
+    return dataset_greedy_runs_dir(dataset_name, encoding, landmark_tag, experiment) / scheme / modality
+
+
 def dataset_univariate_results_dir(
     dataset_name: str,
     encoding: str = "prompt",
@@ -385,6 +405,26 @@ def dataset_univariate_results_dir(
         landmark_tag,
         dataset_name,
     )
+
+
+def dataset_univariate_runs_dir(
+    dataset_name: str,
+    encoding: str = "prompt",
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
+) -> Path:
+    return dataset_univariate_results_dir(dataset_name, encoding, landmark_tag, experiment) / "runs"
+
+
+def dataset_univariate_run_dir(
+    dataset_name: str,
+    encoding: str,
+    landmark_tag: str | None,
+    scheme: str,
+    modality: str,
+    experiment: str | None = None,
+) -> Path:
+    return dataset_univariate_runs_dir(dataset_name, encoding, landmark_tag, experiment) / scheme / modality
 
 
 def dataset_linear_probe_results_dir(
@@ -407,6 +447,16 @@ def display_results_dir(
     encoding_value = validate_encoding(encoding)
     tag = require_landmark_tag(landmark_tag)
     return RESULTS_DISPLAY_ROOT / experiment_name / encoding_value / tag
+
+
+def resolve_cli_out_dir(args, default_dir: Path | str, dataset: str, landmark_tag: str) -> Path:
+    raw = getattr(args, "out", None)
+    if raw:
+        out_dir = Path(raw)
+        if getattr(args, "_multi_dataset", False):
+            out_dir = out_dir / dataset / landmark_tag
+        return out_dir
+    return Path(default_dir)
 
 
 def scheme_run_tag(landmark_tag: str, scheme: str) -> str:

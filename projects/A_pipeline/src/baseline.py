@@ -18,6 +18,7 @@ from discovery.onehot import (
     gdc_lookup_key,
     parse_gdc_types,
 )
+from .config import D_SCHEME_BY_TEXT_SCHEME, PAPER_SCHEMES
 from .extract import extract_values
 from .paths import global_mapping_dir as shared_global_mapping_dir
 
@@ -59,26 +60,7 @@ BASELINE_NOMINAL_FIELDS = {
 }
 
 DEFAULT_BASELINE_SCHEMES = ["D0", "D1", "D2", "D3", "D4", "D5"]
-PAPER_BASELINE_SCHEMES = [
-    "MULTISURV",
-    "SURVPGC",
-    "MMSURV",
-    "INTEGRATIVE_DNN",
-    "HGCN_KIRC",
-    "HGCN_LIHC",
-    "HGCN_ESCA",
-    "HGCN_LUSC",
-    "HGCN_LUAD",
-    "HGCN_UCEC",
-]
-D_SCHEME_BY_TEXT_SCHEME = {
-    "L0": "D0",
-    "L1": "D1",
-    "L2": "D2",
-    "L3": "D3",
-    "L4": "D4",
-    "L5": "D5",
-}
+PAPER_BASELINE_SCHEMES = list(PAPER_SCHEMES)
 
 # project.project_id is not in the GDC dictionary dump used here.
 PAPER_FIELD_TYPES = {
@@ -138,8 +120,12 @@ BASELINE_ONEHOT_FIELDS = {
 
 def resolve_baseline_schemes(scheme: str) -> list[str]:
     known = list(BASELINE_SCHEME_FIELDS.keys())
-    if scheme == "all":
+    if scheme == "manual":
         return list(DEFAULT_BASELINE_SCHEMES)
+    if scheme == "paper":
+        return list(PAPER_BASELINE_SCHEMES)
+    if scheme == "all":
+        return list(DEFAULT_BASELINE_SCHEMES) + list(PAPER_BASELINE_SCHEMES)
     if scheme not in BASELINE_SCHEME_FIELDS:
         raise ValueError(f"未知 baseline 方案: '{scheme}'。可用方案: {sorted(known)}")
     return [scheme]
@@ -635,5 +621,5 @@ def run_baseline_encode(
     print("=" * 55)
 
 
-def global_mapping_dir() -> Path:
-    return shared_global_mapping_dir()
+def global_mapping_dir(source: str | None = None) -> Path:
+    return shared_global_mapping_dir(source)

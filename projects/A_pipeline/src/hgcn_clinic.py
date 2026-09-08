@@ -8,6 +8,7 @@ import json
 import joblib
 import numpy as np
 
+from .config import resolve_scheme_names
 from .baseline import (
     BASELINE_CONTINUOUS_FIELDS,
     BASELINE_MISSING_TOKEN,
@@ -57,11 +58,13 @@ MISSING_DIAGONAL_NOTE = (
 
 def resolve_hgcn_schemes(scheme: str) -> list[str]:
     known = list(HGCN_SCHEME_FIELDS.keys())
-    if scheme == "all":
-        return known
-    if scheme not in HGCN_SCHEME_FIELDS:
-        raise ValueError(f"未知 HGCN clinic 方案: '{scheme}'。可用方案: {sorted(known)}")
-    return [scheme]
+    names = resolve_scheme_names(scheme)
+    supported = [name for name in names if name in HGCN_SCHEME_FIELDS]
+    if not supported:
+        raise ValueError(
+            f"hgcn_clinic 仅支持 L0-L5。当前方案 {names} 没有可跑的 clinic 图节点编码。"
+        )
+    return supported
 
 
 def field_type_name(field: str) -> str:

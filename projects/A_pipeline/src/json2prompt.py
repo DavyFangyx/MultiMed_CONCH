@@ -1,5 +1,7 @@
 """Generate L0-L5 / paper-scheme prompt CSVs from clinical JSON."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pandas as pd

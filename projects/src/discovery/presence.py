@@ -20,6 +20,7 @@ from common.paths import (
     shared_field_presence_path,
     shared_field_presence_summary_path,
 )
+from common.tables import unique_in_order, upsert_csv_by_key
 from .scan import (
     count_dict_fields,
     load_json_field_dictionary,
@@ -299,15 +300,32 @@ def run_field_presence(args):
         presence_frames.append(presence)
         summaries.append(summary)
 
-    shared_presence = pd.concat(presence_frames, ignore_index=True)
-    shared_presence.to_csv(shared_field_presence_path(), index=False)
-    summary_df = pd.DataFrame(summaries, columns=SUMMARY_COLUMNS)
-    summary_df.to_csv(shared_field_presence_summary_path(), index=False)
-    census = build_mapping_census(mapping_df, presence_frames, dataset_names)
+    if not presence_frames:
+        print("未写出任何 field_presence，跳过跨数据集合并")
+        return
+    incoming_presence = pd.concat(presence_frames, ignore_index=True)
+    shared_presence = upsert_csv_by_key(
+        shared_field_presence_path(),
+        incoming_presence,
+        "dataset",
+        sort_by=["dataset", "status", "mapping_field"],
+    )
+    incoming_summary = pd.DataFrame(summaries, columns=SUMMARY_COLUMNS)
+    summary_df = upsert_csv_by_key(
+        shared_field_presence_summary_path(),
+        incoming_summary,
+        "dataset",
+    )
+    merged_names = unique_in_order(summary_df["dataset"].astype(str).tolist())
+    merged_frames = [
+        shared_presence[shared_presence["dataset"].astype(str) == name].copy()
+        for name in merged_names
+    ]
+    census = build_mapping_census(mapping_df, merged_frames, merged_names)
     census.to_csv(shared_field_presence_mapping_census_path(), index=False)
-    extras = build_not_in_table_census(presence_frames, dataset_names)
+    extras = build_not_in_table_census(merged_frames, merged_names)
     extras.to_csv(shared_field_presence_not_in_table_path(), index=False)
-    print(f"\n跨数据集明细: {shared_field_presence_path()}")
+    print(f"\n跨数据集明细: {shared_field_presence_path()}  ({len(merged_names)} 个数据集)")
     print(f"跨数据集计数: {shared_field_presence_summary_path()}")
     print(f"mapping 普查: {shared_field_presence_mapping_census_path()}")
     print(f"not_in_table 字段: {shared_field_presence_not_in_table_path()}")

@@ -54,8 +54,8 @@ ALLOWED_CONVERT = {"", "days_to_years", "int"}
 def _dataset_tables():
     return sorted(
         path
-        for path in FIELD_BANK_ROOT.glob("*/FIELD_BANK.csv")
-        if path.parent.name != "_shared"
+        for path in FIELD_BANK_ROOT.rglob("FIELD_BANK.csv")
+        if "_shared" not in path.parts
     )
 
 

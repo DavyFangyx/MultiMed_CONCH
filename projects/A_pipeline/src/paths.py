@@ -1,5 +1,7 @@
 """Paths for the isolated A_manual L0-L5 / D0-D5 / paper-scheme / HGCN_clinic pipeline."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 
@@ -12,6 +14,7 @@ DEFAULT_JSON_PATH = (
     "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json"
 )
 DEFAULT_DATASETS_CONFIG = str(A_PIPELINE_ROOT / "datasets.json")
+DEFAULT_GDC_DATASETS_CONFIG = str(PROJECT_ROOT / "datasets.json")
 DEFAULT_TEMPLATE_DIR = str(A_PIPELINE_ROOT / "templates")
 DEFAULT_JSON_FIELD_DICT = str(A_PIPELINE_ROOT / "templates" / "json_field_dictionary.json")
 DEFAULT_PROMPT_DIR = str(PROJECT_ROOT / "outputs" / "custom" / "A_manual")
@@ -45,5 +48,8 @@ def dataset_hgcn_clinic_dir(
     return str(path)
 
 
-def global_mapping_dir() -> Path:
-    return A_PIPELINE_ROOT / "baseline_onehot_mapping_tables"
+def global_mapping_dir(source: str | None = None) -> Path:
+    root = A_PIPELINE_ROOT / "baseline_onehot_mapping_tables"
+    if source and source != "lizhe":
+        return root / source
+    return root

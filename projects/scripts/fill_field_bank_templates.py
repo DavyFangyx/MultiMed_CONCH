@@ -23,8 +23,8 @@ from discovery.field_bank_spec import (
 def dataset_template_paths(root: Path) -> list[Path]:
     return sorted(
         path
-        for path in root.glob("*/FIELD_BANK.csv")
-        if path.parent.name != "_shared"
+        for path in root.rglob("FIELD_BANK.csv")
+        if "_shared" not in path.parts
     )
 
 
@@ -126,7 +126,7 @@ def main(argv=None):
         total_filled += stats["filled_templates"]
         total_overwritten += stats["overwritten_templates"]
         print(
-            f"✅ {path.parent.name}: rows={stats['rows']} "
+            f"✅ {path.relative_to(root)}: rows={stats['rows']} "
             f"filled_templates={stats['filled_templates']} "
             f"overwritten_templates={stats['overwritten_templates']}"
         )

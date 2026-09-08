@@ -12,6 +12,7 @@ from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, l
 from common.fields import collapse_patient_values, extract_path_values, is_array_field
 from common.missingness import classify_raw_value
 from common.paths import RAWDATA_STATS_SHARED_DIR, dataset_field_stats_path, shared_field_stats_path
+from common.tables import upsert_csv_by_key
 from common.types import infer_type, to_numeric
 from common.fields import L5_PLACEHOLDER_BY_FIELD_PATH
 
@@ -203,9 +204,15 @@ def run_field_stats(args):
         frames.append(df.assign(dataset=name))
 
     if len(frames) >= 1:
-        merged = pd.concat(frames, ignore_index=True)
-        cols = ["dataset"] + [c for c in merged.columns if c != "dataset"]
-        merged = merged[cols].sort_values(["dataset", "missing", "field_path"], ascending=[True, False, True])
+        incoming = pd.concat(frames, ignore_index=True)
+        cols = ["dataset"] + [c for c in incoming.columns if c != "dataset"]
+        incoming = incoming[cols]
         out_path = shared_field_stats_path()
-        merged.to_csv(out_path, index=False)
-        print(f"\n✅ 跨数据集统计已保存: {out_path}")
+        merged = upsert_csv_by_key(
+            out_path,
+            incoming,
+            "dataset",
+            sort_by=["dataset", "missing", "field_path"],
+            ascending=[True, False, True],
+        )
+        print(f"\n✅ 跨数据集统计已保存: {out_path}  ({merged['dataset'].nunique()} 个数据集)")

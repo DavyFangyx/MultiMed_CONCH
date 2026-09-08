@@ -10,6 +10,8 @@ __pycache__/
 
 # Generated process / result artifacts
 outputs/**
+results/**
+results_display/**
 rawdata_stats/**
 Clinic_Analyzer/results/**
 Clinic_Analyzer/configs/queue/**
@@ -17,6 +19,7 @@ Clinic_Analyzer/configs/done/**
 Clinic_Analyzer/configs/failed/**
 Clinic_Analyzer/configs/running/**
 Clinic_Analyzer/configs/greedy/**
+Clinic_Analyzer/configs/A_manual/**
 
 # Intermediate and result data files
 *.csv
@@ -33,6 +36,10 @@ Clinic_Analyzer/configs/greedy/**
 !A_pipeline/templates/**/*.csv
 !A_pipeline/templates/**/*.json
 !outputs/README.md
+!results/README.md
+!results_display/README.md
+!results_display/scripts/
+!results_display/scripts/**
 !rawdata_stats/README.md
 !rawdata_stats/TIME_CRITERIA.md
 # Generated Field Bank tables, filled per dataset

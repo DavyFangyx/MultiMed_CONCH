@@ -9,7 +9,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from common.paths import PROJECT_ROOT, dataset_univariate_dir
+from common.paths import PROJECT_ROOT, dataset_univariate_dir, dataset_univariate_results_dir
 from greedy.queue import DEFAULT_QUEUE_ROOT, DEFAULT_UNIVARIATE_QUEUE_ROOT, claim_job, enqueue_jobs, load_job, queue_root_from_args
 from greedy.univariate_cli import (
     CSV_COLUMNS,
@@ -54,6 +54,8 @@ def test_dataset_univariate_dir_prompt():
     path = dataset_univariate_dir("TCGA_LIHC", "prompt", "landmark_365")
     assert path == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "univariate" / "prompt" / "landmark_365"
     assert path.as_posix().endswith("outputs/TCGA_LIHC/univariate/prompt/landmark_365")
+    results = dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365")
+    assert results == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
 
 
 def test_parser_defaults_and_flags():

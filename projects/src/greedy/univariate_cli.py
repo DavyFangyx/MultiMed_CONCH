@@ -18,8 +18,10 @@ from common.paths import (
     VALID_ENCODINGS,
     dataset_field_bank_dir,
     dataset_univariate_dir,
+    dataset_univariate_results_dir,
     experiment_from_args,
     landmark_tag_from_args,
+    resolve_cli_out_dir,
     validate_encoding,
 )
 from discovery.landmark import add_landmark_cli_args
@@ -331,12 +333,14 @@ def run_one(args, dataset: str) -> Path:
     args.landmark_tag = tag
     experiment = experiment_from_args(args)
     args.experiment = experiment
-    if args.out:
-        out_dir = Path(args.out)
-        if getattr(args, "_multi_dataset", False):
-            out_dir = out_dir / dataset / tag
-    else:
-        out_dir = dataset_univariate_dir(dataset, encoding, tag, experiment=experiment)
+    work_dir = dataset_univariate_dir(dataset, encoding, tag, experiment=experiment)
+    out_dir = resolve_cli_out_dir(
+        args,
+        dataset_univariate_results_dir(dataset, encoding, tag, experiment=experiment),
+        dataset,
+        tag,
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     started = timer()
 
@@ -356,7 +360,7 @@ def run_one(args, dataset: str) -> Path:
         fields=fields,
         splits=splits,
         field_bank_dir=field_bank_dir,
-        work_dir=out_dir,
+        work_dir=work_dir,
         modality=modality,
         seed=args.seed,
         for_test=False,
@@ -366,7 +370,7 @@ def run_one(args, dataset: str) -> Path:
         split_dir=split_dir,
         landmark_tag=tag,
         experiment=experiment,
-        exp_group=("longitudinal" if experiment else "greedy"),
+        exp_group="univariate",
     )
     rows = evaluate_all_fields(
         evaluator,
@@ -391,6 +395,8 @@ def run_one(args, dataset: str) -> Path:
             "n_patients": len(list(loaded["pt_dir"].glob("*.pt"))),
             "experiment": experiment,
             "landmark_tag": tag,
+            "work_dir": str(work_dir),
+            "results_dir": str(out_dir),
         },
     )
     print(f"\n######## Dataset: {dataset}  univariate {encoding} {modality} ########")

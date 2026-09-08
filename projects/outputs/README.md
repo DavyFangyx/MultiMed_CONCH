@@ -1,24 +1,31 @@
 # Outputs Directory Guide
 
-`outputs/` 只放 prompt 和 embedding。JSON 字典、三态缺失、时间和筛选在 `rawdata_stats/`。
+`outputs/` 只放 prompt、embedding，以及 greedy / univariate 的 jobs 和 subset embedding。评测表在 `results/`。JSON 字典、三态缺失、时间和筛选在 `rawdata_stats/`。
 
 ## Layout
 
 ```text
 outputs/{dataset}/
+  field_bank/{prompt|onehot}/{landmark_tag}/
+    prompts.csv
+    field_index.json
+    embeddings/pt/{patient_id}.pt
+  schemes/{landmark_tag}_{L2|L3|L5}/
+    prompts.csv
+    field_index.json
+    embeddings/pt/{patient_id}.pt
+  greedy/{prompt|onehot}/{landmark_tag}/
+    jobs/
+    subsets/{scheme}/embeddings/pt/{patient_id}.pt
+  univariate/{prompt|onehot}/{landmark_tag}/
+    jobs/
   A_manual/
-    L{0-5}/prompts.csv
-    L{0-5}/embeddings/pt/{patient_id}.pt
-    L{0-5}/prompt_stats.csv
-    D{0-5}/embeddings/pt/{patient_id}.pt
-    metadata/
-  B_scan/
-    FIELD_BANK/prompts.csv
-    FIELD_BANK/field_index.json
-    FIELD_BANK/embeddings/pt/{patient_id}.pt
-    greedy/
+```
 
-A_pipeline/baseline_onehot_mapping_tables/
+评测表：
+
+```text
+results/{greedy|univariate|linear_probe|longitudinal_greedy|longitudinal_univariate}/{encoding}/{landmark_tag}/{dataset}/
 ```
 
 预处理：
@@ -26,15 +33,6 @@ A_pipeline/baseline_onehot_mapping_tables/
 ```text
 rawdata_stats/{dataset}/scanned_fields.json
 rawdata_stats/{dataset}/field_stats.csv
-rawdata_stats/{dataset}/kept_fields.json
-rawdata_stats/{dataset}/time/
+rawdata_stats/{dataset}/{landmark_tag}/kept_fields.json
 rawdata_stats/_shared/
-```
-
-模板：
-
-```text
-templates/field_labels.json
-A_pipeline/templates/{schemes.json, L0.csv ... L5.csv}
-templates/field_bank/{dataset}/FIELD_BANK.csv
 ```

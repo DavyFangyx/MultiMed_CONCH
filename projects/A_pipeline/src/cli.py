@@ -1,15 +1,18 @@
 """CLI for human-defined L0-L5 / D0-D5 / paper-scheme / HGCN_clinic workflows."""
 
+from __future__ import annotations
+
 import argparse
 
 from pathlib import Path
 
 from common.clinical_io import load_clinical_cases
-from .datasets import dataset_jobs, load_dataset_configs, resolve_dataset_names
+from .datasets import expand_source_jobs, load_source_dataset_configs
 from .paths import (
     DEFAULT_BASELINE_OUT_ROOT,
     DEFAULT_CKPT,
     DEFAULT_DATASETS_CONFIG,
+    DEFAULT_GDC_DATASETS_CONFIG,
     DEFAULT_JSON_PATH,
     DEFAULT_OUT_DIR,
     DEFAULT_PROMPT_DIR,
@@ -27,7 +30,7 @@ from .baseline import (
     run_baseline_encode,
     save_global_baseline_metadata,
 )
-from .config import load_custom_schemes, resolve_scheme_names, schemes_for_dataset
+from .config import load_custom_schemes, resolve_scheme_names
 from .encode import run_encode
 from .json2prompt import run_json2prompt
 from .hgcn_clinic import (
@@ -36,6 +39,7 @@ from .hgcn_clinic import (
     resolve_hgcn_schemes,
     run_hgcn_clinic,
 )
+from .cindex import resolve_cindex_schemes, run_cindex_queue
 from .config import SCHEME_FIELDS
 
 
@@ -43,14 +47,15 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--scheme",
         default="all",
-        help="方案名。文本流程: L0-L5 与论文方案; baseline: D0-D5 与论文方案; HGCN clinic 仅 L0-L5。all 只跑当前命令的默认方案，不含论文方案。",
+        help="方案组或单方案。所有命令相同：manual=L0-L5，paper=论文方案，all=L0-L5+论文方案。也可指定 L0 / MULTISURV 等单个方案。",
     )
     parser.add_argument(
         "--dataset",
         default=None,
-        help="数据集名；支持 all 或逗号分隔列表。默认读 A_pipeline/datasets.json 中的 lizhe 9 个癌种。为空时使用 --json_path 单 JSON 模式。",
+        help="数据集。所有命令相同：all 或逗号分隔列表。L0-L5 / D0-D5 默认读 A_pipeline/datasets.json 的 lizhe 9 个癌种；论文方案展开官方 33 个 TCGA。为空时使用 --json_path 单 JSON 模式。",
     )
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
+    parser.add_argument("--gdc_datasets_config", default=DEFAULT_GDC_DATASETS_CONFIG)
     parser.add_argument("--json_path", default=DEFAULT_JSON_PATH)
     parser.add_argument("--template_dir", default=DEFAULT_TEMPLATE_DIR)
     parser.add_argument("--prompt_dir", default=DEFAULT_PROMPT_DIR)
@@ -60,6 +65,41 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument("--baseline_out", default=DEFAULT_BASELINE_OUT_ROOT)
     parser.add_argument("--baseline_stats_dir", default=None)
     parser.add_argument("--baseline_nominal_min_count", type=int, default=5)
+    parser.add_argument(
+        "--encoding",
+        default="all",
+        choices=["all", "text", "baseline"],
+        help="编码。所有命令相同：text=CONCH embedding，baseline=D 向量，all=两种都处理。cindex 按它选评测编码。",
+    )
+    parser.add_argument(
+        "--modality",
+        default="mlp_clinic_flatten",
+        help="cindex 评估模型，逗号分隔。没有内外层。默认 mlp_clinic_flatten；可选 mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox,survgc_f,survpgc_f。",
+    )
+    parser.add_argument(
+        "--results_dir",
+        default=None,
+        help="cindex 汇总表根目录，默认 projects/results。",
+    )
+    parser.add_argument(
+        "--reuse",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="cindex 复用已有 fold CSV。",
+    )
+    parser.add_argument("--max_epochs", type=int, default=None, help="cindex 训练轮数。默认走 Analyzer。")
+    parser.add_argument("--seed", type=int, default=0, help="cindex 随机种子。")
+    parser.add_argument(
+        "--queue_root",
+        default=None,
+        help="cindex conf 队列根目录。默认 Clinic_Analyzer/configs/A_manual/{queue,running,done,failed}",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="本终端同时抢活的 worker 数。每个 worker 独立 claim 一条 conf。多 GPU 请开多个终端并设 CUDA_VISIBLE_DEVICES。",
+    )
 
 
 def main(argv=None):
@@ -68,9 +108,9 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "L0-L5 / D0-D5 / 论文方案 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
-            "--scheme all 只跑 L0-L5 或 D0-D5；论文方案需显式指定。HGCN clinic 不接论文方案。\n"
-            "论文方案可在 templates/{scheme}/fields.json 的 datasets 字段绑定队列；未绑定的 dataset 会跳过。\n"
-            "产物写到 outputs/{dataset}/A_manual。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
+            "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: manual=L0-L5，paper=论文方案，all=两组。encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。hgcn_clinic 只落地 L0-L5。\n"
+            "每个方案在 templates/{scheme}/fields.json 写 source=lizhe|gdc。L0-L5 / D0-D5 用 lizhe 9 个；paper 绑定全部 33 个 TCGA + GDC raw_json。--dataset all 按方案来源展开。\n"
+            "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/A_manual/{queue,running,done,failed}，再由 run.sh 抢活；汇总表写到 results/A_manual。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
         ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -80,6 +120,7 @@ def main(argv=None):
         ("pipeline", "json2prompt + encode"),
         ("baseline", "JSON → D0-D5 / paper-scheme baseline vectors"),
         ("hgcn_clinic", "JSON → HGCN clinic graph-node pkl"),
+        ("cindex", "A_manual embeddings → Clinic_Analyzer queue → 5-fold val c-index"),
     ]:
         p = sub.add_parser(name, help=help_text)
         _add_common_args(p)
@@ -103,59 +144,102 @@ def main(argv=None):
             schemes = resolve_hgcn_schemes(args.scheme)
         except ValueError as exc:
             parser.error(str(exc))
+    elif args.cmd == "cindex":
+        try:
+            schemes = resolve_cindex_schemes(args.scheme, args.encoding)
+        except ValueError as exc:
+            parser.error(str(exc))
     else:
         try:
             schemes = resolve_scheme_names(args.scheme)
         except ValueError as exc:
             parser.error(str(exc))
 
-    datasets = load_dataset_configs(args.datasets_config)
-    jobs = dataset_jobs(
-        args.dataset,
-        datasets,
-        json_path=args.json_path,
-        prompt_dir=args.prompt_dir,
-        out_dir=args.out,
-        baseline_out=args.baseline_out,
+    source_datasets = load_source_dataset_configs(
+        lizhe_config=args.datasets_config,
+        gdc_config=args.gdc_datasets_config,
     )
+    try:
+        jobs = expand_source_jobs(
+            args.dataset,
+            schemes,
+            source_datasets,
+            json_path=args.json_path,
+            prompt_dir=args.prompt_dir,
+            out_dir=args.out,
+            baseline_out=args.baseline_out,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    shared_nominal_mappings = None
-    shared_mapping_scope = None
-    mapping_dir = None
-    if args.cmd == "baseline" and len(jobs) > 1 and not args.baseline_stats_dir:
-        dataset_names = resolve_dataset_names(args.dataset, datasets)
-        print(f"\n{'='*55}")
-        print("[baseline] 构建多数据集共享混合编码 metadata")
-        print(f"  统计范围 : {dataset_names}")
-        print(f"  频次阈值 : >= {args.baseline_nominal_min_count}")
-        print(f"{'='*55}")
-
-        merged_rows = []
+    baseline_mappings_by_source = {}
+    if args.cmd == "baseline" and not args.baseline_stats_dir:
+        jobs_by_source = {}
         for job in jobs:
-            print(f"  -> 收集 {job['name']} 患者用于共享 nominal 词表")
-            cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
-            merged_rows.extend(build_patient_rows(cases))
+            if not job.get("name"):
+                continue
+            jobs_by_source.setdefault(job.get("source") or "lizhe", []).append(job)
+        for source, source_jobs in jobs_by_source.items():
+            if len(source_jobs) <= 1:
+                continue
+            dataset_names = [job["name"] for job in source_jobs]
+            print(f"\n{'='*55}")
+            print("[baseline] 构建多数据集共享混合编码 metadata")
+            print(f"  来源     : {source}")
+            print(f"  统计范围 : {dataset_names}")
+            print(f"  频次阈值 : >= {args.baseline_nominal_min_count}")
+            print(f"{'='*55}")
 
-        shared_nominal_mappings = fit_onehot_mappings(
-            merged_rows,
-            min_count=args.baseline_nominal_min_count,
-            collapse_rare=True,
+            merged_rows = []
+            for job in source_jobs:
+                print(f"  -> 收集 {job['name']} 患者用于共享 nominal 词表")
+                cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
+                merged_rows.extend(build_patient_rows(cases))
+
+            mappings = fit_onehot_mappings(
+                merged_rows,
+                min_count=args.baseline_nominal_min_count,
+                collapse_rare=True,
+            )
+            scope = {
+                "type": "global_selected_datasets",
+                "source": source,
+                "datasets": dataset_names,
+                "patient_count": len(merged_rows),
+            }
+            source_mapping_dir = global_mapping_dir(source)
+            save_global_baseline_metadata(
+                metadata_dir=source_mapping_dir,
+                nominal_mappings=mappings,
+                feature_schema=build_baseline_feature_schema(mappings),
+                nominal_min_count=args.baseline_nominal_min_count,
+                dataset_names=dataset_names,
+                patient_count=len(merged_rows),
+            )
+            print(f"  共享 mapping 已保存: {source_mapping_dir / 'category_mapping.json'}")
+            baseline_mappings_by_source[source] = {
+                "mappings": mappings,
+                "scope": scope,
+                "mapping_dir": source_mapping_dir,
+            }
+
+    if args.cmd == "cindex":
+        named_jobs = [job for job in jobs if job["name"]]
+        if not named_jobs:
+            parser.error("cindex 需要 --dataset，不能走单 JSON 模式")
+        run_cindex_queue(
+            jobs=named_jobs,
+            baseline_out=args.baseline_out,
+            encoding=args.encoding,
+            modality=args.modality,
+            results_root=args.results_dir,
+            reuse=args.reuse,
+            max_epochs=args.max_epochs,
+            seed=args.seed,
+            queue_root=args.queue_root,
+            workers=args.workers,
         )
-        shared_mapping_scope = {
-            "type": "global_selected_datasets",
-            "datasets": dataset_names,
-            "patient_count": len(merged_rows),
-        }
-        mapping_dir = global_mapping_dir()
-        save_global_baseline_metadata(
-            metadata_dir=mapping_dir,
-            nominal_mappings=shared_nominal_mappings,
-            feature_schema=build_baseline_feature_schema(shared_nominal_mappings),
-            nominal_min_count=args.baseline_nominal_min_count,
-            dataset_names=dataset_names,
-            patient_count=len(merged_rows),
-        )
-        print(f"  共享 mapping 已保存: {mapping_dir / 'category_mapping.json'}")
+        return
 
     if args.cmd == "hgcn_clinic":
         shared_nominal_mappings, shared_mapping_scope = prepare_hgcn_nominal_mappings(
@@ -164,10 +248,10 @@ def main(argv=None):
         )
 
     for job in jobs:
-        job_schemes = schemes_for_dataset(schemes, job["name"], datasets)
-        skipped = [scheme for scheme in schemes if scheme not in job_schemes]
         if job["name"]:
-            print(f"\n######## Dataset: {job['name']} ########")
+            print(f"\n######## Dataset: {job['name']} [{job.get('source') or 'custom'}] ########")
+        job_schemes = list(job.get("schemes") or [])
+        skipped = [scheme for scheme in schemes if scheme not in job_schemes]
         if skipped:
             print(f"  skip unbound schemes: {skipped}")
         if not job_schemes:
@@ -196,6 +280,8 @@ def main(argv=None):
                 )
 
         if args.cmd == "baseline":
+            source = job.get("source") or "lizhe"
+            source_meta = baseline_mappings_by_source.get(source) or {}
             run_baseline_encode(
                 json_paths=job["json_paths"],
                 schemes=job_schemes,
@@ -203,12 +289,10 @@ def main(argv=None):
                 project_ids=job["project_ids"],
                 stats_dir=args.baseline_stats_dir,
                 nominal_min_count=args.baseline_nominal_min_count,
-                shared_nominal_mappings=shared_nominal_mappings,
-                mapping_scope=shared_mapping_scope,
+                shared_nominal_mappings=source_meta.get("mappings"),
+                mapping_scope=source_meta.get("scope"),
                 global_metadata_dir=(
-                    str(mapping_dir)
-                    if shared_nominal_mappings is not None and shared_mapping_scope is not None
-                    else None
+                    str(source_meta["mapping_dir"]) if source_meta.get("mapping_dir") is not None else None
                 ),
             )
 

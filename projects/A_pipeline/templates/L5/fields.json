@@ -1,8 +1,9 @@
 {
   "description": "L5：L4 + ecog_performance_status + bmi（baseline）",
   "prompt_file": "prompts.csv",
-  "dirname": "L5",
-  "fields": [
+ "dirname": "L5",
+  "source": "lizhe",
+ "fields": [
     "demographic.age_at_index",
     "demographic.sex_at_birth",
     "demographic.race",

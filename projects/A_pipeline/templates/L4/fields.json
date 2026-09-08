@@ -1,8 +1,9 @@
 {
   "description": "L4：L3 + lymph_nodes_tested + lymph_nodes_positive",
   "prompt_file": "prompts.csv",
-  "dirname": "L4",
-  "fields": [
+ "dirname": "L4",
+  "source": "lizhe",
+ "fields": [
     "demographic.age_at_index",
     "demographic.sex_at_birth",
     "demographic.race",

@@ -2,6 +2,7 @@
   "description": "MULTISURV：age + sex + race + project_id + stage + prior malignancy + synchronous malignancy + prior treatment + pharma + radiation",
   "prompt_file": "prompts.csv",
   "dirname": "MULTISURV",
+  "source": "gdc",
   "fields": [
     "demographic.age_at_index",
     "demographic.sex_at_birth",

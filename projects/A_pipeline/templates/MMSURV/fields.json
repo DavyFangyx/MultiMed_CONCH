@@ -2,6 +2,7 @@
   "description": "MMSURV：T + N + M + age + gender",
   "prompt_file": "prompts.csv",
   "dirname": "MMSURV",
+  "source": "gdc",
   "fields": [
     "diagnoses[].ajcc_pathologic_t",
     "diagnoses[].ajcc_pathologic_n",
@@ -10,11 +11,38 @@
     "demographic.sex_at_birth"
   ],
   "datasets": [
+    "TCGA-ACC",
+    "TCGA-BLCA",
     "TCGA-BRCA",
+    "TCGA-CESC",
+    "TCGA-CHOL",
+    "TCGA-COAD",
+    "TCGA-DLBC",
     "TCGA-ESCA",
+    "TCGA-GBM",
+    "TCGA-HNSC",
+    "TCGA-KICH",
+    "TCGA-KIRC",
+    "TCGA-KIRP",
+    "TCGA-LAML",
+    "TCGA-LGG",
     "TCGA_LIHC",
     "TCGA-LUAD",
-    "TCGA-COAD",
-    "TCGA-STAD"
+    "TCGA-LUSC",
+    "TCGA-MESO",
+    "TCGA-OV",
+    "TCGA-PAAD",
+    "TCGA-PCPG",
+    "TCGA-PRAD",
+    "TCGA-READ",
+    "TCGA-SARC",
+    "TCGA-SKCM",
+    "TCGA-STAD",
+    "TCGA-TGCT",
+    "TCGA-THCA",
+    "TCGA-THYM",
+    "TCGA-UCEC",
+    "TCGA-UCS",
+    "TCGA-UVM"
   ]
 }

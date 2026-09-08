@@ -13,6 +13,13 @@ for path in (SRC, ANALYZER):
 
 from dataset_deployment.registry import clinic_embedding_dir, resolve_clinic_eval_job
 from greedy.data import load_field_bank
+from greedy.clinic import (
+    DEFAULT_RESULTS_DIR,
+    analyzer_exp_group,
+    analyzer_results_dir,
+    evaluate_clinic_dir,
+    results_dir,
+)
 from greedy.embeddings import materialize_subset_embeddings, subset_embedding_dir
 
 
@@ -55,10 +62,31 @@ def test_resolve_scheme_run_tag_job(tmp_path):
     assert job["run_name"] == "tcga_read__landmark_730_L2"
 
 
-def test_resolve_rejects_a_manual(tmp_path):
+def test_resolve_a_manual_text_scheme(tmp_path):
     clinic_dir = _make_pt_dir(tmp_path / "TCGA-READ" / "A_manual" / "L4")
-    with pytest.raises(ValueError, match="field_bank"):
-        resolve_clinic_eval_job(clinic_dir)
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["display_name"] == "TCGA-READ"
+    assert job["scheme"] == "L4"
+    assert job["encoding"] == "prompt"
+    assert job["landmark_tag"] == "landmark_none"
+    assert job["study"] == "tcga_read"
+    assert job["run_name"] == "tcga_read__L4"
+
+
+def test_resolve_a_manual_baseline_scheme(tmp_path):
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA-BRCA" / "A_manual" / "D0")
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["scheme"] == "D0"
+    assert job["encoding"] == "baseline"
+    assert job["run_name"] == "tcga_brca__D0"
+
+
+def test_resolve_a_manual_paper_baseline_scheme(tmp_path):
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA-KIRC" / "A_manual" / "baseline" / "HGCN_KIRC")
+    job = resolve_clinic_eval_job(clinic_dir)
+    assert job["scheme"] == "baseline__HGCN_KIRC"
+    assert job["encoding"] == "baseline"
+    assert job["run_name"] == "tcga_kirc__baseline__HGCN_KIRC"
 
 
 def test_resolve_longitudinal_field_bank_job(tmp_path):
@@ -178,5 +206,108 @@ def test_materialize_prompt_dict_payload_keeps_512(tmp_path):
     assert tuple(sliced.shape) == (2, 512)
 
 
+def test_analyzer_results_dir_uses_project_root():
+    out_dir = results_dir(ANALYZER, "A_manual/runs", "tcga_read__L0", "mlp_clinic_flatten")
+    assert out_dir == DEFAULT_RESULTS_DIR / "A_manual" / "runs" / "tcga_read__L0" / "mlp_clinic_flatten"
+    assert out_dir.parts[-5:-1] == ("results", "A_manual", "runs", "tcga_read__L0")
+    assert "Clinic_Analyzer" not in out_dir.parts
+
+
+def test_greedy_analyzer_results_dir_nests_under_dataset():
+    out_dir = analyzer_results_dir(
+        dataset="CPTAC",
+        encoding="prompt",
+        landmark_tag="landmark_730",
+        scheme="G4_37770ad1bc",
+        modality="mlp_clinic_flatten",
+    )
+    assert out_dir == (
+        DEFAULT_RESULTS_DIR / "greedy" / "prompt" / "landmark_730" / "CPTAC" / "runs" / "G4_37770ad1bc" / "mlp_clinic_flatten"
+    )
+    assert analyzer_exp_group(
+        dataset="CPTAC",
+        encoding="prompt",
+        landmark_tag="landmark_730",
+    ) == "greedy/prompt/landmark_730/CPTAC/runs"
+
+
+def test_univariate_analyzer_results_dir_nests_under_dataset():
+    out_dir = analyzer_results_dir(
+        dataset="TCGA_LIHC",
+        encoding="prompt",
+        landmark_tag="landmark_365",
+        scheme="G1_deadbeef12",
+        modality="mlp_clinic_flatten",
+        kind="univariate",
+    )
+    assert out_dir == (
+        DEFAULT_RESULTS_DIR / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
+    )
+    assert analyzer_exp_group(
+        dataset="TCGA_LIHC",
+        encoding="prompt",
+        landmark_tag="landmark_365",
+        kind="univariate",
+    ) == "univariate/prompt/landmark_365/TCGA_LIHC/runs"
+
+
+
+def test_evaluate_clinic_dir_reuses_legacy_flat_run(tmp_path, monkeypatch):
+    monkeypatch.setattr("greedy.clinic.DEFAULT_RESULTS_DIR", tmp_path)
+    clinic_dir = _make_pt_dir(
+        tmp_path / "outputs" / "CPTAC" / "greedy" / "prompt" / "landmark_730" / "subsets" / "G4_37770ad1bc"
+    )
+    legacy = tmp_path / "greedy" / "cptac__G4_37770ad1bc" / "mlp_clinic_flatten"
+    legacy.mkdir(parents=True)
+    (legacy / "val_result_fold0.csv").write_text("val_cindex\n0.61\n", encoding="utf-8")
+    payload = evaluate_clinic_dir(
+        clinic_dir,
+        dataset="CPTAC",
+        scheme="G4_37770ad1bc",
+        modality="mlp_clinic_flatten",
+        encoding="prompt",
+        landmark_tag="landmark_730",
+        results_dir_base=tmp_path,
+        reuse=True,
+    )
+    assert payload["skipped"] is True
+    assert payload["c_index_mean"] == 0.61
+    nested = (
+        tmp_path / "greedy" / "prompt" / "landmark_730" / "CPTAC" / "runs" / "G4_37770ad1bc" / "mlp_clinic_flatten"
+    )
+    assert not nested.exists()
+
+
+def test_merge_greedy_summaries_adds_missing_outer(tmp_path):
+    from greedy.cli import _merge_greedy_summaries, _json_load
+
+    out_dir = tmp_path / "greedy"
+    out_dir.mkdir()
+    existing = {
+        "inner_modality": "mlp_clinic_flatten",
+        "outer_modalities": ["mlp_clinic_flatten", "snn_clinic_flatten"],
+        "outer_scores": {
+            "mlp_clinic_flatten": {"c_index_mean": 0.66},
+            "snn_clinic_flatten": {"c_index_mean": 0.62},
+        },
+    }
+    added = _merge_greedy_summaries(
+        out_dir,
+        existing_config=existing,
+        new_outer_scores={
+            "snn_clinic_flatten": {"c_index_mean": 0.99},
+            "clinic_cox": {"c_index_mean": 0.58},
+        },
+        outer_modalities=["snn_clinic_flatten", "clinic_cox"],
+    )
+    config = _json_load(out_dir / "run_config.json")
+    assert list(added) == ["clinic_cox"]
+    assert config["outer_scores"]["snn_clinic_flatten"]["c_index_mean"] == 0.62
+    assert config["outer_scores"]["clinic_cox"]["c_index_mean"] == 0.58
+    assert config["outer_modalities"][-1] == "clinic_cox"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
+
+

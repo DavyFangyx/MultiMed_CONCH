@@ -9,10 +9,24 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.paths import (
+    RESULTS_ROOT,
+    encoding_and_landmark_tag_from_path,
+    experiment_from_path,
+    result_experiment_name,
+    dataset_greedy_run_dir,
+    dataset_univariate_run_dir,
+    require_landmark_tag,
+    validate_encoding,
+)
+
 from .data import display_to_study
 
 
-DEFAULT_ANALYZER_DIR = Path(__file__).resolve().parents[2] / "Clinic_Analyzer"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
+DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results"
+LEGACY_ANALYZER_RESULTS_DIR = DEFAULT_ANALYZER_DIR / "results"
 DEFAULT_SURVPGC_PYTHON = Path("/data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python")
 
 ANALYZER_MODALITIES = (
@@ -20,6 +34,7 @@ ANALYZER_MODALITIES = (
     "mlp_clinic_flatten",
     "snn_clinic_mean",
     "snn_clinic_flatten",
+    "clinic_cox",
     "survgc_f",
     "survpgc_f",
 )
@@ -39,12 +54,13 @@ DEFAULT_OUTER_MODALITIES = (
     "snn_clinic_mean",
     "snn_clinic_flatten",
 )
+DEFAULT_MULTIMODAL_OUTER_MODALITIES = DEFAULT_OUTER_MODALITIES + ("survgc_f", "survpgc_f")
 
 
 def default_outer_modalities_for(dataset: str) -> tuple[str, ...]:
     study = display_to_study(dataset)
     if study in MULTIMODAL_STUDIES:
-        return ANALYZER_MODALITIES
+        return DEFAULT_MULTIMODAL_OUTER_MODALITIES
     return DEFAULT_OUTER_MODALITIES
 
 
@@ -84,12 +100,140 @@ def ensure_modalities_allowed(dataset: str, modalities: list[str] | tuple[str, .
     blocked_text = ", ".join(dict.fromkeys(blocked))
     raise ValueError(
         f"{blocked_text} 只支持 {MULTIMODAL_DISPLAY}；"
-        f"{dataset} 只能用 clinic 单模态 (mlp/snn clinic)"
+        f"{dataset} 只能用 clinic 单模态 (mlp/snn/cox clinic)"
     )
 
 
-def results_dir(analyzer_dir: Path, exp_group: str, run_name: str, modality: str) -> Path:
-    return Path(analyzer_dir) / "results" / exp_group / run_name / modality
+def analyzer_run_name(dataset: str, scheme: str) -> str:
+    return f"{display_to_study(dataset)}__{scheme}"
+
+
+def _relative_to_results(path: Path, results_dir_base: Path | str | None = None) -> Path:
+    path = Path(path)
+    for root in (RESULTS_ROOT, DEFAULT_RESULTS_DIR):
+        try:
+            return path.relative_to(root)
+        except ValueError:
+            continue
+    if results_dir_base is not None:
+        try:
+            return path.relative_to(Path(results_dir_base))
+        except ValueError:
+            pass
+    return path
+
+
+def analyzer_exp_group(
+    *,
+    dataset: str,
+    encoding: str,
+    landmark_tag: str | None,
+    experiment: str | None = None,
+    kind: str = "greedy",
+    results_dir_base: Path | str | None = None,
+) -> str:
+    out_dir = analyzer_results_dir(
+        dataset=dataset,
+        encoding=encoding,
+        landmark_tag=landmark_tag,
+        scheme="__scheme__",
+        modality="__modality__",
+        experiment=experiment,
+        kind=kind,
+        results_dir_base=results_dir_base,
+    )
+    rel = _relative_to_results(out_dir, results_dir_base)
+    return rel.parent.parent.as_posix()
+
+
+def analyzer_results_dir(
+    *,
+    dataset: str,
+    encoding: str,
+    landmark_tag: str | None,
+    scheme: str,
+    modality: str,
+    experiment: str | None = None,
+    kind: str = "greedy",
+    results_dir_base: Path | str | None = None,
+) -> Path:
+    kind_value = str(kind or "greedy").strip().lower()
+    if kind_value in {"univariate", "longitudinal_univariate"}:
+        path = dataset_univariate_run_dir(
+            dataset, encoding, landmark_tag, scheme, modality, experiment=experiment
+        )
+    else:
+        path = dataset_greedy_run_dir(
+            dataset, encoding, landmark_tag, scheme, modality, experiment=experiment
+        )
+    if results_dir_base is None:
+        return path
+    rel = _relative_to_results(path, results_dir_base)
+    return Path(results_dir_base) / rel
+
+
+def _infer_encoding_and_landmark(clinic_dir: Path | str | None, encoding: str | None, landmark_tag: str | None):
+    inferred_encoding, inferred_tag = encoding_and_landmark_tag_from_path(clinic_dir or "")
+    encoding_value = validate_encoding(encoding or inferred_encoding or "prompt")
+    tag = require_landmark_tag(landmark_tag or inferred_tag)
+    return encoding_value, tag
+
+
+def _legacy_flat_run_dir(
+    *,
+    dataset: str,
+    scheme: str,
+    modality: str,
+    experiment: str | None = None,
+    kind: str = "greedy",
+    results_dir_base: Path | str | None = None,
+) -> Path:
+    base = Path(results_dir_base) if results_dir_base else DEFAULT_RESULTS_DIR
+    if str(kind).startswith("univariate"):
+        exp_group = result_experiment_name("univariate", experiment)
+    else:
+        exp_group = result_experiment_name("greedy", experiment)
+    return base / exp_group / analyzer_run_name(dataset, scheme) / modality
+
+
+def results_dir(
+    analyzer_dir: Path,
+    exp_group: str,
+    run_name: str,
+    modality: str,
+    results_dir_base: Path | str | None = None,
+) -> Path:
+    base = Path(results_dir_base) if results_dir_base else DEFAULT_RESULTS_DIR
+    return base / exp_group / run_name / modality
+
+
+def _has_cindex_files(path: Path) -> bool:
+    return bool(list(path.glob("test_result*.csv")) + list(path.glob("val_result_fold*.csv")))
+
+
+def _existing_result_dir(
+    out_dir: Path,
+    *,
+    analyzer_dir: Path,
+    exp_group: str,
+    run_name: str,
+    modality: str,
+    extra_candidates: list[Path] | None = None,
+) -> Path | None:
+    candidates = [Path(out_dir)]
+    for extra in extra_candidates or []:
+        extra = Path(extra)
+        if extra not in candidates:
+            candidates.append(extra)
+    legacy = LEGACY_ANALYZER_RESULTS_DIR / exp_group / run_name / modality
+    if Path(analyzer_dir).resolve() != DEFAULT_ANALYZER_DIR.resolve():
+        legacy = Path(analyzer_dir) / "results" / exp_group / run_name / modality
+    if legacy not in candidates:
+        candidates.append(legacy)
+    for candidate in candidates:
+        if _has_cindex_files(candidate):
+            return candidate
+    return None
 
 
 def read_cindex(result_dir: Path, prefer_val: bool = True) -> dict:
@@ -158,7 +302,7 @@ def evaluate_clinic_dir(
     dataset: str,
     scheme: str,
     modality: str = DEFAULT_INNER_MODALITY,
-    exp_group: str = "greedy",
+    exp_group: str | None = None,
     python_exe: Path | str | None = None,
     analyzer_dir: Path | str | None = None,
     k: int = 5,
@@ -171,16 +315,79 @@ def evaluate_clinic_dir(
     reuse: bool = True,
     job_log: Path | str | None = None,
     split_dir: Path | str | None = None,
+    results_dir_base: Path | str | None = None,
+    encoding: str | None = None,
+    landmark_tag: str | None = None,
+    experiment: str | None = None,
+    kind: str | None = None,
 ) -> dict:
     analyzer_dir = Path(analyzer_dir or DEFAULT_ANALYZER_DIR)
     python_exe = Path(python_exe or DEFAULT_SURVPGC_PYTHON)
-    study = display_to_study(dataset)
     ensure_modalities_allowed(dataset, modality)
-    run_name = f"{study}__{scheme}"
-    out_dir = results_dir(analyzer_dir, exp_group, run_name, modality)
-    existing = list(out_dir.glob("test_result*.csv")) + list(out_dir.glob("val_result_fold*.csv"))
-    if reuse and existing:
-        payload = read_cindex(out_dir, prefer_val=prefer_val)
+    extra_args = list(extra_args or [])
+    if results_dir_base is None and "--results_dir" in extra_args:
+        flag_idx = extra_args.index("--results_dir")
+        if flag_idx + 1 < len(extra_args):
+            results_dir_base = extra_args[flag_idx + 1]
+    if results_dir_base is None:
+        results_dir_base = DEFAULT_RESULTS_DIR
+    encoding_value, tag = _infer_encoding_and_landmark(clinic_dir, encoding, landmark_tag)
+    experiment_value = experiment if experiment is not None else experiment_from_path(clinic_dir)
+    kind_hint = str(kind or exp_group or "greedy")
+    kind_value = "univariate" if "univariate" in kind_hint else "greedy"
+    nested_exp_group = analyzer_exp_group(
+        dataset=dataset,
+        encoding=encoding_value,
+        landmark_tag=tag,
+        experiment=experiment_value,
+        kind=kind_value,
+        results_dir_base=results_dir_base,
+    )
+    nested_out_dir = analyzer_results_dir(
+        dataset=dataset,
+        encoding=encoding_value,
+        landmark_tag=tag,
+        scheme=scheme,
+        modality=modality,
+        experiment=experiment_value,
+        kind=kind_value,
+        results_dir_base=results_dir_base,
+    )
+    legacy_run_name = analyzer_run_name(dataset, scheme)
+    extra_candidates = []
+    if exp_group in {None, "", "greedy", "univariate", "longitudinal", "longitudinal_greedy", "longitudinal_univariate"}:
+        exp_group = nested_exp_group
+        run_name = scheme
+        out_dir = nested_out_dir
+        extra_candidates.append(
+            _legacy_flat_run_dir(
+                dataset=dataset,
+                scheme=scheme,
+                modality=modality,
+                experiment=experiment_value,
+                kind=kind_value,
+                results_dir_base=results_dir_base,
+            )
+        )
+    else:
+        run_name = scheme if "/" in str(exp_group) else legacy_run_name
+        out_dir = results_dir(
+            analyzer_dir,
+            exp_group,
+            run_name,
+            modality,
+            results_dir_base=results_dir_base,
+        )
+    reuse_dir = _existing_result_dir(
+        out_dir,
+        analyzer_dir=analyzer_dir,
+        exp_group=exp_group,
+        run_name=run_name,
+        modality=modality,
+        extra_candidates=extra_candidates,
+    )
+    if reuse and reuse_dir is not None:
+        payload = read_cindex(reuse_dir, prefer_val=prefer_val)
         payload.update({"skipped": True, "clinic_dir": str(clinic_dir), "run_name": run_name, "modality": modality})
         if job_log:
             write_job_record(Path(job_log), payload)
@@ -210,6 +417,8 @@ def evaluate_clinic_dir(
         cmd.extend(["--k_end", str(k_end)])
     if max_epochs is not None:
         cmd.extend(["--max_epochs", str(max_epochs)])
+    if results_dir_base is not None and "--results_dir" not in extra_args:
+        extra_args.extend(["--results_dir", str(results_dir_base)])
     if extra_args:
         cmd.extend(list(extra_args))
 

@@ -54,7 +54,7 @@ def stats_main(argv=None):
 
 
 def filter_main(argv=None):
-    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按 landmark tag 写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；--dataset all 时额外写出 rawdata_stats/_shared/{tag}/kept_fields.json 总表")
+    parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按 landmark tag 写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；共享 kept_fields.json 按 dataset 合并，不覆盖其它队列")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
     parser.add_argument(

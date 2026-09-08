@@ -1,8 +1,10 @@
 # Projects
 
+给实现 / 排错用。日常命令看 [README_usage.md](README_usage.md)。人工方案通路看 [A_pipeline/README.md](A_pipeline/README.md) 和 [A_pipeline/README_usage.md](A_pipeline/README_usage.md)。
+
 临床 JSON 相关流程都在本目录，和上游 `conch/` 分开。
 
-剩下一条链：scan → stats → filter → Field Bank → greedy。两种编码走同一个 `--encoding`：`prompt`（CONCH 句向量，默认）和 `onehot`。Field Bank prompt 句子还可以组成 L2 / L3 / L5 clinic embedding。纵向实验把同一套 Field Bank 字段按 follow-up 记录展开，产物写到 `outputs/{dataset}/longitudinal/...`。
+剩下一条链：scan → stats → filter → Field Bank → greedy。两种编码走同一个 `--encoding`：`prompt`（CONCH 句向量，默认）和 `onehot`。Field Bank prompt 句子还可以组成 L2 / L3 / L5 clinic embedding。纵向实验把同一套 Field Bank 字段按 follow-up 记录展开，embedding 写到 `outputs/{dataset}/longitudinal/...`，评测表写到 `results/longitudinal_{greedy|univariate}/...`。
 
 ```text
 datasets.json + clinical JSON
@@ -15,12 +17,14 @@ datasets.json + clinical JSON
         |
         +-- outputs/{dataset}/schemes/{landmark_tag}_{L2|L3|L5}/
         |
-        +-- outputs/{dataset}/greedy/{prompt|onehot}/
+        +-- outputs/{dataset}/greedy/{prompt|onehot}/   jobs + subset embeddings
+        |
+        +-- results/{greedy|univariate|linear_probe}/{encoding}/{landmark_tag}/{dataset}/
 ```
 
 ## Layout
 
-- `datasets.json`：33 个 TCGA 数据集的 clinical JSON 路径，全部指向 `ClinicDatasets/gdc_clinical/raw_json/{project}.json`
+- `datasets.json`：35 个数据集的 clinical JSON 路径（33 个 TCGA，外加 `MMRF`、`CPTAC`），全部指向 `ClinicDatasets/gdc_clinical/raw_json/{project}.json`
 - `src/common/`：共用的数据集注册、JSON 读取、字段路径、缺失三态
 - `src/discovery/`：扫描、统计、筛选、Field Bank、L2/L3/L5 组成编码
 - `src/time_stats.py`：生存/随访时间统计
@@ -29,18 +33,12 @@ datasets.json + clinical JSON
 - `templates/field_labels.json`：旧人工释义表，已停用；扫描默认读 GDC clinical dictionary
 - `templates/field_bank/{dataset}/`：筛完后待填的 Field Bank 长表
 - `rawdata_stats/`：JSON 测量和筛选结果，不进 `outputs/`
-- `outputs/`：Field Bank prompt / embedding、L2/L3/L5 scheme embedding，以及 greedy 产物
-- `Clinic_Analyzer/`：clinic embedding 评估
+- `outputs/`：Field Bank prompt / embedding、L2/L3/L5 scheme embedding，以及 greedy / univariate 的 jobs 和 subset embedding
+- `results/`：greedy / univariate / linear_probe / A_manual 评测表；Clinic_Analyzer 的 fold CSV 也写到这里
+- `results_display/`：跨数据集汇总图和表
+- `Clinic_Analyzer/`：clinic embedding 评估代码；旧的 `Clinic_Analyzer/results` 和 `Clinic_Analyzer/results_display` 不再使用
 
-独立的人工方案通路在 `A_pipeline/`，不走上面这条链。它默认读 `A_pipeline/datasets.json` 里 lizhe 的 9 个 `clinical.cart`，不是 B 的 33 份 ClinicDatasets。L0-L5 / D0-D5 入口：
-
-```bash
-python A_pipeline/run.py json2prompt --dataset TCGA-READ --scheme L0
-python A_pipeline/run.py pipeline --dataset TCGA-READ --scheme all
-python A_pipeline/run.py baseline --dataset TCGA-READ --scheme all
-```
-
-产物写到 `outputs/{dataset}/A_manual/`，详见 [A_pipeline/README.md](A_pipeline/README.md)。
+独立的人工方案通路在 `A_pipeline/`，不走上面这条链。它默认读 `A_pipeline/datasets.json` 里 lizhe 的 9 个 `clinical.cart`，不是 B 的 35 份 ClinicDatasets。命令和标注实验见 [A_pipeline/README_usage.md](A_pipeline/README_usage.md)；队列 / 改字段 / 产物树见 [A_pipeline/README.md](A_pipeline/README.md)。编码写到 `outputs/{dataset}/A_manual/`，c-index 写到 `results/A_manual/`，调度日志在 `A_pipeline/*.log`。
 
 ## 公共约定
 
@@ -49,11 +47,12 @@ conda activate conch
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
 ```
 
-- `--dataset all` 跑 `datasets.json` 里全部 33 个 TCGA 数据集
+- `--dataset all` 跑 `datasets.json` 里全部 35 个数据集
 - 也可以写 `--dataset TCGA-READ` 或 `--dataset TCGA-BRCA,TCGA-READ`
 - 肝细胞癌历史目录名仍是 `TCGA_LIHC`；`--dataset TCGA-LIHC` 会解析到同一份配置
+- `--dataset CPTAC` / `--dataset MMRF` 是 pipeline 名；`--dataset CPTAC-3` / `--dataset MMRF-COMMPASS` 会解析到同一份配置。原始 JSON 仍是 `CPTAC-3.json` / `MMRF-COMMPASS.json`
 - 不传 `--dataset` 时，走 `--json_path` 单 JSON 模式
-- 患者级 `.pt` 统一命名为 `TCGA-XX-XXXX.pt`
+- 患者级 `.pt` 按 `submitter_id` 命名
 
 默认路径：
 
@@ -62,7 +61,7 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
 - Field Bank 模板：`templates/field_bank/{dataset}`
 - CONCH 权重：`/data/fangyuxuan/projects/medical_dl/trident_project/CONCH/pytorch_model.bin`
 
-`--dataset all` 覆盖 33 个 TCGA project：ACC, BLCA, BRCA, CESC, CHOL, COAD, DLBC, ESCA, GBM, HNSC, KICH, KIRC, KIRP, LAML, LGG, LIHC, LUAD, LUSC, MESO, OV, PAAD, PCPG, PRAD, READ, SARC, SKCM, STAD, TGCT, THCA, THYM, UCEC, UCS, UVM。其中 LIHC 在 pipeline 里仍写作 `TCGA_LIHC`，对应 `TCGA-LIHC.json`。
+`--dataset all` 覆盖 33 个 TCGA project 以及 `MMRF`、`CPTAC`。TCGA：ACC, BLCA, BRCA, CESC, CHOL, COAD, DLBC, ESCA, GBM, HNSC, KICH, KIRC, KIRP, LAML, LGG, LIHC, LUAD, LUSC, MESO, OV, PAAD, PCPG, PRAD, READ, SARC, SKCM, STAD, TGCT, THCA, THYM, UCEC, UCS, UVM。其中 LIHC 在 pipeline 里仍写作 `TCGA_LIHC`，对应 `TCGA-LIHC.json`。扫描 / 统计 / 筛选的 `_shared` 总表按 dataset 合并，单队列重跑不会清空其它队列。
 
 ---
 
@@ -70,12 +69,12 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
 
 统计表只有 `null` / `sentinel` / `valid`。路径抽不到值记入 `null`。`missing = null + sentinel`。
 
+`--landmark_time` 可以是天数、逗号列表、`none` 或 `all`，不必按组合各写一遍。
+
 ```bash
 python scripts/run_scan_fields.py --dataset all
 python scripts/run_field_stats.py --dataset all
 python scripts/run_field_filter.py --dataset all --write_templates --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95 --landmark_time 730
-python scripts/run_field_filter.py --dataset all --write_templates --landmark_time 0,365,730,none
-
 python scripts/run_time_stats.py --dataset all
 ```
 
@@ -113,6 +112,8 @@ Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_fo
 
 先完成上面的扫描、统计、筛选。筛选后按数据集填写 Field Bank 长表，再编码；greedy 是 Field Bank 之后的阶段。
 
+`--encoding` 是 `prompt` / `onehot`；`--landmark_time` 是天数、逗号列表、`none` 或 `all`。只出 prompt CSV 加 `--prompts_only`。
+
 ```bash
 # 人工填写 templates/field_bank/{dataset}/{landmark_none|landmark_T}/FIELD_BANK.csv
 # 先看 example 的原始取值，再裁定 convert/unit，最后填 template。
@@ -120,59 +121,33 @@ Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_fo
 
 # JSON -> prompt.csv -> CONCH emb；必须给 --landmark_time T（天）或 none
 python scripts/run_field_bank.py --dataset all --encoding prompt --landmark_time none
-python scripts/run_field_bank.py --dataset all --encoding onehot --landmark_time 365
-python scripts/run_field_bank.py --dataset all --encoding prompt --landmark_time 0,365,730,none
-python scripts/run_field_bank.py --dataset all --encoding prompt --landmark_time all
 
 # 纵向 Field Bank：按 follow-up 记录编码，并加入 days_since / ECOG/Karnofsky/BMI/weight 变化列
 python scripts/run_longitudinal_field_bank.py --dataset all --encoding prompt --landmark_time none
-python scripts/run_longitudinal_field_bank.py --dataset all --encoding onehot --landmark_time 365
-
-# step1 JSON -> prompt.csv（仅 prompt）
-python scripts/run_field_bank.py --dataset all --encoding prompt --prompts_only --landmark_time 365
 
 # Field Bank 完成后再做范式转换。--dataset 与 --landmark_time 指定已完成的 prompt 基座。
 # 产物目录：outputs/{dataset}/schemes/landmark_730_L2 等。
 # L2：全部有效句子拼成 1 段
 # L3：按 CONCH tokenizer 贪心切 <=127 token 的完整句窗口，不足窗口 pad 成同形状
 # L5：按 templates/field_bank/_shared/l5_semantic_groups.csv 把字段合成语义组；缺组用占位句，mask=False
-python scripts/run_schemes.py --dataset all --scheme all --prompts_only --landmark_time 730
 python scripts/run_schemes.py --dataset all --scheme all --landmark_time 730
-python scripts/run_schemes.py --dataset TCGA-READ --scheme L5 --landmark_time 365
-python scripts/run_schemes.py --dataset all --scheme all --landmark_time all
-
-# 关闭 landmark 用 --landmark_time none；筛选同样传 none，R0 会整层去掉 diagnoses / follow_ups
-python scripts/run_field_filter.py --dataset all --landmark_time none --write_templates
-python scripts/run_field_bank.py --dataset all --encoding prompt --landmark_time none
 
 # greedy / univariate 按 (dataset, landmark) 排队。调度器根据 --dataset 与 --landmark_time 自动生成 conf，不用手写。
-# --landmark_time 支持 365、none、0,365,none，或 all（扫描该 dataset 已有 landmark_* 目录）。
-# 多卡共用同一队列：GPU5 正在跑的 (dataset, landmark)，GPU6 认领不到。
+# 多卡共用同一队列：GPU5 正在跑的 (dataset, landmark)，GPU6 认领不到。换卡只改 CUDA_VISIBLE_DEVICES 和 log 名。
 conda activate SurvPGC
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
-CUDA_VISIBLE_DEVICES=7 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU7.log \
-    --workers 16 \
-    --dataset all \
-    --encoding prompt \
-    --landmark_time 0 \
-    --init_field '{demographic.}' \
-    --inner_modality mlp_clinic_flatten \
-    --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
-    --seed 0 \
-    --min_delta 0.01
-
-CUDA_VISIBLE_DEVICES=6 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log \
-    --workers 16 \
+CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU5.log \
+    --workers 8 \
     --dataset all \
     --encoding prompt \
     --inner_modality mlp_clinic_flatten \
     --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
-    --init_field '{demographic.}' \
-    --landmark_time none \
+    --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
+    --landmark_time 730 \
     --seed 0 \
     --min_delta 0.01
 
-# 纵向 greedy / univariate 走同一套入口，产物写到 outputs/{dataset}/longitudinal/...
+# 纵向 greedy / univariate 走同一套入口；embedding 写 outputs/{dataset}/longitudinal/...，评测表写 results/longitudinal_{greedy|univariate}/...
 python scripts/run_longitudinal_greedy.py --dataset TCGA-BRCA --encoding prompt --landmark_time none --init_field '{demographic.}'
 python scripts/run_longitudinal_univariate_cindex.py --dataset TCGA-BRCA --encoding prompt --landmark_time none
 python scripts/run_numeric_linear_probe.py --dataset all --encoding prompt --landmark_time 730
@@ -193,18 +168,27 @@ outputs/{dataset}/schemes/{landmark_none|landmark_T}_{L2|L3|L5}/prompts.csv
 outputs/{dataset}/schemes/{landmark_none|landmark_T}_{L2|L3|L5}/field_index.json
 outputs/{dataset}/schemes/{landmark_none|landmark_T}_{L2|L3|L5}/embeddings/pt/{patient_id}.pt
 outputs/{dataset}/greedy/{prompt|onehot}/{landmark_none|landmark_T}/
-  run_config.json
-  selection_freq.csv
-  selection_freq.png
   jobs/{scheme}.json
   subsets/G{k}_{hash}/embeddings/pt/{patient_id}.pt
+results/greedy/{prompt|onehot}/{landmark_none|landmark_T}/{dataset}/
+  run_config.json
+  path.json
+  selection_freq.csv
+  selection_freq.png
+  cindex_by_n_fields.csv
+  cindex_by_n_fields.png
 outputs/{dataset}/longitudinal/field_bank/{prompt|onehot}/{landmark_none|landmark_T}/
   prompts.csv
   field_index.json
   embeddings/pt/{patient_id}.pt
 outputs/{dataset}/longitudinal/greedy/{prompt|onehot}/{landmark_none|landmark_T}/
-  run_config.json
+  jobs/{scheme}.json
   subsets/G{k}_{hash}/embeddings/pt/{patient_id}.pt
+results/longitudinal_greedy/{prompt|onehot}/{landmark_none|landmark_T}/{dataset}/
+  run_config.json
+  path.json
+  selection_freq.csv
+  cindex_by_n_fields.csv
 ```
 
 `FIELD_BANK.csv` 按数据集各自填写。`example` 是原始取值，只给人判断单位；看完后再填 `convert` / `unit` / `template`。`convert` 为空则原样填 `{}`。`example`、`unit` 不进入 prompts / embedding。默认 Field Bank：prompt 是 `[n_fields, 512]`；onehot 是 `[n_fields, max_width]`，短字段右侧 0 pad。纵向实验按记录展开：prompt / onehot 都是 `[n_fields * n_records, D]`，同一字段的多次 follow-up 连续排在一起；缺记录用 missing prompt / 空 onehot 行 pad 到该数据集最大记录数。
@@ -225,6 +209,8 @@ Landmark 发生在 Field Bank 取值。必须传 `--landmark_time T`、`--landma
 多模态模型：`survgc_f`、`survpgc_f`
 单模态模型：`mlp_clinic_mean`、`mlp_clinic_flatten`、`snn_clinic_mean`、`snn_clinic_flatten`
 
+换卡只改 `CUDA_VISIBLE_DEVICES` 和 log 名，共用同一队列。
+
 ```bash
 conda activate SurvPGC
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
@@ -238,31 +224,16 @@ CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU5.log \
     --landmark_time 730 \
     --seed 0 \
     --min_delta 0.01
-CUDA_VISIBLE_DEVICES=6 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU6.log \
-    --workers 8 \
-    --dataset all \
-    --encoding prompt \
-    --inner_modality mlp_clinic_flatten \
-    --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
-    --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
-    --landmark_time 730 \
-    --seed 0 \
-    --min_delta 0.01
 ```
 
 对 Field Bank 里筛完后的每个字段单独切 `[1, D]` embedding，用同一个 clinic 模型报 5-fold **val** c-index。这不是 greedy 的一步，也不改选字段。调度器和 greedy 一样按 `--dataset` 与 `--landmark_time` 生成 conf 快照，但队列在 `Clinic_Analyzer/configs/univariate/{queue,running,done,failed}`，不和 greedy 抢任务。一张卡一次只认领一个 (dataset, landmark)；`--workers` 只并行当前任务的字段。`bg_univariate.sh` 后台启动后打出一个 PID 和一个 log。
+
+换卡只改 `CUDA_VISIBLE_DEVICES` 和 log 名。
 
 ```bash
 conda activate SurvPGC
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
 CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_univariate.sh UniGPU5.log \
-    --workers 8 \
-    --dataset all \
-    --encoding prompt \
-    --modality mlp_clinic_flatten \
-    --landmark_time none \
-    --seed 0
-CUDA_VISIBLE_DEVICES=6 bash Clinic_Analyzer/bg_univariate.sh UniGPU6.log \
     --workers 8 \
     --dataset all \
     --encoding prompt \
@@ -275,10 +246,13 @@ CUDA_VISIBLE_DEVICES=6 bash Clinic_Analyzer/bg_univariate.sh UniGPU6.log \
 
 ```text
 outputs/{dataset}/univariate/{encoding}/{landmark_none|landmark_T}/
+  jobs/{scheme}.json
+results/univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/
   field_cindex.csv
   run_config.json
-  jobs/{scheme}.json
 outputs/{dataset}/longitudinal/univariate/{encoding}/{landmark_none|landmark_T}/
+  jobs/{scheme}.json
+results/longitudinal_univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/
   field_cindex.csv
   run_config.json
 ```
@@ -305,13 +279,21 @@ python scripts/run_numeric_linear_probe.py \
 产物：
 
 ```text
-outputs/{dataset}/linear_probe/prompt/{landmark_none|landmark_T}/
+results/linear_probe/prompt/{landmark_none|landmark_T}/{dataset}/
   numeric_r2.csv
   predictions.csv
   run_config.json
 ```
 
 单数据集把 `--dataset all` 换成 `TCGA-READ`。`run.sh` 会接入 config 快照并调用 `evaluate.py`，不再走 `main.py`。详见 [Clinic_Analyzer/TEST_main_and_runsh.md](Clinic_Analyzer/TEST_main_and_runsh.md)。
+
+跨数据集汇总从 `results/` 抽到 `results_display/`：
+
+```bash
+python results_display/scripts/collect_greedy_cindex.py --dataset all --landmark_time 0
+python results_display/scripts/collect_univariate_cindex.py --dataset all --landmark_time 0
+python results_display/scripts/collect_linear_probe_r2.py --dataset all --landmark_time 730
+```
 
 ## 还要注意
 

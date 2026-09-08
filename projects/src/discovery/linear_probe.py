@@ -24,8 +24,9 @@ from common.datasets import (
 from common.paths import (
     DEFAULT_DATASETS_CONFIG,
     dataset_field_bank_dir,
-    dataset_linear_probe_dir,
+    dataset_linear_probe_results_dir,
     landmark_tag_from_args,
+    resolve_cli_out_dir,
     validate_encoding,
 )
 from greedy.data import load_field_bank
@@ -459,12 +460,12 @@ def run_one(
     args.encoding = encoding
     tag = landmark_tag_from_args(args)
     args.landmark_tag = tag
-    if args.out:
-        out_dir = Path(args.out)
-        if getattr(args, "_multi_dataset", False):
-            out_dir = out_dir / dataset / tag
-    else:
-        out_dir = dataset_linear_probe_dir(dataset, encoding, tag)
+    out_dir = resolve_cli_out_dir(
+        args,
+        dataset_linear_probe_results_dir(dataset, encoding, tag),
+        dataset,
+        tag,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding, tag)
@@ -538,6 +539,7 @@ def run_one(
         extra={
             "n_patients": len(list(loaded["pt_dir"].glob("*.pt"))),
             "landmark_tag": tag,
+            "results_dir": str(out_dir),
         },
     )
     print()
