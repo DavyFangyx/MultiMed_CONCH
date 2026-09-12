@@ -1,0 +1,6 @@
+E1: Univariate C-index Baseline
+E2: Selection_Gain_Algorithm
+E3: Algorithm Benchmark and Optimality Gap
+E4: Temporal Landmark Analysis
+E5: External Cohort Replication
+E6: Encoding and Semantic Robustness

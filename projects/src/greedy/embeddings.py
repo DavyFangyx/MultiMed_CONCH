@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -161,7 +162,7 @@ def materialize_subset_embeddings_with_python(
         return materialize_subset_embeddings(
             field_bank_dir, subset_idx, out_pt_dir, fields=fields, overwrite=overwrite
         )
-    except Exception:
+    except Exception as primary_exc:
         payload = {
             "field_bank_dir": str(field_bank_dir),
             "subset_idx": [int(i) for i in list(subset_idx)],
@@ -169,17 +170,26 @@ def materialize_subset_embeddings_with_python(
             "fields": list(fields or []),
             "overwrite": bool(overwrite),
         }
+        src_root = str(Path(__file__).resolve().parents[1])
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (src_root, env.get("PYTHONPATH", "")) if part
+        )
         proc = subprocess.run(
-            [str(python_exe), str(Path(__file__).resolve()), json.dumps(payload)],
+            [str(python_exe), "-m", "greedy.embeddings", json.dumps(payload)],
             check=False,
             capture_output=True,
             text=True,
+            cwd=str(Path(__file__).resolve().parents[2]),
+            env=env,
         )
         if proc.returncode != 0:
             raise RuntimeError(
-                "failed to materialize subset embeddings:\n"
-                + (proc.stderr or proc.stdout or "")
-            )
+                "failed to materialize subset embeddings\n"
+                f"in-process error: {type(primary_exc).__name__}: {primary_exc}\n"
+                "fallback error:\n"
+                + (proc.stderr or proc.stdout or f"exit code {proc.returncode}")
+            ) from primary_exc
         return json.loads(proc.stdout.strip().splitlines()[-1])
 
 

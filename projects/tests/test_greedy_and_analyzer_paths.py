@@ -20,7 +20,12 @@ from greedy.clinic import (
     evaluate_clinic_dir,
     results_dir,
 )
-from greedy.embeddings import materialize_subset_embeddings, subset_embedding_dir
+from greedy.clinic_evaluator import ClinicSubsetEvaluator
+from greedy.embeddings import (
+    materialize_subset_embeddings,
+    materialize_subset_embeddings_with_python,
+    subset_embedding_dir,
+)
 
 
 def _make_pt_dir(root: Path) -> Path:
@@ -206,6 +211,72 @@ def test_materialize_prompt_dict_payload_keeps_512(tmp_path):
     assert tuple(sliced.shape) == (2, 512)
 
 
+def test_materialize_fallback_runs_as_module(tmp_path, monkeypatch):
+    calls = {}
+
+    def fail_in_process(*args, **kwargs):
+        raise ImportError("torch unavailable")
+
+    class Completed:
+        returncode = 0
+        stdout = '{"n_patients": 1}\n'
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr("greedy.embeddings.materialize_subset_embeddings", fail_in_process)
+    monkeypatch.setattr("greedy.embeddings.subprocess.run", fake_run)
+    result = materialize_subset_embeddings_with_python(
+        "/env/bin/python", tmp_path / "bank", [0], tmp_path / "out"
+    )
+
+    assert result == {"n_patients": 1}
+    assert calls["cmd"][1:3] == ["-m", "greedy.embeddings"]
+    assert calls["kwargs"]["env"]["PYTHONPATH"].split(":")[0] == str(SRC)
+
+
+def test_clinic_subset_evaluator_infers_five_folds_from_split_dir(tmp_path, monkeypatch):
+    bank = tmp_path / "field_bank" / "prompt" / "landmark_0"
+    _make_pt_dir(bank)
+    (bank / "field_index.json").write_text(
+        json.dumps({"encoding": "prompt", "fields": ["a"]}), encoding="utf-8"
+    )
+    split_dir = tmp_path / "splits"
+    split_dir.mkdir()
+    for fold in range(5):
+        (split_dir / f"splits_{fold}.csv").write_text("case_id,split\n", encoding="utf-8")
+
+    captured = {}
+    monkeypatch.setattr(
+        "greedy.clinic_evaluator.materialize_subset_embeddings_with_python",
+        lambda *args, **kwargs: {},
+    )
+
+    def fake_evaluate(*args, **kwargs):
+        captured.update(kwargs)
+        return {"c_index_mean": 0.6, "per_fold": [0.6] * 5}
+
+    monkeypatch.setattr("greedy.clinic_evaluator.evaluate_clinic_dir", fake_evaluate)
+    evaluator = ClinicSubsetEvaluator(
+        "TCGA-BRCA",
+        ["a"],
+        None,
+        field_bank_dir=bank,
+        work_dir=tmp_path / "work",
+        split_dir=split_dir,
+        landmark_tag="landmark_0",
+    )
+
+    result = evaluator.evaluate([0])
+
+    assert captured["k"] == 5
+    assert captured["k_end"] == 5
+    assert result["per_fold"] == [0.6] * 5
+
+
 def test_analyzer_results_dir_uses_project_root():
     out_dir = results_dir(ANALYZER, "A_manual/runs", "tcga_read__L0", "mlp_clinic_flatten")
     assert out_dir == DEFAULT_RESULTS_DIR / "A_manual" / "runs" / "tcga_read__L0" / "mlp_clinic_flatten"
@@ -278,6 +349,37 @@ def test_evaluate_clinic_dir_reuses_legacy_flat_run(tmp_path, monkeypatch):
     assert not nested.exists()
 
 
+def test_evaluate_clinic_dir_does_not_reuse_incomplete_folds(tmp_path, monkeypatch):
+    monkeypatch.setattr("greedy.clinic.DEFAULT_RESULTS_DIR", tmp_path)
+    clinic_dir = _make_pt_dir(
+        tmp_path / "outputs" / "TCGA-BRCA" / "greedy" / "prompt" / "landmark_0" / "subsets" / "G1_test"
+    )
+    out_dir = (
+        tmp_path / "greedy" / "prompt" / "landmark_0" / "TCGA-BRCA" / "runs" / "G1_test" / "mlp_clinic_flatten"
+    )
+    out_dir.mkdir(parents=True)
+    (out_dir / "val_result_fold0.csv").write_text("val_cindex\n0.61\n", encoding="utf-8")
+
+    class Completed:
+        returncode = 1
+        stdout = "rerun attempted"
+
+    monkeypatch.setattr("greedy.clinic.subprocess.run", lambda *args, **kwargs: Completed())
+
+    with pytest.raises(RuntimeError, match="rerun attempted"):
+        evaluate_clinic_dir(
+            clinic_dir,
+            dataset="TCGA-BRCA",
+            scheme="G1_test",
+            modality="mlp_clinic_flatten",
+            encoding="prompt",
+            landmark_tag="landmark_0",
+            results_dir_base=tmp_path,
+            reuse=True,
+            min_folds=5,
+        )
+
+
 def test_merge_greedy_summaries_adds_missing_outer(tmp_path):
     from greedy.cli import _merge_greedy_summaries, _json_load
 
@@ -309,5 +411,3 @@ def test_merge_greedy_summaries_adds_missing_outer(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__])
-
-

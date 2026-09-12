@@ -91,6 +91,17 @@ class ClinicSubsetEvaluator:
                 "empty": True,
             }
 
+        if self.split_dir is None:
+            raise ValueError("ClinicSubsetEvaluator requires an existing split_dir of splits_*.csv")
+        split_dir = Path(self.split_dir)
+        if self.splits:
+            k = len(self.splits)
+        else:
+            split_files = sorted(split_dir.glob("splits_*.csv"))
+            if not split_files:
+                raise FileNotFoundError(f"no splits_*.csv files under {split_dir}")
+            k = len(split_files)
+
         scheme = subset_scheme_name(idx)
         clinic_dir = subset_embedding_dir(
             self.dataset,
@@ -109,12 +120,8 @@ class ClinicSubsetEvaluator:
             overwrite=self.overwrite_embeddings,
         )
 
-        k = max(len(self.splits), 1)
         run_tag = scheme
         job_log = self.work_dir / "jobs" / f"{run_tag}.json"
-        if self.split_dir is None:
-            raise ValueError("ClinicSubsetEvaluator requires an existing split_dir of splits_*.csv")
-        split_dir = Path(self.split_dir)
         payload = evaluate_clinic_dir(
             clinic_dir,
             dataset=self.dataset,
@@ -137,6 +144,7 @@ class ClinicSubsetEvaluator:
             landmark_tag=self.landmark_tag,
             experiment=self.experiment,
             kind=self.kind,
+            min_folds=k,
         )
         payload["subset_idx"] = idx
         payload["scheme"] = scheme

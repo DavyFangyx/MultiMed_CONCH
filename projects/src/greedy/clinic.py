@@ -320,6 +320,7 @@ def evaluate_clinic_dir(
     landmark_tag: str | None = None,
     experiment: str | None = None,
     kind: str | None = None,
+    min_folds: int = 1,
 ) -> dict:
     analyzer_dir = Path(analyzer_dir or DEFAULT_ANALYZER_DIR)
     python_exe = Path(python_exe or DEFAULT_SURVPGC_PYTHON)
@@ -388,10 +389,11 @@ def evaluate_clinic_dir(
     )
     if reuse and reuse_dir is not None:
         payload = read_cindex(reuse_dir, prefer_val=prefer_val)
-        payload.update({"skipped": True, "clinic_dir": str(clinic_dir), "run_name": run_name, "modality": modality})
-        if job_log:
-            write_job_record(Path(job_log), payload)
-        return payload
+        if len(payload["per_fold"]) >= int(min_folds):
+            payload.update({"skipped": True, "clinic_dir": str(clinic_dir), "run_name": run_name, "modality": modality})
+            if job_log:
+                write_job_record(Path(job_log), payload)
+            return payload
 
     cmd = [
         str(python_exe),
@@ -453,6 +455,11 @@ def evaluate_clinic_dir(
             f"See {job_log or out_dir}.{extra}"
         )
     payload = read_cindex(out_dir, prefer_val=prefer_val)
+    if len(payload["per_fold"]) < int(min_folds):
+        raise RuntimeError(
+            f"Clinic_Analyzer produced {len(payload['per_fold'])} folds for {scheme}; "
+            f"expected at least {int(min_folds)} under {out_dir}"
+        )
     payload.update({"skipped": False, "clinic_dir": str(clinic_dir), "run_name": run_name, "modality": modality})
     if job_log:
         write_job_record(Path(job_log), {**log, **payload})
