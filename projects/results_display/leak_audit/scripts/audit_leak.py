@@ -49,7 +49,7 @@ SCHEME_ORDER = [
     "HGCN_UCEC",
 ]
 
-# HGCN 系列与 TCGA 癌种的对应队列（用于在热图上勾出「同癌种」格）
+# HGCN 系列与 TCGA 癌种的对应队列（spec §2.4；仅当产物缺 binding_datasets 时用作回退）
 MATCHED_DATASET = {
     "HGCN_KIRC": "TCGA-KIRC",
     "HGCN_LIHC": "TCGA_LIHC",
@@ -136,6 +136,39 @@ def load_field_rows(audit_root: Path, summary: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def load_bindings(audit_root: Path, summary: pd.DataFrame) -> dict:
+    """读每方案「被允许的队列」= spec §2.4 绑定，来自审计产物本身（不重复硬编码范围）。
+
+    ``results/leak_audit/{dataset}/{scheme}.json`` 的 ``scheme_binding`` /
+    ``binding_datasets`` 由 ``src/leak/audit.py`` 写入。
+    返回 {"allowed": {scheme: [dataset, ...]}, "kind": {scheme: 绑定类型}}。
+    """
+    allowed: dict[str, list[str]] = {}
+    kinds: dict[str, str] = {}
+    for _, row in summary.iterrows():
+        scheme, dataset = str(row["scheme"]), str(row["dataset"])
+        allowed.setdefault(scheme, [])
+        if dataset not in allowed[scheme]:
+            allowed[scheme].append(dataset)
+        path = audit_root / dataset / f"{scheme}.json"
+        if not path.exists():
+            continue
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        kind = str(payload.get("scheme_binding") or "")
+        if kind:
+            kinds[scheme] = kind
+        declared = payload.get("binding_datasets")
+        if isinstance(declared, list) and declared:
+            allowed[scheme] = [str(item) for item in declared]
+    # 产物缺绑定元数据时回退到 spec §2.4 的静态对应表
+    for scheme, dataset in MATCHED_DATASET.items():
+        if scheme in allowed and len(allowed[scheme]) == 1 and not kinds.get(scheme):
+            allowed[scheme] = [dataset]
+            kinds[scheme] = "hgcn_cancer"
+    return {"allowed": allowed, "kind": kinds}
+
+
 def scheme_table(summary: pd.DataFrame) -> pd.DataFrame:
     table = (
         summary.groupby("scheme", observed=True)
@@ -202,11 +235,19 @@ def _heatmap(ax, values, row_labels, col_labels, *, cmap, vmin, vmax, annotate=T
     return image
 
 
-def plot_overview(summary: pd.DataFrame, out_path: Path, schemes: pd.DataFrame) -> None:
+def plot_overview(
+    summary: pd.DataFrame,
+    out_path: Path,
+    schemes: pd.DataFrame,
+    bindings: dict | None = None,
+) -> None:
     plt = setup_matplotlib()
     from matplotlib.colors import LinearSegmentedColormap
 
     cmap = LinearSegmentedColormap.from_list("leak_blue", RAMP)
+    allowed = dict((bindings or {}).get("allowed") or {})
+    n_datasets = int(summary["dataset"].nunique())
+    n_pairs = int(len(summary))
 
     dataset_order = (
         summary.groupby("dataset")["leaky_ratio"].mean().sort_values(ascending=False).index.tolist()
@@ -227,17 +268,26 @@ def plot_overview(summary: pd.DataFrame, out_path: Path, schemes: pd.DataFrame) 
         ax_a, grid.to_numpy(dtype=float), list(grid.index), list(grid.columns),
         cmap=cmap, vmin=0.0, vmax=1.0,
     )
-    # 勾出 HGCN 工作与同癌种 TCGA 队列的交叉格
-    for scheme, dataset in MATCHED_DATASET.items():
-        if scheme not in SCHEME_ORDER or dataset not in dataset_order:
-            continue
-        j = SCHEME_ORDER.index(scheme)
-        i = dataset_order.index(dataset)
-        ax_a.add_patch(
-            plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False, edgecolor=INK_PRIMARY, linewidth=1.8, zorder=5)
-        )
+    # 勾出被绑定的交叉格 + 给「未绑定」格打 ×（spec §2.4：HGCN_* 只跑其癌种）
+    for j, scheme in enumerate(SCHEME_ORDER):
+        permit = allowed.get(scheme)
+        if not permit or len(permit) >= n_datasets:
+            continue  # 泛癌种方案：全部队列都在范围内
+        for i, dataset in enumerate(dataset_order):
+            if dataset in permit:
+                ax_a.add_patch(
+                    plt.Rectangle(
+                        (j - 0.5, i - 0.5), 1, 1, fill=False,
+                        edgecolor=INK_PRIMARY, linewidth=1.8, zorder=5,
+                    )
+                )
+            else:
+                ax_a.text(
+                    j, i, "×", ha="center", va="center",
+                    fontsize=7.5, color=INK_SECONDARY, alpha=0.55, zorder=4,
+                )
     ax_a.set_title(
-        "A | 工作 × 癌种队列：leaky_ratio（黑框 = HGCN 工作与其同癌种队列）",
+        "A | 工作 × 癌种队列：leaky_ratio（黑框 = 绑定计入；× = §2.4 未绑定，不跑）",
         fontsize=10, color=INK_PRIMARY, pad=10,
     )
     ax_a.set_xlabel("论文方案（工作）", fontsize=9, color=INK_SECONDARY)
@@ -262,9 +312,14 @@ def plot_overview(summary: pd.DataFrame, out_path: Path, schemes: pd.DataFrame) 
             s=16, color=ORANGE, alpha=0.85, edgecolors="white", linewidths=0.8, zorder=3,
         )
     for pos, (_, row) in enumerate(order_b.iterrows()):
+        scheme = str(row["scheme"])
+        permit = allowed.get(scheme) or []
+        scope = (
+            f", 仅 {permit[0]}" if permit and len(permit) == 1 else f", n={int(row['n_datasets'])}"
+        )
         ax_b.text(
             row["mean_leaky_ratio"] + 0.012, pos,
-            f"{row['mean_leaky_ratio']:.2f}  (max {row['max_leaky_ratio']:.2f}, n={int(row['n_datasets'])})",
+            f"{row['mean_leaky_ratio']:.2f}  (max {row['max_leaky_ratio']:.2f}{scope})",
             va="center", fontsize=7.5, color=INK_SECONDARY,
         )
     ax_b.set_yticks(y)
@@ -279,13 +334,20 @@ def plot_overview(summary: pd.DataFrame, out_path: Path, schemes: pd.DataFrame) 
     for spine in ("top", "right", "left"):
         ax_b.spines[spine].set_visible(False)
 
+    restricted = sum(
+        1 for scheme in SCHEME_ORDER if 0 < len(allowed.get(scheme) or []) < n_datasets
+    )
     fig.suptitle(
-        "H1a 泄露审计 | 10 个论文方案 × 35 个队列：t0 时刻不可得的方案字段占比（landmark_0, t0=0d）",
+        f"H1a 泄露审计 | 10 个论文方案 × {n_datasets} 个 TCGA 队列"
+        f"（spec §2.4 绑定，{n_pairs} 个组合）：t0 时刻不可得的方案字段占比（landmark_0, t0=0d）",
         fontsize=12, color=INK_PRIMARY, x=0.13, ha="left", y=0.965,
     )
     fig.text(
         0.13, 0.935,
-        "leaky_ratio = 泄露字段数 / 方案字段数；leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none（患者级）；灰格 = 该方案不含此字段。",
+        "leaky_ratio = 泄露字段数 / 方案字段数；leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none（患者级）；"
+        "灰格 = 该方案不含此字段；× = 该方案按 §2.4 不绑定该队列"
+        + (f"（{restricted} 个 HGCN 工作各只跑其对应癌种）" if restricted else "")
+        + "；CPTAC/MMRF 不在本阶段范围。",
         fontsize=8.5, color=INK_SECONDARY, ha="left",
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -293,7 +355,12 @@ def plot_overview(summary: pd.DataFrame, out_path: Path, schemes: pd.DataFrame) 
     plt.close(fig)
 
 
-def plot_fields(rows: pd.DataFrame, table: pd.DataFrame, out_path: Path) -> None:
+def plot_fields(
+    rows: pd.DataFrame,
+    table: pd.DataFrame,
+    out_path: Path,
+    scope_note: str = "",
+) -> None:
     plt = setup_matplotlib()
     from matplotlib.colors import LinearSegmentedColormap
 
@@ -346,13 +413,13 @@ def plot_fields(rows: pd.DataFrame, table: pd.DataFrame, out_path: Path) -> None
         ax_b.spines[spine].set_visible(False)
 
     fig.suptitle(
-        "H1a 泄露审计 | 逐字段泄露率（landmark_0, t0=0d）",
+        f"H1a 泄露审计 | 逐字段泄露率（landmark_0, t0=0d）{scope_note}",
         fontsize=12, color=INK_PRIMARY, x=0.235, ha="left", y=0.965,
     )
     fig.text(
         0.235, 0.935,
         f"† = 多数队列里该字段不在 Field Bank（rawdata_stats/{{dataset}}/landmark_0/kept_fields.json）。"
-        f"仅展示平均 leak_rate 最高的 {len(fields)} 个字段。灰格 = 该方案不含此字段。",
+        f"仅展示平均 leak_rate 最高的 {len(fields)} 个字段。灰格 = 该方案不含此字段 / 未绑定该队列。",
         fontsize=8, color=INK_SECONDARY, ha="left",
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,14 +438,23 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = load_summary(summary_path)
     rows = load_field_rows(audit_root, summary)
+    bindings = load_bindings(audit_root, summary)
     scheme_stats = scheme_table(summary)
     field_stats = field_table(rows, top=int(args.top_fields))
 
     scheme_stats.to_csv(out_dir / "leak_audit_scheme_mean.csv", index=False, float_format="%.6f")
     field_stats.to_csv(out_dir / "leak_audit_field_mean.csv", index=False, float_format="%.6f")
 
+    allowed = bindings["allowed"]
     print(f"summary: {summary_path}  ({len(summary)} 行 = {summary['dataset'].nunique()} 队列 × {summary['scheme'].nunique()} 方案)")
     print(f"字段明细: {len(rows)} 条 (dataset, scheme, field)")
+    print("绑定（spec §2.4）:")
+    for scheme in SCHEME_ORDER:
+        permit = allowed.get(scheme) or []
+        print(
+            f"  {scheme:16s} {bindings['kind'].get(scheme, '?'):16s} "
+            f"{len(permit)} 队列" + (f" → {permit[0]}" if len(permit) == 1 else "")
+        )
     print()
     print("各工作泄露占比（按 mean leaky_ratio 降序）:")
     for _, row in scheme_stats.iterrows():
@@ -397,8 +473,9 @@ def main(argv: list[str] | None = None) -> int:
 
     overview_path = out_dir / "leak_audit_overview.png"
     fields_path = out_dir / "leak_audit_fields.png"
-    plot_overview(summary, overview_path, scheme_stats)
-    plot_fields(rows, field_stats, fields_path)
+    scope_note = f"（{summary['dataset'].nunique()} 个 TCGA 队列 × §2.4 绑定）"
+    plot_overview(summary, overview_path, scheme_stats, bindings)
+    plot_fields(rows, field_stats, fields_path, scope_note=scope_note)
     print()
     print(f"✅ {overview_path}")
     print(f"✅ {fields_path}")

@@ -19,6 +19,18 @@
     （「无依据」问题的证据，不跳过审计）。
 - ``n_valid_none == 0``：``leak_rate = NaN`` 且 ``leak_rate_undefined = true``（分母无意义）。
 
+范围（spec §2.4；用户决议 2026-09-30，执行日志 R1）
+--------------------------------------------------
+审计**只跑绑定允许的 (dataset, scheme) 组合**，不再做 35 × 10 全交叉：
+
+- ``HGCN_*`` 六个方案各绑定其对应癌种（``HGCN_DATASET_BY_SCHEME``），**禁止**跑其他队列；
+- 泛癌种四方案（MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN）暂按全部 33 TCGA（未解决问题 U2）；
+- TCGA 之外的外部数据集（CPTAC、MMRF）一律不纳入；
+- 组合数 = 4 × 33 + 6 = 138。
+
+绑定关系由本模块声明，**不读** ``A_pipeline/templates/{scheme}/fields.json`` 的 ``datasets`` 键
+（那是旧的错误全绑定：每个方案都写 33 个 TCGA）。
+
 产物
 ----
 ``results/leak_audit/{dataset}/{scheme}.json`` 逐字段明细；
@@ -60,6 +72,35 @@ LEAK_SCHEMES = (
     "HGCN_UCEC",
 )
 
+# ---------------------------------------------------------------------------
+# 方案 × 数据集绑定（spec §2.4 + 用户决议 2026-09-30 / 执行日志 R1）
+#
+# HGCN_* 六方案各绑定其对应癌种；泛癌种四方案暂按全部 33 TCGA；CPTAC / MMRF 剔除。
+# 注意：这里**不读** A_pipeline/templates/{scheme}/fields.json 的 "datasets" 键——
+# 该键是旧的全绑定（每个方案都列 33 个 TCGA），已作废。
+# ---------------------------------------------------------------------------
+TCGA_PREFIX = "TCGA"
+
+# TCGA 之外的外部数据集，本阶段一律不纳入（spec §2.4；H4c 数据轴阶段再议）
+EXCLUDED_DATASETS = ("CPTAC", "MMRF")
+
+# HGCN_*：方案 → 其唯一允许的癌种队列（注册名。TCGA_LIHC 为下划线，见 S1 偏差 5）
+HGCN_DATASET_BY_SCHEME = {
+    "HGCN_KIRC": "TCGA-KIRC",
+    "HGCN_LIHC": "TCGA_LIHC",
+    "HGCN_ESCA": "TCGA-ESCA",
+    "HGCN_LUSC": "TCGA-LUSC",
+    "HGCN_LUAD": "TCGA-LUAD",
+    "HGCN_UCEC": "TCGA-UCEC",
+}
+
+# 泛癌种方案：暂按全部 33 TCGA（spec §12 U2 未解决）
+PAN_CANCER_SCHEMES = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
+
+BINDING_SPEC = "spec"  # 按 §2.4 绑定（默认）
+BINDING_ALL = "all"    # 仅用于 ad-hoc 方案：全部 TCGA × 全部方案（CPTAC/MMRF 仍剔除）
+BINDING_KINDS = ("hgcn_cancer", "pan_cancer", "pan_cancer_default", "all")
+
 DEFAULT_TEMPLATES_ROOT = PROJECT_ROOT / "A_pipeline" / "templates"
 DEFAULT_OUTPUT_ROOT = RESULTS_ROOT / "leak_audit"
 DEFAULT_EVENT_SUMMARY = PROJECT_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -96,6 +137,94 @@ SUMMARY_COLUMNS = [
     "n_event",
     "event_rate",
 ]
+
+
+def tcga_dataset_names(dataset_names) -> list[str]:
+    """本阶段的审计队列 = 注册表里除 CPTAC/MMRF 外的 TCGA 队列（spec §2.4，33 个）。
+
+    不硬编码名单：从传入的注册表（datasets.json 的键）按「TCGA 前缀 + 不在排除集」推出。
+    """
+    names: list[str] = []
+    for raw in dataset_names or ():
+        name = str(raw or "").strip()
+        if not name or name in EXCLUDED_DATASETS:
+            continue
+        if not name.upper().startswith(TCGA_PREFIX):
+            continue
+        if name not in names:
+            names.append(name)
+    return sorted(names)
+
+
+def scheme_dataset_binding(scheme: str, dataset_names) -> dict:
+    """按 spec §2.4 解析单个方案的允许队列，返回 {scheme, kind, datasets}。
+
+    - HGCN_* → 仅其对应癌种（绑定队列未注册 / 被剔除时直接报错，不静默降级）；
+    - 已知泛癌种方案 → 全部 33 TCGA；
+    - 其余未登记方案 → 同样按全部 TCGA 处理，但 kind 标 ``pan_cancer_default``，
+      便于事后识别「未在 §2.4 登记却跑了 33 队列」的方案。
+    """
+    name = str(scheme or "").strip()
+    registry = [str(item).strip() for item in (dataset_names or ()) if str(item).strip()]
+    tcga = tcga_dataset_names(registry)
+    bound = HGCN_DATASET_BY_SCHEME.get(name)
+    if bound is not None:
+        if bound not in registry:
+            raise ValueError(f"{name} 绑定的队列 {bound} 不在数据集注册表中（spec §2.4）")
+        if bound in EXCLUDED_DATASETS or bound not in tcga:
+            raise ValueError(
+                f"{name} 绑定的队列 {bound} 不在本阶段 33 TCGA 范围内（spec §2.4）"
+            )
+        return {"scheme": name, "kind": "hgcn_cancer", "datasets": [bound]}
+    kind = "pan_cancer" if name in PAN_CANCER_SCHEMES else "pan_cancer_default"
+    return {"scheme": name, "kind": kind, "datasets": list(tcga)}
+
+
+def build_audit_plan(
+    dataset_names,
+    schemes,
+    *,
+    binding: str = BINDING_SPEC,
+) -> list[tuple[str, str]]:
+    """(dataset, scheme) 执行计划，按 §2.4 绑定过滤；``binding=all`` 只放宽方案绑定。
+
+    外部数据集（CPTAC/MMRF）在两种模式下都剔除——数据集范围由 §2.4 锁定，不随绑定模式变化。
+    """
+    if binding not in (BINDING_SPEC, BINDING_ALL):
+        raise ValueError(f"未知 binding: {binding}（可用 {BINDING_SPEC}/{BINDING_ALL}）")
+    registry = [str(item).strip() for item in (dataset_names or ()) if str(item).strip()]
+    tcga = tcga_dataset_names(registry)
+    scheme_names = [str(item).strip() for item in (schemes or ()) if str(item).strip()]
+    allowed: dict[str, list[str]] = {}
+    for scheme in scheme_names:
+        if binding == BINDING_ALL:
+            allowed[scheme] = list(tcga)
+        else:
+            allowed[scheme] = scheme_dataset_binding(scheme, registry)["datasets"]
+    return [
+        (name, scheme)
+        for name in tcga
+        for scheme in scheme_names
+        if name in allowed.get(scheme, ())
+    ]
+
+
+def plan_datasets(plan: list[tuple[str, str]]) -> list[str]:
+    """计划里出现的数据集（保序去重）。"""
+    ordered: list[str] = []
+    for name, _ in plan:
+        if name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
+def plan_schemes(plan: list[tuple[str, str]]) -> list[str]:
+    """计划里出现的方案（保序去重）。"""
+    ordered: list[str] = []
+    for _, scheme in plan:
+        if scheme not in ordered:
+            ordered.append(scheme)
+    return ordered
 
 
 def load_scheme_fields(scheme: str, templates_root: Path | str = DEFAULT_TEMPLATES_ROOT) -> list[str]:
@@ -220,6 +349,7 @@ def build_scheme_payload(
     *,
     kept_fields: set[str] | None,
     n_patients: int,
+    binding: dict | None = None,
 ) -> dict:
     rows = []
     for row in field_rows:
@@ -236,6 +366,10 @@ def build_scheme_payload(
         "value_unit": "patients_with_valid_value",
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if binding is not None:
+        # spec §2.4：该方案被允许的队列（HGCN_* 只允许其癌种）
+        payload["scheme_binding"] = str(binding.get("kind") or "")
+        payload["binding_datasets"] = [str(item) for item in binding.get("datasets") or []]
     payload.update(summary)
     payload["fields"] = rows
     return payload
@@ -269,8 +403,12 @@ def audit_dataset(
     *,
     kept_fields: set[str] | None = None,
     landmark_time: int = LANDMARK_T0,
+    bindings: dict[str, dict] | None = None,
 ) -> list[dict]:
-    """审计一个数据集的全部方案，返回 JSON payload 列表（不写盘）。"""
+    """审计一个数据集上被绑定的方案，返回 JSON payload 列表（不写盘）。
+
+    ``schemes`` 必须已经是该数据集按 §2.4 绑定过滤后的方案列表（见 ``build_audit_plan``）。
+    """
     # 方案间字段大量重复：按字段去重只算一次双臂计数
     states = patient_landmark_states(cases, landmark_time)
     cache: dict[str, dict] = {}
@@ -288,6 +426,7 @@ def audit_dataset(
                 rows,
                 kept_fields=kept_fields,
                 n_patients=len(cases),
+                binding=(bindings or {}).get(scheme),
             )
         )
     return payloads
@@ -356,6 +495,34 @@ def write_summary_csv(path: Path | str, rows: list[dict]) -> Path:
     return path
 
 
+def prune_stale_outputs(
+    out_dir: Path | str,
+    plan: list[tuple[str, str]],
+) -> list[str]:
+    """删掉不在计划内的 ``{dataset}/{scheme}.json`` 与因此空掉的队列目录。
+
+    绑定变更后（S2b）旧产物必须清干净，否则 CPTAC/MMRF 与 HGCN_* 跨癌种文件会留在盘上。
+    只删本模块自己写出的 ``*.json``（两层的 ``{dataset}/{scheme}.json``）；返回被删的相对路径。
+    """
+    out_root = Path(out_dir)
+    if not out_root.exists():
+        return []
+    planned = {f"{dataset}/{scheme}.json" for dataset, scheme in plan}
+    removed: list[str] = []
+    for path in sorted(out_root.glob("*/*.json")):
+        rel = f"{path.parent.name}/{path.name}"
+        if rel not in planned:
+            path.unlink()
+            removed.append(rel)
+    for child in sorted(item for item in out_root.iterdir() if item.is_dir()):
+        try:
+            child.rmdir()  # 只删空目录
+        except OSError:
+            continue
+        removed.append(f"{child.name}/")
+    return removed
+
+
 def run_audit(
     *,
     datasets_config: Path | str = DEFAULT_DATASETS_CONFIG,
@@ -365,9 +532,14 @@ def run_audit(
     out_dir: Path | str = DEFAULT_OUTPUT_ROOT,
     event_summary: Path | str = DEFAULT_EVENT_SUMMARY,
     landmark_time: int = LANDMARK_T0,
+    binding: str = BINDING_SPEC,
+    prune: bool = False,
     quiet: bool = False,
 ) -> dict:
-    """跑全数据集 H1a 审计并落盘。返回 {"out_dir", "summary_csv", "n_datasets", "n_payloads"}。"""
+    """跑 H1a 审计（按 §2.4 绑定）并落盘。
+
+    返回 {"out_dir", "summary_csv", "n_datasets", "n_payloads", "n_schemes", "n_pairs", "binding"}。
+    """
     from common.clinical_io import load_clinical_cases
 
     scheme_names = list(schemes or LEAK_SCHEMES)
@@ -376,14 +548,31 @@ def run_audit(
     if not names:
         raise ValueError("H1a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
 
+    plan = build_audit_plan(names, scheme_names, binding=binding)
+    if not plan:
+        raise ValueError(
+            "空审计计划：所选数据集均不在本阶段范围（spec §2.4：仅 33 TCGA，"
+            f"CPTAC/MMRF 已剔除；数据集={names}）"
+        )
+    plan_names = plan_datasets(plan)
+    plan_scheme_names = plan_schemes(plan)
+    bindings = {
+        scheme: scheme_dataset_binding(scheme, names) for scheme in plan_scheme_names
+    }
     fields_by_scheme = {
-        scheme: load_scheme_fields(scheme, templates_root) for scheme in scheme_names
+        scheme: load_scheme_fields(scheme, templates_root) for scheme in plan_scheme_names
     }
     out_root = Path(out_dir)
+    if prune:
+        removed = prune_stale_outputs(out_root, plan)
+        if not quiet and removed:
+            print(f"清理旧产物 {len(removed)} 项: {', '.join(removed[:8])}"
+                  + (" …" if len(removed) > 8 else ""))
     payloads: list[dict] = []
-    for name in names:
+    for name in plan_names:
+        dataset_schemes = [scheme for item, scheme in plan if item == name]
         if not quiet:
-            print(f"\n######## leak audit: {name} ########")
+            print(f"\n######## leak audit: {name}  ({len(dataset_schemes)} 方案) ########")
         cases = load_clinical_cases(
             get_dataset_clinic_files(name, configs),
             project_ids=get_dataset_project_ids(name, configs),
@@ -392,10 +581,11 @@ def run_audit(
         dataset_payloads = audit_dataset(
             name,
             cases,
-            scheme_names,
+            dataset_schemes,
             fields_by_scheme,
             kept_fields=kept_fields,
             landmark_time=landmark_time,
+            bindings=bindings,
         )
         for payload in dataset_payloads:
             _json_dump(out_root / name / f"{payload['scheme']}.json", payload)
@@ -425,7 +615,9 @@ def run_audit(
     return {
         "out_dir": out_root,
         "summary_csv": summary_path,
-        "n_datasets": len(names),
+        "n_datasets": len(plan_names),
         "n_payloads": len(payloads),
-        "n_schemes": len(scheme_names),
+        "n_schemes": len(plan_scheme_names),
+        "n_pairs": len(plan),
+        "binding": binding,
     }
