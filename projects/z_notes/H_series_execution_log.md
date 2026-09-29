@@ -543,3 +543,77 @@
   4. S4 网格恢复 **138 组合**（已通知执行 agent 撤销 48 组合修正），优先级按 A：≥100 与 70–100 共 20 数据集（86 组合）先跑 → 30–70（16）→ <30（36）；训练不过滤，报告按 A 四档分层。
 - 决策点：无新增。
 - 状态：完成。
+
+---
+
+## S4 H1b 批跑放量
+
+- 时间 / 执行者：2026-09-30 / Claude（S4 执行 agent，接替中断的前任）
+- 目标：138 组合 × 2 臂（A=landmark_none 新链路报告值对照、B=landmark_0 三要件全开）× 2 分析器（clinic_cox + mlp_clinic_flatten，text 编码）= 552 conf，按数据协议 A 分波投放；臂 A 结果落 `results/A_manual_landmark/`，绝不触碰 `results/A_manual/`。
+- 输入：
+  - `z_notes/H_series_spec.md`（§2.2/§2.4/§2.5/§6/§12）、本日志 S3/R4/R6、`results/H0_dataset_availability/manifest.csv`（35 行，n_event 列）
+  - `results/A_manual/{33 数据集}/cindex.csv`（旧表）、`outputs/{dataset}/A_manual/{scheme}/`（臂 A embeddings 复用源）、`Clinic_Analyzer/data/datasets_csv/metadata/`（统一 label 源，33 TCGA 齐全）
+
+### 前置核对（R6 指定四点）
+
+**a. 旧表行覆盖**：33 表 × 5 分析器（mlp_clinic_mean/flatten、snn×2、clinic_cox）。按 §2.4 绑定清点：MULTISURV/INTEGRATIVE_DNN × 33、SURVPGC × 4（BRCA/COAD/READ/LIHC）、MMSURV × 6（BRCA/COAD/ESCA/LUAD/STAD/LIHC）、HGCN_* × 各自癌种——**138 组合中有 56 个（SURVPGC 29 + MMSURV 27）旧表无行**（旧 A_manual 未跑这些队列的这两方案），这些组合的 clinic_cox 无可比行，按 D3-3 记为"旧表无该行，非不一致"。
+
+**b. GPU/环境**：8×L40。投放时 nvidia-smi：GPU 0–4 被 zuorongchang/chenzhiyu 训练占满；GPU 5/6/7 为 zhoukeru 干预实验（标记 --allow-cotenancy）。决策：训练 drainer 用 GPU 5（当前仅本批 ~4GB/46GB）；编码走 A_pipeline 默认 DEFAULT_GPU="7"（现空）。conda：SurvPGC 3.9.25（run.sh 训练）、conch 3.10.20（编码）、base python 3.13.12（**汇总/投放/校验，硬条件 D3-1**）。
+
+**c. label 源**：33 TCGA metadata CSV 齐全；`results/A_manual_landmark/labels/` 上任 agent 只留下 tcga_brca 3 个文件，已用 `landmark_labels.build_landmark_label_file` 派生补齐 **32 个 `__landmark_0.csv` + sidecar**（33/33；排除数例：brca 1051→1030、acc 92→91、coad 429→409、laml 186→173、prad 500→500、tgct 247→247）。
+
+**d. 臂 A 复用**：82/138 组合已有 `outputs/{ds}/A_manual/{scheme}/embeddings/pt`（MULTISURV/INTEGRATIVE_DNN×33 + HGCN×6 + SURVPGC×4 + MMSURV×6），**只读复用，未重生成**（旧表 mtime 2026-09-07 23:59、旧 embeddings 2026-09-06 均未变）；缺的 56 组合臂 A embeddings 经 `--landmark_time none` 新链路生成（写入原本不存在的目录，无覆盖）。
+
+### 网格与优先级（138 组合，按 A 判据，训练不过滤）
+
+- 波 1（≥100 的 15 + 70–100 的 5 = 20 数据集，86 组合）：**A1 160 + A1H 12 + B1 160 + B1H 12 = 344 conf 已全部投放**；
+- 波 2（30–70：UVM/ACC/UCS/KIRP，16 组合，64 conf）与波 3（<30：9 数据集，36 组合，144 conf）：编码已全部完成，conf 由 watch 进程在波 1 队列排空后自动按序投放（或手动 `bash scripts/s4_h1b_queue.sh enqueue A2/B2/A3/B3`）。
+
+### 投放/完成计数（收尾时点）
+
+- 编码：193 个 pipeline 任务（臂 A 56 + 臂 B 137，波 1→3 排序）**192 完成、0 真实失败**（1 条为清单表头误入，已修脚本）。
+- conf：投放 344/552（波 1 全量）；done 135/552，failed 0；drainer（GPU 5，8 workers）与 watch 进程仍在后台运行。
+- 新代码（本步提交）：`scripts/s4_enqueue.py`（enqueue/summarize/status/emit-encodes，读 manifest 分波、不硬编码名单，无 drain）、`scripts/s4_h1b_queue.sh`（encode/drain/watch/status 编排）、`scripts/s4_validate_firstwave.py`（diff-cox / prompts 审计 / 同环境重跑比对）。
+
+### 首波校验（三条硬条件，收尾时点快照）
+
+**① python 3.13.12 统一汇总**：前任遗留的 GBM×MULTISURV arm A clinic_cox 行 std 末位 ULP 不一致（`...1313` vs 旧表 `...13131`，系 SurvPGC 3.9 汇总所致），已删行后用 3.13.12 重汇总 → **与旧表逐位 diff=0**；此后所有 enqueue/drainer/summarize 均在 3.13.12 下运行。
+
+**② label 源统一 Clinic_Analyzer metadata（两臂同源）**：臂 A conf 无 LABEL_FILE_PATH → run.sh 默认取 Clinic_Analyzer；臂 B conf 带 LABEL_FILE_PATH 指向派生 `__landmark_0.csv`（由同一 Clinic_Analyzer 源派生）；抽查 `tcga_blca__MULTISURV__landmark_0` run 的 effective_config 确认。
+
+**③ 按模态一致性判据**：
+- clinic_cox 臂 A vs 旧表逐位 diff：**已比 45 组合，diff=0 42 个，不符 3 个**，均已归因：
+  1. `COAD×INTEGRATIVE_DNN`（旧 0.496015348 / 新 0.495923773）：oldlabel 探针（换回 SurvPGC label+clinical 重跑）= 新链路结果 **5 折全帧逐位一致** → 与 label 源无关，系旧环境（2026-09-07，Clinic_Analyzer 磁盘代码在 .gitignore 内无版本）训练动力学 FP 漂移，量级 9.2e-5，远小于折间 std 0.111；
+  2. `LIHC×MULTISURV`（0.479899412 / 0.479612985）：oldlabel 探针 val_cindex **5 折逐位 = 新链路**（loss 4 折末位不同，系 SurvPGC 副本行序差异改变 batch 组成）→ 同属旧环境 FP 漂移，2.9e-4，std 0.064 内；
+  3. `STAD×INTEGRATIVE_DNN`（0.532964423 / 0.514300510）：**实质性差异，归因=旧 label 源缺患者**——SurvPGC 副本比 Clinic_Analyzer 少 67 例（其中 67/67 在 5 折 splits 内、26 个事件），旧表 STAD 各行是在不完整患者集上算的。同型：kich 少 47、prad 少 97、read 少 14（全部在 splits 内）；brca/coad/kirc/kirp/lihc 无 splits 内病例差（共享病例的 survival_months/censorship 9/9 研究逐位相同）。
+- mlp 同环境重跑一致性（det1，改 RUN_NAME 重跑同 conf）：BLCA×MULTISURV、BRCA×MULTISURV、ESCA×HGCN_ESCA（mlp_clinic_flatten）**3/3 组合 5 折全帧逐位 ALL MATCH**。
+- 控制变量审计（两臂字段表逐字一致，抽查 9 组）：BRCA×MULTISURV、ACC/BLCA×{MULTISURV,SURVPGC,MMSURV,INTEGRATIVE_DNN}——列集/列序、患者行序、行数全部一致，差异只出现在取值单元格（MULTISURV 仅 2 个 derived 治疗列变化：BRCA 173/127、BLCA 82/44、ACC 59/17，与 S3 记录一致；其余方案字段在 t0 掩码下取值不变）。**失败 0**。
+- 臂 B 三要件落盘抽查：`tcga_blca__MULTISURV__landmark_0` 用派生 label（split 文件未动）、landmark_0 embeddings 目录正确。
+
+### 预计墙钟与续跑方法
+
+- 实测吞吐：8 workers / GPU 5，42 min 完成 132 run（64 mlp + 71 cox，mlp 有效并行 ≈5.5×）。**预计总墙钟 ≈ 4–5 小时**（波 1 剩余 ~1.5h + 波 2/3 ~1.5h），即 2026-09-30 午后可全部完成。
+- 续跑（自动化）：watch 进程（PID 见 S4_watch.log）在队列排空时按 A1→B1→A2→B2→A3→B3 投放下一波、drainer 退出时自动重启、每 5 min 汇总表行、552 全 done 自动退出。
+- 手动续跑（watch 失效时）：`bash scripts/s4_h1b_queue.sh status` 看进度 → `bash scripts/s4_h1b_queue.sh enqueue <下一波 slice>` → `bash scripts/s4_h1b_queue.sh drain` 重启 drainer → 完成后 `python3 scripts/s4_enqueue.py --slice <slice> --summarize` 汇总。failed conf 重跑 enqueue 即自动重入队。全部命令要求 base python 3.13.12。
+- 监控：`A_pipeline/S4_drain.log`（训练）、`A_pipeline/S4_watch.log`（投放节奏）、`A_pipeline/S4_summary.log`、`bash scripts/s4_h1b_queue.sh status`；首波校验重跑 `python3 scripts/s4_validate_firstwave.py --diff-cox`。
+
+### 偏差与原因
+
+1. 前任遗留 48 组合网格**已按 R6 作废**，未使用；其 GBM 表行 ULP 问题已修（见首波校验 ①）。
+2. 前任遗留 `outputs/TCGA-READ/A_manual/L0/landmark_0` 等非网格目录未动。
+3. 臂 A 缺 embeddings 的 56 组合（SURVPGC/MMSURV 旧 A_manual 未跑）按新链路在空目录生成——属补建非覆盖。
+4. 编码 worker 首行误把清单表头当任务执行（1 次无害失败），脚本已改为 grep 过滤。
+5. det1 首次 sed 拼 RUN_NAME 时引入反斜杠，两进程已 kill 并以 python 重写 conf 后重跑（残留部分目录被同名前缀重跑覆盖，无影响）。
+6. `s4_enqueue.py` 的 summarize 沿用 `run_cindex_queue` 的 `{name}[{source}]` 表目录键，与旧 A_manual 表目录一致。
+
+### 决策点
+
+- 无新增；决策点状态表未改。D3 三条硬条件已按模态执行并逐条核验（clinic_cox 不符组合已列出并归因，供用户裁定是否接受"旧环境 FP 漂移 + 旧 label 源缺患者"两类归因）。
+
+### 状态
+
+完成（本步范围：现场清理、前置核对、全量编码、波 1 全量投放、首波校验、自动化续跑部署）。批跑本体仍在后台进行（done 135/552 @ 收尾），按上文续跑方法直至 552 完成；未谎报全部完成。
+
+### 提交
+
+`git add scripts/s4_enqueue.py scripts/s4_h1b_queue.sh scripts/s4_validate_firstwave.py z_notes/H_series_execution_log.md` → "S4: H1b 批跑放量(138组合×2臂×2分析器)"（未 push；未用 git add -A）。
