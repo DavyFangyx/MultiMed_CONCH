@@ -171,3 +171,78 @@
 - 偏差与原因：无。
 - 决策点：D2 口径部分已确认；D2 的 MMRF 是否纳入仍待用户确认。
 - 状态：完成。
+
+---
+
+## S2 H1a 泄露审计
+
+- 时间 / 执行者：2026-09-29 / Claude（S2 执行 agent）
+- 目标：(1) 实现 H1a 泄露审计模块（**无训练**，纯描述性统计）：对 `datasets.json` 全部注册队列 × 10 个论文方案，逐字段量化 `leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none`（= t0 时刻该字段不可得的比例）；(2) 产出 `results/leak_audit` 明细 + 汇总与 `results_display/leak_audit` 两张图；(3) 抽查 ≥3 个 (dataset, scheme, field) 与手工 JSON 核对（本步实际做 4 个）；(4) 不跑训练、不改 `src/` 其他模块与 `A_pipeline`。
+- 输入（路径 + 条数/hash）：
+  - `z_notes/H_series_spec.md` §2.1/§2.4/§2.5/§5（口径唯一来源；C1 更名 static_only 后 §5.2 措辞已澄清，本步审计对象不变）
+  - `datasets.json`（35 队列 = 33 TCGA + CPTAC + MMRF，md5 `5918c06884bc`）
+  - `A_pipeline/templates/{scheme}/fields.json`（10 个方案字段表，spec §2.4 名单：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN / HGCN_{KIRC,LIHC,ESCA,LUSC,LUAD,UCEC}）
+  - `rawdata_stats/{dataset}/landmark_0/kept_fields.json`（35 个，判定 `not_in_bank`）
+  - `rawdata_stats/_shared/event_summary.csv`（35 行，汇总表并列 `n_event`/`event_rate`）
+  - 实现参考（只读）：`src/discovery/field_bank.py::extract_field_bank_raw_values`/`load_kept_fields`、`src/discovery/landmark.py::timed_family_for_field`/`patient_landmark`、`src/common/fields.py::field_gdc_path`、`src/common/datasets.py`
+- 命令与参数：
+  - `python3 scripts/run_leak_audit.py`（默认 `--dataset all --schemes <10 方案> --landmark_time 0 --event_summary rawdata_stats/_shared/event_summary.csv`）；再同命令 `--quiet` 重跑一次做可重复性校验
+  - `python3 -m pytest tests/test_leak_audit.py -q` → 10 passed
+  - `python3 results_display/leak_audit/scripts/audit_leak.py`（出图 + 聚合表）
+  - 抽查：`python3 /tmp/verify_leak_spotcheck.py`（临时脚本，只读原始 clinic JSON、**不 import `src/leak`**，按 `rawdata_stats/TIME_CRITERIA.md` 手写 mask 规则独立重算）
+- 产物（路径 + 条数/hash）：
+  - `results/leak_audit/{dataset}/{scheme}.json`（**350 个** = 35 队列 × 10 方案；逐字段 `field/family/n_valid_none/n_valid_t0/leak_rate/leak_rate_undefined/not_in_bank` + 审计元数据 `audited_path/audit_mode/mask_applicable/n_values_none/n_values_t0`）
+  - `results/leak_audit/leak_audit_summary.csv`（**350 行** + 表头，md5 `cc7ece230a05`；列见 spec §5.2-5 + `n_not_in_bank/n_leak_rate_undefined/n_event/event_rate`）
+  - 代码：`src/leak/__init__.py`、`src/leak/audit.py`（431 行）、`src/leak/cli.py`（78 行）、`scripts/run_leak_audit.py`（17 行，thin entry，与 `scripts/run_univariate_cindex.py` 同型）、`tests/test_leak_audit.py`（280 行）
+  - 图：`results_display/leak_audit/leak_audit_overview.png`（A 工作 × 癌种 leaky_ratio 热图，黑框标 HGCN 工作与其同癌种队列；B 各工作跨队列分布）、`results_display/leak_audit/leak_audit_fields.png`（A 逐字段 × 工作平均 leak_rate 热图；B 字段级泄露强度）、`results_display/leak_audit/scripts/audit_leak.py`（409 行）、`results_display/leak_audit/leak_audit_{scheme,field}_mean.csv`
+  - 注：`results/**`、`results_display/**`、`*.png`、`*.csv` 均在 `.gitignore` 内，故产物目录不入库；`results_display/leak_audit/scripts/audit_leak.py` 不在 `!results_display/scripts/**` 白名单内，提交时用 `git add -f` 单加（图片/CSV 仍不入库）。
+
+### 审计
+
+**覆盖**：35/35 队列（含 MMRF）× 10/10 方案 = 350 个 (dataset, scheme) 组合；2520 条 (dataset, scheme, field) 记录，去重后 **22 个不同字段**；无缺文件、无异常退出。`n_event/event_rate` 在 350 行全部并上（无缺失）。
+
+**抽查（规格要求 3 组，本步做 4 组）**：独立重算脚本只读原始 clinic JSON，逐患者手写 mask 规则（t_hi = ≥t_lo 的最早随访日，否则回退 h2 = max(末次随访日, 末次疾病状态日, 复发日, 已定位事件日)；keep iff 状态非 unlocated/non_informative 且有限 t_hi ≤ 0）：
+
+| dataset × scheme × field | 审计记录 none→t0 (rate) | 独立重算 none→t0 | 结论 |
+|---|---|---|---|
+| TCGA-LUSC × HGCN_LUSC × `exposures[].pack_years_smoked` | 427 → 427 (0.0000) | 427 → 427 | 一致（exposures 无时点家族，mask 不作用） |
+| TCGA-ESCA × HGCN_ESCA × `derived.radiation_therapy` | 165 → 11 (0.9333) | 165 → 11 | 一致（见下"负性记录"） |
+| CPTAC × SURVPGC × `diagnoses[].ajcc_pathologic_stage` | 1410 → 0 (1.0000) | 1410 → 0 | 一致（CPTAC 分期全部落在 t0 之后） |
+| TCGA-KIRP × SURVPGC × `diagnoses[].ajcc_pathologic_stage` | 261 → 238 (0.0881) | 261 → 238 | 一致 |
+
+**抽查中的定位过程（实现细节，重要）**：ESCA × `derived.radiation_therapy` 首算 t0=14，与记录的 11 差 3 人。逐患者打印后定位到 `src/time_stats.py::_collect_entity_slots` 对 `treatment_or_therapy == "no"` 的负性治疗记录**不建槽位**（`_is_negative_therapy`）——mask 臂看不到这类记录，而非 mask 臂走原路径仍会抽到。把该规则补进独立重算后 4/4 完全一致。结论：审计数字与 Field Bank/mask 现有实现自洽；副作用是 derived 治疗字段的 `leak_rate` 略偏高（负性记录被当作"未来可得"）。本步按现状记录、未改口径（改口径属 S3/A_pipeline 范围）。
+
+**可重复性**：同命令重跑一次（单次全量 82 s，exit 0），`leak_audit_summary.csv` 与首跑 **`diff` = 0**（两次 md5 均为 `cc7ece230a05`）；抽查 2 个逐字段 JSON 对比一致（仅 `generated_at` 时间戳不同）。
+
+**测试**：`tests/test_leak_audit.py` 10 passed（全部用构造的小 JSON 病例，未碰真实数据、未跑 Clinic_Analyzer），覆盖：患者级 leak_rate 被 t0 mask 生效（2→1 = 0.5）、无时点字段永不被 mask、`project.project_id` 常数零泄露、derived 字段按底层槽位审计且与源路径计数一致、derived 底层为无时点家族时零泄露、`n_valid_none=0` → NaN + 标志位且 NaN 不进均值、`not_in_bank` 标记（含 kept_fields 缺失时全 False + `kept_fields_available=false`）、方案字段表读取去重、汇总 CSV 列序与 event 并列、CLI 端到端（tmp 数据集/templates/event_summary）。
+
+**未跑训练 / 未改他人文件**：通过（本步只新增 `src/leak/`、`scripts/run_leak_audit.py`、`tests/test_leak_audit.py`、`results_display/leak_audit/`，并追加本日志）。
+
+### 头部结论（谁泄露最严重 / 典型泄露字段）
+
+- **方案级（跨 35 队列平均 leaky_ratio，降序）**：HGCN_UCEC **0.467** > HGCN_LUAD 0.407 > MULTISURV 0.343 > HGCN_LIHC 0.329 > HGCN_LUSC 0.314 > HGCN_ESCA 0.299 > HGCN_KIRC 0.296 > MMSURV 0.263 > SURVPGC 0.200 > INTEGRATIVE_DNN **0.114**。即：**HGCN 系列（尤其 UCEC/LUAD）与 MULTISURV 泄露占比最高，INTEGRATIVE_DNN 最低**；UCEC 高的直接原因是方案只有 6 个字段，两个 derived 治疗字段一泄露就把占比顶到 0.67。
+- **字段级（跨队列平均 leak_rate）**：`derived.radiation_therapy` 与 `derived.pharmaceutical_therapy` 是唯一"全队列级"泄露源——**34/35 队列 rate>0，平均 0.939**（TCGA-BRCA 0.976 = 1094→26；TCGA-UCEC 0.965 = 548→19；TCGA-LUAD 0.900 = 468→47），即 90%+ 患者的治疗记录都发生在 t0 之后。
+- 第二梯队：**诊断分期/形态学族**，量级小一个数量级——`ajcc_pathologic_m` 0.107 / `_t` 0.093 / `_n` 0.089 / `staging_system_edition` 0.081 / `ajcc_pathologic_stage` 0.071 / `morphology`、`primary_diagnosis`、`site_of_resection_or_biopsy` 0.066–0.087。MMSURV / SURVPGC / INTEGRATIVE_DNN 的泄露字段**全部**是这一族（例：CPTAC × SURVPGC stage 1410→0，rate 1.0；CPTAC × MMSURV T/N/M 均 1.0）。
+- **完全不泄露**：`demographic.*`（age/sex/race）、`exposures.*`、`project.project_id` —— 与 spec §2.3 的"只有 timed 家族被 mask"一致。
+- **队列差异**：平均 leaky_ratio 最高 TCGA-HNSC/KIRP/LUAD/LUSC/PAAD 0.493，最低 TCGA-BRCA/CHOL/DLBC/ESCA/LAML 0.177；差异由方案字段数（字段越少、单个 derived 字段占比越高）与诊断分期是否整体落在 t0 后决定。
+- **"无依据"旁证（本步只记录，不改决策表）**：`demographic.age_at_index` 在 **35/35** 队列 `not_in_bank`（Field Bank 用的是 `diagnoses[].age_at_diagnosis`），`project.project_id` 35/35、`derived.*` 245/245 亦不在 bank。审计未因 `not_in_bank` 跳过任何字段。
+
+### 偏差与原因
+
+- **偏差 1（口径：计数单位）**：spec §5.2-2 字面写"有效值**数**"，实现按**患者数**（有 ≥1 个有效值的患者数）计数。理由：§2.1 把 leak_rate 定义为"该字段在 t0 时刻不可得的**患者**比例"，且 Field Bank 的缺失 mask 本身就是患者级（`generate_field_bank_prompt_row` 中 `valid = bool(valid_vals)`）。为避免二义，JSON 同时保留取值级计数 `n_values_none/n_values_t0`（本步不参与聚合），如需切换口径可零成本重算。
+- **偏差 2（口径：derived.* 特判不可照字面执行）**：spec §5.2-4 括号称"现有 `extract_derived_raw_values` 已支持 landmark 参数"——该函数**只适用 4 个纵向变化字段**（ECOG/Karnofsky/BMI/weight change，需 `is_derived_field` 为真且 `landmark` 传 extract_state dict），对论文级 `derived.radiation_therapy` / `derived.pharmaceutical_therapy` / `derived.years_smoked` 一律返回 `[]`。故按该条**主句**（"landmark 作用于其底层槽位"）实现：用 `src/common/fields.py::field_gdc_path` 映射到底层槽位后审计槽位本身——治疗两字段 → `diagnoses[].treatments[].treatment_or_therapy`（family `diagnoses_treatments`，会 mask），`derived.years_smoked` → `exposures[].exposure_duration_years`（无时点家族）。无时点底层按构造声明 `mask_applicable=false`、leak_rate 恒 0（JSON 的 `audit_mode` 区分 `derived_slot` 与 `longitudinal_derived`，可事后识别）。
+- **偏差 3（实现一致性发现，非错误）**：见"审计"节的负性治疗记录规则；使 derived 治疗字段 `leak_rate` 略偏高。未改现有实现。
+- **偏差 4（`not_in_bank` 粒度）**：按字段路径与 `kept_fields.json` **精确匹配**，不做等价字段归并；`demographic.age_at_index` 与 bank 的 `diagnoses[].age_at_diagnosis` 语义相同但路径不同，故被标 `not_in_bank`——这正是"无依据"问题的原始形态，保留原样以便其他步骤引用。
+- **偏差 5（MMRF）**：已按 §5.1 纳入审计（H1a 为描述性审计，不依赖 D2）；其 H3 用途仍待 D2 确认。MMRF 的 10 行已进汇总表（`n_event=191`）。
+
+### 决策点
+
+- 无新增、未改动决策表（D0–D5 状态保持原样；D1/D2 属 S3/S4 与 S1 的范围）。本步不依赖任何未决决策点，可直接被后续步骤引用。
+
+### 状态
+
+完成。H1a 全部产物就绪；结论可直接用于 H3b 主图的"泄露背景"与 H1b 的字段完整性讨论。
+
+### 提交
+
+`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/H_series_execution_log.md` → "S2: H1a 泄露审计模块与全数据集审计结果"（其中 `results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；`results/**`、`results_display/**` 的 png/csv 产物不入库；未 push）。提交 hash：`git log -1 --format=%h`（见仓库历史）。
