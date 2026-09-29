@@ -629,3 +629,14 @@
 - 审计：重启后 45s 内 running=8、训练日志正常滚动；done 345/552、failed 0。
 - 决策点：无。
 - 状态：完成（批跑恢复排空中，预计 1–1.5 小时完成）。
+
+---
+
+## S4 批跑恢复记录 2（07:40，GPU 迁移）
+
+- 时间 / 执行者：2026-09-30 07:40 / Claude（主会话，用户指令）
+- 目标：按用户指令把训练迁出 GPU 7（用户有进程），改用 GPU 2/3/4。
+- 动作：停止 GPU 7 上的 watch/drainer 进程树；回收 8 个 running conf 回 queue；以 CUDA_VISIBLE_DEVICES=2,3,4 重启 drainer（8 workers）与 watch。
+- 结果：done 345→365（迁移前又完成 20）；被中断的 8 个 conf（KIRP/UCS 臂 A mlp）进 failed 桶，属 kill 中断而非真实失败，watch 下一轮 enqueue 会自动重入队；当前 running=4、queue=0，排空中。
+- 决策点：无。
+- 状态：完成。
