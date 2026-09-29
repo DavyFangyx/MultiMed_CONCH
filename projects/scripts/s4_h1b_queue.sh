@@ -64,6 +64,7 @@ cmd_drain() {
         --dataset TCGA-BRCA --scheme MULTISURV --landmark_time none \
         --encoding text --analyzer clinic_cox --workers "$WORKERS" \
         > "$DRAIN_LOG" 2>&1 &
+    echo $! > A_pipeline/S4_drain.pid
     echo "[S4] drainer PID: $!  (GPU $GPU_TRAIN, workers $WORKERS, log: $DRAIN_LOG)"
     echo "[S4] stop: kill $!"
 }
@@ -108,6 +109,18 @@ cmd_watch() {
             r=$(ls "$root"/running/*.conf 2>/dev/null | wc -l)
             done_c=$(ls "$root"/done/*__landmark_*.conf 2>/dev/null | wc -l)
             now=$(date +%s)
+            dpid=$(cat A_pipeline/S4_drain.pid 2>/dev/null || true)
+            alive=0
+            if [ -n "$dpid" ] && kill -0 "$dpid" 2>/dev/null; then alive=1; fi
+            if [ "$alive" -eq 0 ] && { [ "$q" -gt 0 ] || [ "$r" -gt 0 ]; }; then
+                echo "[S4][watch] $(date +%F_%T) relaunch drainer (q=$q r=$r)" >> A_pipeline/S4_watch.log
+                env CUDA_VISIBLE_DEVICES="$gpu" $python3 A_pipeline/run.py cindex \
+                    --dataset TCGA-BRCA --scheme MULTISURV --landmark_time none \
+                    --encoding text --analyzer clinic_cox --workers "$workers" \
+                    >> A_pipeline/S4_drain.log 2>&1 &
+                echo $! > A_pipeline/S4_drain.pid
+                sleep 30
+            fi
             if [ "$q" -eq 0 ] && [ "$r" -eq 0 ]; then
                 enqueued=0
                 for s in $waves; do
@@ -123,12 +136,13 @@ cmd_watch() {
                     echo "[S4][watch] $(date +%F_%T) ALL 552 done" >> A_pipeline/S4_watch.log
                     break
                 fi
-                if [ "$enqueued" -eq 0 ] && ! pgrep -f "A_pipeline/run.py cindex" >/dev/null; then
+                if [ "$enqueued" -eq 0 ] && [ "$alive" -eq 0 ]; then
                     echo "[S4][watch] $(date +%F_%T) relaunch drainer" >> A_pipeline/S4_watch.log
                     env CUDA_VISIBLE_DEVICES="$gpu" $python3 A_pipeline/run.py cindex \
                         --dataset TCGA-BRCA --scheme MULTISURV --landmark_time none \
                         --encoding text --analyzer clinic_cox --workers "$workers" \
                         >> A_pipeline/S4_drain.log 2>&1 &
+                    echo $! > A_pipeline/S4_drain.pid
                 fi
                 for s in $waves; do
                     $python3 scripts/s4_enqueue.py --slice "$s" --summarize >> A_pipeline/S4_summary.log 2>&1
