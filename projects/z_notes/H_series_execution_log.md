@@ -8,7 +8,7 @@
 |---|---|---|---|
 | D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | 待确认 | — |
 | D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | 待确认 | **推荐：照搬 spec §4.2 现值**（150/70/30、rate<0.1 降一级）。理由：event_impact_analysis 的折间 std 分档表（§五）显示 ≥150 档 std 0.019–0.052，正好落在"能分辨 0.05 差异"的门槛内侧；本步 manifest 已按此跑出 12/10/4/9 的分布，与原型 README 的 12/22(≥70)/4/9 完全吻合，无调整压力。**唯一建议微调**：把 R7（退化折）从"仅标注"升级为"降级"，因为 PCPG/TGCT/DLBC/THYM 的退化折来自结构性事件稀少，标注不足以保护聚合图。 |
-| D2 | landmark 有效事件口径（mask vs 排除患者）+ MMRF 是否纳入 | 待确认 | **口径推荐：mask（已实现）+ 排除 t≤T 患者（需新增）+ 终点保持原 event**；有效事件数 = `#{event==1 且 ground_truth_time > T}`。理由见 S1 调查：现实现只 mask 字段值、不排除患者、不动终点，等价于"landmark 对事件数零影响"，无法支撑 §4.2-6 的"门槛重套"。MMRF **推荐纳入**（n_event=191、每折 38–39、无退化折，与 TCGA 主集同档）；但其 landmark 变换幅度大（lm365→118、lm730→47），须按新口径重套档位后再决定是否进 S4/S6。 |
+| D2 | landmark 有效事件口径（mask vs 排除患者）+ MMRF 是否纳入 | **口径已确认**（用户指令 2026-09-29）；**MMRF 待确认** | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。MMRF **推荐纳入**（n_event=191、每折 38–39、无退化折）；但其 landmark 变换幅度大（lm365→118、lm730→47），须按新口径重套档位后再决定是否进 S4/S6。 |
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | 待确认 | — |
 | D4 | H2 最优组合口径（sig_stop 推荐 vs 历史 best） | 待确认 | — |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
@@ -156,4 +156,18 @@
 - 审计：逐条核对影响面——S1 manifest（无影响，tier 与命名无关）；S2 H1a 审计（无影响：leak_rate 对比的是取值 mask off 与 t0，其"landmark_none 有效值"= 无 mask 取值全集，措辞已在 spec §5.2 澄清，无需重跑）；S3 A_pipeline `--landmark_time`（`none` = 无 mask 取值，与 static_only 概念不同，保留 none 值；S3 不受影响）；S5 生成 field-bank 变体时用新名 static_only（届时同步更名 rawdata_stats/{dataset}/landmark_none 目录）；H3b 主图改为 landmark_0 vs {365,730}，static_only 对照进补充。
 - 偏差与原因：无。
 - 决策点：无新增（用户已拍板，直接生效）。
+- 状态：完成。
+
+---
+
+## 口径变更 C2：经典 landmark 三要件
+
+- 时间 / 执行者：2026-09-29 / Claude（主会话，用户指令）
+- 目标：修正现有 landmark 规则的漏洞。经典 landmark 分析（Anderson 1983；van Houwelingen dynamic prediction / landmarking）要求三件事同时做到：① 只保留 T 时刻仍在风险集内的患者；② 时间原点平移到 T（gt−T）；③ 协变量只用 T 前信息。现有实现只有 ③（值级 mask），① ② 缺失——① 是患者集偏差（T 前死亡者带着"未来终点"留在集内），② 对 c-index 不变但为规范实现。
+- 输入：用户指令（2026-09-29 会话内）。
+- 命令与参数：无（规格文档更新；已通过 SendMessage 将新要求补发给正在执行的 S3 agent）。
+- 产物：spec §2.5（三要件定义）、§4.2-6（有效事件数口径）、§6.1（S3 实现要求：mask + 风险集排除 + gt−T + 平移不变性自检）；本日志 D2 行更新（口径部分标记已确认，MMRF 部分仍待确认）。
+- 审计：S1 的 D2 推荐与本指令一致；S1 的 strict_landmark_exclude_le_T 候选数值可直接采用，无需重跑。S2（H1a 审计）不受影响（leak_rate 是值级对比）。S3 受影响：实现范围从"仅 mask"扩大为三要件。
+- 偏差与原因：无。
+- 决策点：D2 口径部分已确认；D2 的 MMRF 是否纳入仍待用户确认。
 - 状态：完成。

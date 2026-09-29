@@ -56,6 +56,11 @@ leak_rate(f, D) = 1 − n(landmark_0 下有效值) / n(landmark_none 下有效�
 
 ### 2.5 时间点与 landmark 口径
 
+- **landmark 定义 = 经典三要件**（Anderson 1983；van Houwelingen dynamic prediction / landmarking），三件事必须同时做到：
+  1. **风险集**：只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T` 者——T 前死亡者不在 T 风险集，T 前删失者无 T 后随访）；
+  2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
+  3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
+- 当前实现只有第 3 条——这是已知漏洞，S3/S4 必须补齐第 1、2 条。
 - **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（H1b 臂 B、H2 搜索与三臂、H3b 主图）默认 t0。
 - 365 / 730 作为敏感性；原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups，既非无处理也非规范处理）**更名 `static_only`**，**移出主图**，仅进补充材料。
 - 两个概念澄清（勿混用）：
@@ -97,7 +102,7 @@ H0 是把"哪些数据集能进哪些实验"做成可复现、可审计、可回
 3. `30 ≤ n_event < 70` → **补充集**（补充材料，bootstrap CI）；
 4. `n_event < 30` → **排除集**（训练实验不跑，仅 H1a 审计）；
 5. `event_rate < 0.1` → 降一级（次级规则）；
-6. landmark 变体（365/730）的门槛用**过滤后有效事件数**重套，不用原始总数（口径见 D2）；
+6. landmark 变体（365/730）的门槛用**过滤后有效事件数**重套，不用原始总数；有效事件数 = `#{event==1 且 ground_truth_time > T}`（经典 landmark 三要件，见 §2.5）；
 7. 退化折（c-index 精确 0.0 / 1.0）→ 该 (dataset, scheme) 点标注并降级；
 8. 多字段实验 EPV：每折事件数 ≥ 10 × 字段数。
 
@@ -152,7 +157,7 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 
 ### 6.1 A_pipeline landmark 扩展（S3 实现）
 
-- `A_pipeline/src/extract.py` 支持 `--landmark_time {0,365,730,none}`（默认 `none`，**行为与现有完全一致**）：timed family 槽位只保留 `t_hi <= T` 的取值，其余按现有缺失规则处理；复用 `projects/src/discovery/landmark.py` 的患者级时间记录与 mask（A_pipeline 内通过 sys.path 接入 projects 的 `src`）。
+- `A_pipeline/src/extract.py` 支持 `--landmark_time {0,365,730,none}`（默认 `none`，**行为与现有完全一致**）：按经典 landmark 三要件（§2.5）实现——① 协变量 mask：timed family 槽位只保留 `t_hi <= T` 的取值，其余按现有缺失规则处理（复用 `projects/src/discovery/landmark.py` 的患者级时间记录与 mask，A_pipeline 内通过 sys.path 接入 projects 的 `src`）；② 风险集：`ground_truth_time <= T` 的患者从训练/评估集排除；③ 时间原点：label 时间改为 `gt − T`，并做一次 c-index 平移不变性自检（365 上验证重 base 与不重 base 数值一致）。
 - `pipeline` / `json2prompt` / `encode` / `baseline` 命令透传该参数；产物落 `outputs/{dataset}/A_manual/{scheme}/landmark_{T}/`（`none` 时维持现有目录不变）。
 - cindex 结果落 `results/A_manual_landmark/{dataset}/cindex.csv`，**不覆盖** `results/A_manual/`；走现有 A_manual 队列调度（`A_pipeline/run.py cindex`）。
 
