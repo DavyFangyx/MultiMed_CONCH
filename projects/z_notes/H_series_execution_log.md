@@ -375,3 +375,146 @@
 - 对 33 TCGA 的映射（按现有 event_summary）：≥100 → **15 个**（PAAD(100)、COAD(102)、LGG(126)、LIHC(132)、LAML(133)、BRCA(152)、STAD(175)、KIRC(177)、BLCA(182)、LUAD(188)、LUSC(220)、SKCM(223)、HNSC(224)、OV(349)、GBM(492)）；70–100 → **5 个**（CESC(72)、MESO(74)、ESCA(77)、UCEC(91)、SARC(99)）——**协议未覆盖此区间，待用户补**；30–70 → 4 个（UVM(33)、ACC(34)、UCS(35)、KIRP(44)）；<30 → 9 个（READ、CHOL、THCA、KICH、PRAD、DLBC、THYM、TGCT、PCPG）。
 - 待补（已写入 spec §12 U1）：70–100 区间的处理规则；协议表是否还有其余判据行（event_rate / EPV / 退化折 / landmark 有效事件重套等）。
 - 状态：完成（仅记录；H0 脚本未改，等协议补全后统一落地）。
+
+---
+
+## S2b H1a 审计按新绑定重跑
+
+- 时间 / 执行者：2026-09-30 / Claude（S2b 执行 agent）
+- 目标：(1) 把 `src/leak/` 的范围从「35 队列 × 10 方案全交叉」改为 **spec §2.4 绑定**——HGCN_* 六方案只跑各自癌种、泛癌种四方案 × 33 TCGA、CPTAC/MMRF 完全剔除（用户决议见本日志 R1）；(2) 删除旧产物（含 212 个越界/错误组合）并按新范围重算；(3) 抽查 2 组以上与手工 JSON 重算核对；(4) 重生成汇总与两张图；(5) 补绑定回归测试。全程无训练。
+- 输入（路径 + 条数/hash）：
+  - `z_notes/H_series_spec.md` §2.4（方案×数据集绑定）、§5.1（审计范围）、§12 U2
+  - `datasets.json`（35 队列 = 33 TCGA + CPTAC + MMRF，md5 `5918c06884bc`）
+  - `A_pipeline/templates/{scheme}/fields.json`（10 方案字段表；**其 `datasets` 键是旧的全绑定，本步不读**）
+  - 旧产物快照：`results/leak_audit/leak_audit_summary.csv`（350 行，md5 `cc7ece230a05`）→ 备份 `/tmp/leak_audit_summary_S2_old.csv`；旧 `results_display/leak_audit/leak_audit_{scheme,field}_mean.csv` → `/tmp/old_*.csv`
+  - 实现参考（只读）：`src/discovery/field_bank.py::extract_field_bank_raw_values`、`src/discovery/landmark.py`、`src/time_stats.py::_collect_entity_slots`、`src/common/fields.py::get_primary_diagnosis`
+- 命令与参数：
+  - `python3 scripts/run_leak_audit.py --prune`（默认 `--binding spec`、`--landmark_time 0`；首跑 4.4 s，exit 0，prune 删 214 项）
+  - 可重复性：同命令加 `--quiet` 重跑（第二次 prune 无删除项），`leak_audit_summary.csv` **两次 md5 均为 `b5de75584e9a1449bfca9d188e827cd6`**（diff = 0）
+  - 抽查：`python3 /tmp/verify_leak_spotcheck_s2b.py`（只读原始 clinic JSON、**不 import `src/leak`**，按 `rawdata_stats/TIME_CRITERIA.md` 手写 mask 规则）
+  - 出图：`python3 results_display/leak_audit/scripts/audit_leak.py`
+  - 测试：`python3 -m pytest tests/test_leak_audit.py -q` → **17 passed**；`python3 -m pytest tests/ -q` → **140 passed, 6 skipped**（无回归）
+
+### 1. 新范围实现位置
+
+| 内容 | 位置 | 说明 |
+|---|---|---|
+| 绑定常量 | `src/leak/audit.py:TCGA_PREFIX` / `EXCLUDED_DATASETS=("CPTAC","MMRF")` / `HGCN_DATASET_BY_SCHEME`（六方案→癌种，`HGCN_LIHC→TCGA_LIHC` **下划线注册名**）/ `PAN_CANCER_SCHEMES`（四方案）/ `BINDING_SPEC|BINDING_ALL` | 绑定在代码内声明；**不读** `A_pipeline/templates/{scheme}/fields.json` 的 `datasets` 键（旧全绑定，已作废） |
+| 绑定解析 | `tcga_dataset_names()`（注册表按 TCGA 前缀过滤 + 剔除集，**不硬编码 33 个名字**）、`scheme_dataset_binding()`（HGCN 绑定队列未注册或被剔除 → **直接 ValueError，不静默降级**；未登记方案按泛癌种但 kind 标 `pan_cancer_default`） | spec §2.4 |
+| 执行计划 | `build_audit_plan()` / `plan_datasets()` / `plan_schemes()`；`run_audit(..., binding=, prune=)` 只对计划内数据集加载病例与方案字段 | `binding=all` 仅放宽方案绑定（ad-hoc 方案用），**两种模式都剔除 CPTAC/MMRF** |
+| 落库元数据 | payload 新增 `scheme_binding`（`hgcn_cancer`/`pan_cancer`/`pan_cancer_default`）与 `binding_datasets`（该方案被允许的队列） | 供下游/出图脚本直接读，不再重复硬编码范围 |
+| 旧产物清理 | `prune_stale_outputs()` + CLI `--prune`：删计划外的 `{dataset}/{scheme}.json` 与因此空掉的目录 | 只动本模块自己写的两层 JSON，不碰汇总表 |
+| CLI | `src/leak/cli.py`：`--binding {spec,all}`（默认 spec）、`--prune`；完成行报「N 个绑定组合」 | |
+| 出图脚本 | `results_display/leak_audit/scripts/audit_leak.py::load_bindings()` 从产物读绑定（缺字段时回退 §2.4 静态表）；标题/图例动态化；热图对「未绑定」格打 ×（区别于「方案不含此字段」的灰格） | 原 35 队列写死文案已改 |
+
+### 2. 新范围清单与计数核对
+
+| 方案 | 绑定 | 队列数 |
+|---|---|---|
+| MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN | 全部 33 TCGA（U2 未解决） | 33 × 4 |
+| HGCN_KIRC / HGCN_LIHC / HGCN_ESCA / HGCN_LUSC / HGCN_LUAD / HGCN_UCEC | 各自癌种 `TCGA-KIRC` / `TCGA_LIHC` / `TCGA-ESCA` / `TCGA-LUSC` / `TCGA-LUAD` / `TCGA-UCEC` | 1 × 6 |
+
+| 自检项 | 实际结果 |
+|---|---|
+| 组合数 = 4×33 + 6 = **138** | ✓ `build_audit_plan` = 138（去重后仍 138）；`run_audit` 报「33 个数据集 / 10 个方案 → 138 个绑定组合」 |
+| 明细 JSON 数 | ✓ 138（`results/leak_audit/*/*.json`），旧 350 → 新 138，**删除 212（= HGCN 跨癌种 192 + CPTAC/MMRF 20）、新增 0** |
+| 目录数/范围 | ✓ 33 个，全部 `TCGA-` 前缀；无 `CPTAC`、`MMRF` 目录 |
+| HGCN 跨癌种文件 | ✓ 0（逐文件核对 `HGCN_DATASET_BY_SCHEME[scheme] == dataset`） |
+| 每数据集方案集合 | ✓ 27 个队列 4 方案、6 个癌种队列 5 方案（= 4 泛癌种 + 本癌种 HGCN） |
+| 汇总表 | ✓ 138 行 + 表头；无 CPTAC/MMRF 行 |
+| 34 数据集集口径 | 注册表 TCGA 行集合与 `results/H0_dataset_availability/manifest.csv` 的 TCGA 行**完全一致**（33/33） |
+| 数值口径未变 | ✓ **共享的 138 个组合，逐组合 `leaky_ratio`/`n_leaky`/`mean_leak_rate` 与旧表 100% 相同**（旧运行里这些组合的数值原样保留，差异只来自范围） |
+
+### 3. 抽查（独立重算，只读原始 clinic JSON，不 import `src/leak`）
+
+`python3 /tmp/verify_leak_spotcheck_s2b.py` → **ALL MATCH: True**（5/5）
+
+| dataset × scheme × field | 审计 none→t0 (rate) | 独立重算 none→t0 | 结论 |
+|---|---|---|---|
+| **TCGA-LUSC × HGCN_LUSC × `derived.radiation_therapy`**（HGCN 绑定组） | 421 → 40 (0.9050) | 421 → 40 | 一致 |
+| TCGA-LUSC × HGCN_LUSC × `exposures[].pack_years_smoked` | 427 → 427 (0.0000) | 427 → 427 | 一致（exposures 无时点家族，mask 不作用） |
+| TCGA-UCEC × HGCN_UCEC × `derived.pharmaceutical_therapy` | 548 → 19 (0.9653) | 548 → 19 | 一致 |
+| **TCGA-KIRP × SURVPGC × `diagnoses[].ajcc_pathologic_stage`**（泛癌种组） | 261 → 238 (0.0881) | 261 → 238 | 一致 |
+| TCGA_LIHC × MULTISURV × `diagnoses[].ajcc_pathologic_stage`（泛癌种组，下划线注册名） | 354 → 353 (0.0028) | 354 → 353 | 一致 |
+
+其中 TCGA-LUSC 的 `pack_years_smoked`（427→427）与 TCGA-KIRP 的 `stage`（261→238）与 S2 原始抽查的记录值**逐位相同**，说明共享组合没被重跑改变。
+
+**独立重算脚本在 S2 版基础上修了两处（只影响重算脚本，审计实现未改）**——两处都是本次才暴露的实现细节：
+
+1. **治疗的定点规则**：`time_stats._collect_entity_slots` 对两类记录给定点区间 `(0, 0)`（因此 t0 恒通过）——① 既往原发诊断 + 患者 `prior_malignancy=yes` 下的治疗；② `timepoint_category = Prior to Diagnosis` 且父诊断 `prior_treatment=yes`。**普通治疗没有 `t_lo==0` 的捷径**（`start=0` 的记录 t_hi 仍走 h1b/h2，如 TCGA-66-2759 `Radiation, External Beam` start=end=0、随访 762 天 → t0 不通过）。S2 版脚本把 `t_lo==0` 一律当通过，LUSC 上因此偏 39 人（多算通过）。
+2. **`diagnoses[]` 叶子字段的主诊断规则**：`field_bank._valid_raw_values` 只在**主诊断带该键时**取主诊断的值，否则回落到任意诊断的取值。TCGA-ZP-A9D1（主诊断缺 `ajcc_pathologic_stage`、既往原发诊断是 `Stage I`）即此型；S2 版脚本只查主诊断，TCGA_LIHC 上偏 1 人。
+
+两条规则补进重算脚本后 5/5 完全一致；审计侧数字**一次都没有改**（本步未修改任何提取/mask 实现）。S2 记录的「负性治疗记录不建槽位」规则依旧成立（`treatment_or_therapy=no` 的记录 mask 臂看不到、无 mask 臂仍计入）。
+
+### 4. 新老结果差异
+
+**(a) 方案级（跨队列平均 leaky_ratio，降序；HGCN 为单队列值，泛癌种为 33 队列均值）**
+
+| 方案 | 旧 mean（35 队列） | 新 mean | 新 n | 新绑定 | 变化原因 |
+|---|---|---|---|---|---|
+| HGCN_UCEC | 0.467 | **0.667** | 1 | TCGA-UCEC | 变 = 旧运行里 TCGA-UCEC 单队列值（0.667） |
+| HGCN_LUAD | 0.407 | **0.625** | 1 | TCGA-LUAD | 旧本癌种值 0.625 |
+| HGCN_LUSC | 0.314 | **0.444** | 1 | TCGA-LUSC | 旧本癌种值 0.444 |
+| MULTISURV | 0.343 | 0.352 | 33 | 33 TCGA | 剔 CPTAC/MMRF（旧值 0.20/0.20）后略升 |
+| HGCN_LIHC | 0.329 | 0.333 | 1 | TCGA_LIHC | 旧本癌种值 0.333 |
+| MMSURV | 0.263 | 0.261 | 33 | 33 TCGA | 剔 CPTAC/MMRF（0.60/0.00）后略降 |
+| HGCN_KIRC | 0.296 | 0.250 | 1 | TCGA-KIRC | 旧本癌种值 0.250 |
+| SURVPGC | 0.200 | 0.192 | 33 | 33 TCGA | 剔 CPTAC/MMRF（0.50/0.167）后略降 |
+| HGCN_ESCA | 0.299 | 0.182 | 1 | TCGA-ESCA | 旧本癌种值 0.182 |
+| INTEGRATIVE_DNN | 0.114 | 0.111 | 33 | 33 TCGA | 剔 CPTAC/MMRF（0.333/0.000）后略降 |
+
+- **HGCN 六方案的数值一字未改**（= 各自癌种队列上的旧值），变的只是口径：旧排名里 HGCN 的位次是「拿六个数各平均 35 个癌种」得来的，**本无意义**（同一方案被塞进 32 个非本文队列）；新口径下 HGCN 只报自己癌种，与泛癌种方案的「33 队列均值」**不可直接横向比较**（n=1 vs n=33），跨工作排名须并列 n 与队列名。
+- **泛癌种四方案**：剔除 CPTAC/MMRF 后均值变化都在 ±0.01 内（CPTAC/MMRF 的旧值见上表），排名不变（MULTISURV > MMSURV > SURVPGC > INTEGRATIVE_DNN）。
+- 新口径下的跨工作排名（仅列位次，不代表同尺度）：**HGCN_UCEC 0.667 > HGCN_LUAD 0.625 > HGCN_LUSC 0.444 > MULTISURV 0.352 > HGCN_LIHC 0.333 > MMSURV 0.261 > HGCN_KIRC 0.250 > SURVPGC 0.192 > HGCN_ESCA 0.182 > INTEGRATIVE_DNN 0.111**。
+
+**(b) 队列级（33 队列 × 绑定方案的平均 leaky_ratio）**：最高 TCGA-UCEC 0.54 > TCGA-LUAD 0.532 > STAD/SKCM/PRAD 0.508；最低 BRCA/CHOL/DLBC/LAML/MESO 0.05。与 S2 的结论方向一致（HGCN 有绑定方案的癌种被抬升）。
+
+**(c) 字段级（跨队列平均 leak_rate，前 7）**：`derived.pharmaceutical_therapy` 与 `derived.radiation_therapy` 仍并列第一 **0.935**（旧 0.939；39/39 记录里都 >0 且都 `not_in_bank`）> `ajcc_pathologic_m` 0.077（旧 0.107）> `_t` 0.060 > `_n` 0.058 > `ajcc_staging_system_edition` 0.050 > `ajcc_pathologic_stage` 0.037（旧 0.071）。**诊断分期族的均值普遍下降**，原因是分母从 35 队列变为 33（并把 6 个癌种队列里 HGCN 只算本癌种），`morphology` 与 `site_of_resection_or_biopsy` 的可见记录数 105 → 3、`primary_diagnosis` 105 → 35（前者只被 HGCN_ESCA/LUSC/LUAD 用，后者还被泛癌种 SURVPGC + HGCN_ESCA/UCEC 用——`n_entries` 的下降是绑定的直接后果，不是数据变化）。完全不泄露的仍是 `demographic.*` / `exposures.*` / `project.project_id`。
+- 逐字段记录数：**2520 → 840**（22 个不同字段不变）；`not_in_bank` 482 条；`leak_rate_undefined` 36 条。
+
+### 审计（自检项 + 实际结果）
+
+| 自检项 | 实际结果 |
+|---|---|
+| 138 组合计数 | ✓ 见上表 |
+| 旧产物清理彻底 | ✓ 350 JSON / 35 目录 → 138 JSON / 33 目录；无 CPTAC/MMRF、无 HGCN 跨癌种 |
+| 可重复性 | ✓ 两次运行 `leak_audit_summary.csv` md5 相同（`b5de75584e9a1449bfca9d188e827cd6`）；第二次 `--prune` 零删除 |
+| 共享组合数值未变 | ✓ 138/138 与旧表逐组合相同（`added=0`） |
+| 抽查 | ✓ 5/5 与独立重算一致（含 1 组 HGCN 绑定 + 2 组泛癌种 + 2 组附赠）。注：**本步抽查数超过规格要求的 3 组** |
+| 绑定测试 | ✓ `tests/test_leak_audit.py` 10 → **17 用例**：HGCN 六方案只允许本癌种（含 `TCGA_LIHC` 下划线）、HGCN 绑定队列缺失/被剔除时 ValueError、泛癌种含全部 33 TCGA、CPTAC/MMRF 两种 binding 模式下都不出现、`build_audit_plan` = 4×33+6 = 138（`all` 模式 = 330）、`prune_stale_outputs` 删除计划外 JSON 与空目录、payload 记录绑定元数据、**templates/fields.json 的 `datasets` 键不影响范围**（写入错误的全绑定仍只产 3 个组合） |
+| 全量测试 | ✓ `tests/` 140 passed, 6 skipped（无回归） |
+| 未跑训练 / 未改他人文件 | ✓ 只改 `src/leak/**`、`tests/test_leak_audit.py`、`results_display/leak_audit/scripts/audit_leak.py`，未触碰 `src/` 其他模块、`A_pipeline/`、spec |
+| 产物路径 | `results/leak_audit/{dataset}/{scheme}.json`（138）、`results/leak_audit/leak_audit_summary.csv`（138 行，md5 `b5de75584e9a1449bfca9d188e827cd6`）、`results_display/leak_audit/leak_audit_{overview,fields}.png` + `leak_audit_{scheme,field}_mean.csv` |
+
+### 偏差与原因
+
+- **偏差 1（数据集名单来源：注册表而非 H0 manifest）**：spec §2.4 同时写了「数据集 = datasets.json 中的 33 个 TCGA」与「选集一律读 H0 manifest，禁止硬编码名单」。本步取**注册表 + TCGA 前缀 + 显式剔除集**：manifest 的 tier 仍随 D1 未锁定且含 CPTAC/MMRF 两行，若读 manifest 会把外部数据集重新带回来。已核对两者 TCGA 行集合**完全一致（33/33）**；本实现也没有硬编码 33 个名字（用前缀规则 + 排除集）。
+- **偏差 2（`HGCN_LIHC` 用下划线注册名）**：绑定表写 `TCGA_LIHC`（`datasets.json` 注册名，S1 偏差 5），而非连字符形式；测试对该下划线名做了显式断言。
+- **偏差 3（未登记方案的默认）**：非 §2.4 登记、也非 HGCN 的方案（如测试用 `FAKE`）按泛癌种处理，但 payload 的 `scheme_binding` 标 `pan_cancer_default`，便于事后识别；如后续要禁止，可加 `--binding` 的第三个取值。
+- **偏差 4（重算脚本两处规则修正）**：见抽查节。**只改抽查脚本，审计实现与产物不变**；S2 的结论在此两处上不受影响（当时抽查的组合恰好不触发）。
+- **偏差 5（旧产物删除范围）**：按用户确认，删除仅限 `results/leak_audit/` 下旧产物（`results/**` 已在 .gitignore，不入库）；`results/A_manual`、`outputs/**`、`rawdata_stats/**` 未动。
+
+### 决策点
+
+- **无新增、未改动决策点状态表**（D0–D5 保持原样）。U2（泛癌种是否按各自论文队列绑定）仍待用户；本步按「全部 33 TCGA」执行。
+
+### 状态
+
+完成。H1a 产物已按新绑定（138 组合）重算、重绘并通过抽查与绑定回归测试；旧 350 组合产物已删除。后续 H3b 的「泄露背景」应引用本步的新汇总表（注意 HGCN 为单队列值）。
+
+### 提交
+
+`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/H_series_execution_log.md` → "S2b: 审计按新绑定重跑(HGCN仅本癌种,剔除CPTAC/MMRF)"（`results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；png/csv 产物不入库；未 push）。
+
+---
+
+## 口径记录 R3：数据协议 n_event 判据补全（用户答复）
+
+- 时间 / 执行者：2026-09-30 / Claude（主会话，用户答复）
+- 目标：记录用户对 R2 两个待补问题的答复与计数校正。
+- 内容：
+  1. **70–100 区间**：进主图，**必须报告 CI，不参与严格排名**（CESC、MESO、ESCA、UCEC、SARC）；依据 README §五.2"放宽到 ≥70 时必须报告 CI、不参与严格排名"；其折间 std 0.035–0.081 档比 30–70 档（0.079–0.113）好一档。
+  2. **33 TCGA 计数校正**：README 的 17/22/12 按 35 数据集（含 MMRF/CPTAC）计算；33 TCGA 口径下：≥100 → **15**；≥70 → **20**；≥150–200（多字段实验）→ **10**（GBM/OV/HNSC/SKCM/LUSC/LUAD/BLCA/KIRC/STAD/BRCA）。
+  3. **n_event 判据完整 4 档**（已写入 spec §12 U1）：≥100 主图干净集；70–100 主图带 CI 不排名；30–70 补充材料 bootstrap CI；<30 不收录、单列"低事件组"定性讨论。
+- 待补：用户标注协议还有 B/C… 节（多字段实验/EPV、landmark 有效事件重套、event_rate 降级、退化折），粘贴被截断，等用户补发。
+- 状态：完成（仅记录；H0 脚本仍不改，等协议补全后统一落地）。
