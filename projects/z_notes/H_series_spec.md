@@ -52,6 +52,7 @@ leak_rate(f, D) = 1 − n(landmark_0 下有效值) / n(landmark_none 下有效�
 
 - "各工作" = A_pipeline 的 10 个论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`（字段表在 `A_pipeline/templates/{scheme}/fields.json`）。
 - 数据集（**本阶段**）= `projects/datasets.json` 中的 **33 个 TCGA** 队列。**TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**（用户指令 2026-09-29），H4c 数据轴阶段再议。S1/S2 已产出的 CPTAC/MMRF 描述性记录保留在磁盘（gitignore 内）但不进入任何训练/选择实验。
+- **方案 × 数据集绑定**：HGCN_* 六个方案各绑定其**对应癌种**（HGCN_KIRC→KIRC、HGCN_LIHC→LIHC、HGCN_ESCA→ESCA、HGCN_LUSC→LUSC、HGCN_LUAD→LUAD、HGCN_UCEC→UCEC），禁止把它们塞进其他数据集（用户纠正 2026-09-30）；泛癌种方案（MULTISURV、SURVPGC、MMSURV、INTEGRATIVE_DNN）暂按全部 33 TCGA，但记录为未解决问题 U2（见 §12）。
 - **数据集选集一律读 H0 manifest，禁止在代码或计划中硬编码名单。**
 
 ### 2.5 时间点与 landmark 口径
@@ -126,8 +127,8 @@ results/H0_dataset_availability/
 ### 5.1 输入与范围
 
 - 字段表：`A_pipeline/templates/{scheme}/fields.json`（10 方案，GDC 路径）。
-- 数据集：`projects/datasets.json` 全部注册队列（33 TCGA + CPTAC + MMRF，MMRF 标注口径待 D2）。
-- 无训练，纯描述性统计，全部数据集都做。
+- 数据集：**33 个 TCGA**；方案 × 数据集按 §2.4 绑定（HGCN_* 仅其对应癌种，泛癌种暂按 33 TCGA）。CPTAC/MMRF 不纳入（已产出的描述性记录保留磁盘，但不进汇总与图表）。
+- 无训练，纯描述性统计。
 
 ### 5.2 计算
 
@@ -240,3 +241,8 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
 - 不修改现有 5 折 split；不伪造独立测试集；不把 val 称为 test。
 - 不修改 E 组代码（`src/selection` 的 SEAS/A3–A6/ANCHOR 等）——其去留由用户与执行方协商，本系列只读复用 A2_greedy/evaluator/cache/queue。
 - 不在代码或配置中硬编码数据集分层名单（一律读 H0 manifest）。
+
+## 12. 未解决问题（Open Issues）
+
+- **U1（D1 门槛锚点）**："字段 c-index 有意义差异 0.05" 是无推导断言（唯一出处 `rawdata_stats/_shared/event_impact_analysis/README.md:94`），不能作为门槛依据。**D1 决议：由用户给出效应量先验**（H1b/H2 的 Δc 至少要分辨到什么量级），据此反推每折事件数门槛。先验未给出前：H0 门槛不锁定、manifest tier 保持 provisional、训练实验选集不做硬门槛。
+- **U2（泛癌种方案绑定）**：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN 是否按各自论文原始队列绑定，**暂按全部 33 TCGA 执行**，记录为未解决问题；待用户给出各论文队列口径后修正。

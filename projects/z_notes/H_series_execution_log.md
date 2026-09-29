@@ -7,7 +7,7 @@
 | ID | 决策点 | 状态 | 结论 |
 |---|---|---|---|
 | D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | **已确认（方案 B）** | 删除：results/{E2_selection,univariate,greedy,linear_probe}、results_display/{univariate,greedy,linear_probe,E1_Fig2_Single-field c-index}、outputs/*/{greedy,univariate}（35 队列）、Clinic_Analyzer/results、Clinic_Analyzer/configs/{E2_selection,greedy,univariate}。保留：results/A_manual、results_display/FigA_Other_Paper_Works、outputs/*/{A_manual,field_bank}、rawdata_stats/。磁盘释放 ~200GB（1.1T→1.3T 可用）。 |
-| D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | 待确认（用户要求先展开说明，**未确认执行**；已终止落地 agent 并回退其改动） | **推荐：照搬 spec §4.2 现值**（150/70/30、rate<0.1 降一级）。理由：event_impact_analysis 的折间 std 分档表（§五）显示 ≥150 档 std 0.019–0.052，正好落在"能分辨 0.05 差异"的门槛内侧；本步 manifest 已按此跑出 12/10/4/9 的分布，与原型 README 的 12/22(≥70)/4/9 完全吻合，无调整压力。**唯一建议微调**：把 R7（退化折）从"仅标注"升级为"降级"，因为 PCPG/TGCT/DLBC/THYM 的退化折来自结构性事件稀少，标注不足以保护聚合图。 |
+| D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | **未解决**（U1：锚点 0.05 无推导；改由用户给出效应量先验反推门槛，先验待用户提供） | "有意义差异 0.05" 无推导出处（`event_impact_analysis/README.md:94` 断言）。D1 按用户决议：**由用户给出 H1b/H2 Δc 效应量先验**（至少要分辨到什么量级）后反推每折事件数门槛；先验未给出前门槛不锁定、manifest tier 保持 provisional、训练实验选集不做硬门槛（spec §12 U1）。 |
 | D2 | landmark 有效事件口径（mask vs 排除患者）+ 数据集范围 | **已确认**（用户指令 2026-09-29） | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。**数据集范围：仅 33 TCGA；TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**，H4c 阶段再议。 |
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | 待确认 | — |
 | D4 | H2 最优组合口径（sig_stop 推荐 vs 历史 best） | 待确认 | — |
@@ -271,3 +271,17 @@
 - 新口径（已写入 spec §2.4、§3）：本阶段数据集 = **仅 33 TCGA**；CPTAC / MMRF 等 TCGA 外数据集暂不纳入（H4c 阶段再议）；**未在用户实验清单中明确的事项，执行前必须先向用户报告并获确认**。
 - 决策点：D1 仍待确认（用户听完展开说明后决定）；D2 数据集范围部分已确认（33 TCGA）。
 - 状态：完成。
+
+---
+
+## 口径记录 R1：D1 锚点未解决 + 方案×数据集绑定
+
+- 时间 / 执行者：2026-09-30 / Claude（主会话，用户决议）
+- 目标：落实用户两项决议并登记未解决问题。
+- 内容：
+  1. **D1（U1）**："0.05 有意义差异"无推导出处，不作门槛依据。D1 改由**用户给出效应量先验**（H1b/H2 的 Δc 至少要分辨到什么量级）反推每折事件数门槛；先验未给出前 manifest tier 保持 provisional、训练选集不做硬门槛（spec §12 U1）。
+  2. **绑定**：HGCN_* 六方案各绑定对应癌种（KIRC/LIHC/ESCA/LUSC/LUAD/UCEC），禁止塞进其他数据集（spec §2.4）；泛癌种四方案（MULTISURV/SURVPGC/MMSURV/INTEGRATIVE_DNN）暂按全部 33 TCGA，记未解决问题 U2（spec §12）。
+  3. 同步更新 spec §5.1 审计范围：33 TCGA × §2.4 绑定；CPTAC/MMRF 描述性记录保留磁盘但不进汇总。
+- 待办（**未执行**，待用户确认）：S2 审计按新绑定重跑（HGCN_* 仅各自癌种 + 泛癌种 × 33 TCGA，剔除 CPTAC/MMRF 记录与无绑定组合）；A_manual 旧结果中无绑定的行不进任何表。
+- 决策点：D1 → 未解决（U1）；无新决策点。
+- 状态：完成（仅记录）。
