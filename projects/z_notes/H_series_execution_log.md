@@ -143,3 +143,17 @@
 ### 提交
 
 `git add scripts/run_h0_availability.py tests/test_h0_availability.py z_notes/H_series_execution_log.md` → "S1: H0 可用数据集评估脚本与初版 manifest"（提交 hash 见日志末尾追加或 `git log -1`）。
+
+---
+
+## 口径变更 C1：默认 landmark_0；landmark_none 更名 static_only 移出主图
+
+- 时间 / 执行者：2026-09-29 / Claude（主会话，用户指令）
+- 目标：落实用户口径指令：后续实验的评估默认 landmark_0；现有 landmark_none（关 mask + R0 整层删 diagnoses/follow_ups）既非无处理也非规范处理，更名为 **static_only**，移出主图、仅进补充材料。
+- 输入：用户指令（2026-09-29 会话内）。
+- 命令与参数：无。
+- 产物：`z_notes/H_series_spec.md` §2.5 重写（两个概念澄清：取值 mask 状态 {off,0,365,730} vs field-bank 筛选变体 {landmark_0,365,730,static_only}）、§5.2 与 §8 相应措辞更新；本日志本条目。
+- 审计：逐条核对影响面——S1 manifest（无影响，tier 与命名无关）；S2 H1a 审计（无影响：leak_rate 对比的是取值 mask off 与 t0，其"landmark_none 有效值"= 无 mask 取值全集，措辞已在 spec §5.2 澄清，无需重跑）；S3 A_pipeline `--landmark_time`（`none` = 无 mask 取值，与 static_only 概念不同，保留 none 值；S3 不受影响）；S5 生成 field-bank 变体时用新名 static_only（届时同步更名 rawdata_stats/{dataset}/landmark_none 目录）；H3b 主图改为 landmark_0 vs {365,730}，static_only 对照进补充。
+- 偏差与原因：无。
+- 决策点：无新增（用户已拍板，直接生效）。
+- 状态：完成。

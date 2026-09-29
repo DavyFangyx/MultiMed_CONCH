@@ -54,9 +54,13 @@ leak_rate(f, D) = 1 − n(landmark_0 下有效值) / n(landmark_none 下有效�
 - 数据集 = `projects/datasets.json` 注册的 33 个 TCGA + CPTAC（MMRF 是否纳入见 D2）。
 - **数据集选集一律读 H0 manifest，禁止在代码或计划中硬编码名单。**
 
-### 2.5 时间点
+### 2.5 时间点与 landmark 口径
 
-主时间点 t0（`landmark_0`）；365 / 730 作为敏感性（机制现成）。审计与对照均以 t0 为主口径。
+- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（H1b 臂 B、H2 搜索与三臂、H3b 主图）默认 t0。
+- 365 / 730 作为敏感性；原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups，既非无处理也非规范处理）**更名 `static_only`**，**移出主图**，仅进补充材料。
+- 两个概念澄清（勿混用）：
+  1. **取值 mask 状态**：`off`（无 mask，取值全集）/ `0` / `365` / `730`。H1a 审计的 leak_rate 用 off 与 0 对比；H1b 臂 A = off（报告值对照臂）。
+  2. **field-bank 筛选变体**：`landmark_0` / `landmark_365` / `landmark_730` / `static_only`（原 landmark_none）。H2 搜索池 = `landmark_0`；S5 生成时用新名，并同步更名 `rawdata_stats/{dataset}/landmark_none` 目录。
 
 ## 3. 步骤注册表与决策点
 
@@ -125,7 +129,7 @@ results/H0_dataset_availability/
 对每个 (dataset, scheme, field)：
 
 1. 用 `src/discovery/field_bank.py::extract_field_bank_raw_values(case, field_path, landmark=True/False, landmark_time=0)` 逐患者提取；
-2. `n_valid_none` = landmark 关闭时的有效值数；`n_valid_t0` = landmark_0 下保留的有效值数；`leak_rate = 1 − n_valid_t0/n_valid_none`；
+2. `n_valid_none` = 取值 mask **关闭**时的有效值数（即取值全集，不是 static_only 变体）；`n_valid_t0` = landmark_0 下保留的有效值数；`leak_rate = 1 − n_valid_t0/n_valid_none`；
 3. `family` = `src/discovery/landmark.py::timed_family_for_field(field_path)`；
 4. 特判：
    - `derived.*` 字段：landmark 作用于其**底层槽位**（现有 `extract_derived_raw_values` 已支持 `landmark` 参数）；
@@ -194,7 +198,7 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
 ## 8. H3 规格
 
 - **3a 三档表**：每 (dataset, work) 一行：报告值（旧 A_manual）、去泄露值（臂 B）、可达值（臂 C）、档间 Δ；主集定量、扩展集带 CI；并列 n_event / event_rate / 每折事件数。
-- **3b 排序对照**：输入 `results/univariate/prompt/{landmark_tag}/{dataset}/mlp_clinic_flatten/field_cindex.csv`（S5 补跑后）；`landmark_none` vs `landmark_{0,365,730}` 的单字段 c-index 排名 Spearman ρ；每数据集排名变化最大的字段清单（Δrank 前 k，标升/降）。数据集口径：`n_event ≥ 100` 主表（17 个），70–100 带 CI。
+- **3b 排序对照**：输入 `results/univariate/prompt/{landmark_tag}/{dataset}/mlp_clinic_flatten/field_cindex.csv`（S5 补跑后）；主图 = `landmark_0` vs `landmark_{365,730}` 的单字段 c-index 排名 Spearman ρ；`static_only` 对照进补充材料；每数据集排名变化最大的字段清单（Δrank 前 k，标升/降）。数据集口径：`n_event ≥ 100` 主表（17 个），70–100 带 CI。
 - 产物：`results_display/H3_three_tiers/`、`results_display/H3_landmark_rank/`。
 
 ## 9. Git 提交协议
