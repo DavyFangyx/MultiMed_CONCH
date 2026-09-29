@@ -244,5 +244,5 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
 
 ## 12. 未解决问题（Open Issues）
 
-- **U1（D1 门槛锚点）**："字段 c-index 有意义差异 0.05" 是无推导断言（唯一出处 `rawdata_stats/_shared/event_impact_analysis/README.md:94`），不能作为门槛依据。**D1 决议：由用户给出效应量先验**（H1b/H2 的 Δc 至少要分辨到什么量级），据此反推每折事件数门槛。先验未给出前：H0 门槛不锁定、manifest tier 保持 provisional、训练实验选集不做硬门槛。
+- **U1（D1 门槛锚点）**："字段 c-index 有意义差异 0.05" 是无推导断言（唯一出处 `rawdata_stats/_shared/event_impact_analysis/README.md:94`），不能作为门槛依据。**用户已给出数据协议（2026-09-30，部分）**：`n_event` 判据（作用=评估方差下限）——**主图 ≥100；30–70 补充材料；<30 排除**；适用于 H 系列全部 TCGA 使用，**泛癌种（通用字段）工作同样适用**。**待补**：70–100 区间的处理规则、协议表中是否还有其余判据行（event_rate / EPV / 退化折 / landmark 有效事件重套等）。
 - **U2（泛癌种方案绑定）**：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN 是否按各自论文原始队列绑定，**暂按全部 33 TCGA 执行**，记录为未解决问题；待用户给出各论文队列口径后修正。
