@@ -617,3 +617,15 @@
 ### 提交
 
 `git add scripts/s4_enqueue.py scripts/s4_h1b_queue.sh scripts/s4_validate_firstwave.py z_notes/H_series_execution_log.md` → "S4: H1b 批跑放量(138组合×2臂×2分析器)"（未 push；未用 git add -A）。
+
+---
+
+## S4 批跑恢复记录（07:27）
+
+- 时间 / 执行者：2026-09-30 07:27 / Claude（主会话，定时检查触发）
+- 目标：修复批跑停滞。
+- 事实：watch 与 drainer 于 02:30 后退出（最后日志 02:30:22 投放 slice A2）；07:10 检查时 queue=32、running=0、done=345、failed=0——watch 逻辑只在队列空时才重启 drainer，队列有积压时不会拉起，属脚本缺陷。
+- 动作：S4_GPU_TRAIN=7 重启 drainer（GPU 5 已被他人占用 22GB，改 GPU 7）；07:27 起 8 workers 排空；encode 列表已清空（剩余 0）。
+- 审计：重启后 45s 内 running=8、训练日志正常滚动；done 345/552、failed 0。
+- 决策点：无。
+- 状态：完成（批跑恢复排空中，预计 1–1.5 小时完成）。
