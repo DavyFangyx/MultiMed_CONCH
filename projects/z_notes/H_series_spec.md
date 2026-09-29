@@ -51,7 +51,7 @@ leak_rate(f, D) = 1 − n(landmark_0 下有效值) / n(landmark_none 下有效�
 ### 2.4 工作与数据集
 
 - "各工作" = A_pipeline 的 10 个论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`（字段表在 `A_pipeline/templates/{scheme}/fields.json`）。
-- 数据集 = `projects/datasets.json` 注册的 33 个 TCGA + CPTAC（MMRF 是否纳入见 D2）。
+- 数据集（**本阶段**）= `projects/datasets.json` 中的 **33 个 TCGA** 队列。**TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**（用户指令 2026-09-29），H4c 数据轴阶段再议。S1/S2 已产出的 CPTAC/MMRF 描述性记录保留在磁盘（gitignore 内）但不进入任何训练/选择实验。
 - **数据集选集一律读 H0 manifest，禁止在代码或计划中硬编码名单。**
 
 ### 2.5 时间点与 landmark 口径
@@ -83,7 +83,7 @@ leak_rate(f, D) = 1 − n(landmark_0 下有效值) / n(landmark_none 下有效�
 
 依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S6 → S7；S4/S6 异常 → S8。
 
-**执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；每完成一步做一次 git 提交（见 §9）。
+**执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；每完成一步做一次 git 提交（见 §9）。**未在用户实验清单中明确的事项（数据集范围、口径、规则数值等），执行前必须先向用户报告并获确认，不得擅自扩大范围或替用户做决定。**
 
 ## 4. H0 规格：实验可用数据集评估
 
