@@ -20,6 +20,7 @@ from discovery.onehot import (
 )
 from .config import D_SCHEME_BY_TEXT_SCHEME, PAPER_SCHEMES
 from .extract import extract_values
+from .landmark import landmark_dir
 from .paths import global_mapping_dir as shared_global_mapping_dir
 
 
@@ -131,11 +132,17 @@ def resolve_baseline_schemes(scheme: str) -> list[str]:
     return [scheme]
 
 
-def baseline_scheme_output_dir(out_root: str | Path, scheme: str) -> Path:
+def baseline_scheme_output_dir(
+    out_root: str | Path,
+    scheme: str,
+    landmark_subdir: str = "",
+) -> Path:
     root = Path(out_root)
     if scheme in DEFAULT_BASELINE_SCHEMES:
-        return root / scheme
-    return root / "baseline" / scheme
+        path = root / scheme
+    else:
+        path = root / "baseline" / scheme
+    return landmark_dir(path, landmark_subdir)
 
 
 
@@ -525,11 +532,11 @@ def load_baseline_metadata(metadata_dir: str) -> tuple[dict, dict]:
     return dict(stats_payload["fields"]), dict(mapping_payload["fields"])
 
 
-def build_patient_rows(cases: list[dict]) -> list[dict]:
+def build_patient_rows(cases: list[dict], landmark_time=None, dataset_name: str | None = None) -> list[dict]:
     rows = []
     for case in cases:
         row = {"patient_id": str(case["submitter_id"]).strip()}
-        row.update(extract_values(case))
+        row.update(extract_values(case, landmark_time=landmark_time, dataset_name=dataset_name))
         rows.append(row)
     return rows
 
@@ -544,6 +551,9 @@ def run_baseline_encode(
     shared_nominal_mappings: dict | None = None,
     mapping_scope: dict | None = None,
     global_metadata_dir: str | None = None,
+    landmark_time=None,
+    landmark_subdir: str = "",
+    dataset_name: str | None = None,
 ):
     try:
         import torch
@@ -556,6 +566,8 @@ def run_baseline_encode(
     print(f"[baseline] 编码方式 {BASELINE_ENCODING_NAME}")
     print(f"  JSON     : {normalize_json_paths(json_paths)}")
     print(f"  输出根目录 : {out_root}")
+    if landmark_time is not None:
+        print(f"  landmark : t_hi <= {int(landmark_time)} days  -> {landmark_subdir or 'landmark'}")
     if stats_dir:
         print(f"  复用统计量 : {stats_dir}")
     else:
@@ -565,7 +577,7 @@ def run_baseline_encode(
 
     print("\n[1/3] 读取 JSON ...")
     cases = load_clinical_cases(json_paths, project_ids=project_ids)
-    patient_rows = build_patient_rows(cases)
+    patient_rows = build_patient_rows(cases, landmark_time=landmark_time, dataset_name=dataset_name)
     print(f"      患者数: {len(patient_rows)}")
 
     if stats_dir:
@@ -582,7 +594,7 @@ def run_baseline_encode(
             )
 
     feature_schema = build_baseline_feature_schema(nominal_mappings)
-    metadata_dir = Path(out_root) / "metadata"
+    metadata_dir = landmark_dir(Path(out_root) / "metadata", landmark_subdir)
 
     print("\n[2/3] 保存 metadata ...")
     save_baseline_metadata(
@@ -601,7 +613,7 @@ def run_baseline_encode(
 
     print("\n[3/3] 逐患者写入 .pt ...")
     for scheme in schemes:
-        pt_dir = baseline_scheme_output_dir(out_root, scheme) / "embeddings" / "pt"
+        pt_dir = baseline_scheme_output_dir(out_root, scheme, landmark_subdir) / "embeddings" / "pt"
         pt_dir.mkdir(parents=True, exist_ok=True)
         fields = BASELINE_SCHEME_FIELDS[scheme]
         for row in patient_rows:

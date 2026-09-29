@@ -12,6 +12,8 @@ from common.fields import (
 from common.missingness import clean_value
 from common.types import to_numeric
 
+from .landmark import mask_case
+
 
 PHARMA_TREATMENT_TYPE = "pharmaceutical therapy, nos"
 RADIATION_TREATMENT_TYPE = "radiation therapy, nos"
@@ -90,7 +92,15 @@ def _years_smoked(case: dict, year_of_diagnosis, age_at_index) -> str:
     return "unknown"
 
 
-def extract_values(case: dict) -> dict:
+def extract_values(case: dict, landmark_time=None, dataset_name: str | None = None) -> dict:
+    """Field values for one case.
+
+    landmark_time None = no mask (legacy behaviour, `case` used as is).
+    landmark_time = T (days) drops timed slots whose t_hi > T first; the values
+    below are then computed exactly as before, so both arms share one set of
+    missing-placeholder rules.
+    """
+    case = mask_case(case, landmark_time, dataset_name=dataset_name)
     diag = get_primary_diagnosis(case.get("diagnoses", []))
     pathology_details = get_pathology_details(case)
     follow_ups = get_follow_ups(case)

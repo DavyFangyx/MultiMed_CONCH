@@ -22,6 +22,8 @@ from greedy.data import DEFAULT_ANALYZER_SPLIT_ROOT, display_to_study
 
 from .baseline import DEFAULT_BASELINE_SCHEMES, resolve_baseline_schemes
 from .config import D_SCHEME_BY_TEXT_SCHEME, DEFAULT_TEXT_SCHEMES, PAPER_SCHEMES, resolve_scheme_names, schemes_for_dataset
+from .landmark import LANDMARK_NONE_TAG, landmark_dir
+from .landmark_labels import build_landmark_label_file, format_risk_set_summary
 from .paths import PROJECT_ROOT, dataset_baseline_embedding_dir, dataset_embedding_dir
 
 
@@ -29,6 +31,9 @@ DEFAULT_ANALYZER_MODALITY = DEFAULT_INNER_MODALITY
 DEFAULT_RESULTS_ROOT = PROJECT_ROOT / "results"
 DEFAULT_EXP_GROUP = "A_manual"
 ANALYZER_EXP_GROUP = f"{DEFAULT_EXP_GROUP}/runs"
+# H1b: landmark arms live in their own subtree so results/A_manual is never touched.
+DEFAULT_LANDMARK_EXP_GROUP = "A_manual_landmark"
+LANDMARK_ANALYZER_EXP_GROUP = f"{DEFAULT_LANDMARK_EXP_GROUP}/runs"
 DEFAULT_QUEUE_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs" / "A_manual"
 DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
 QUEUE_BUCKETS = ("queue", "running", "done", "failed")
@@ -84,19 +89,32 @@ def expand_cindex_jobs(schemes: list[str], encoding: str) -> list[dict[str, str]
     return jobs
 
 
-def scheme_output_dir(dataset_name: str, scheme: str, baseline_out: str) -> Path:
+def scheme_output_dir(
+    dataset_name: str,
+    scheme: str,
+    baseline_out: str,
+    landmark_subdir: str = "",
+) -> Path:
     name = bound_scheme_name(scheme)
     if scheme.startswith("baseline__") or name in DEFAULT_BASELINE_SCHEMES:
         root = Path(dataset_baseline_embedding_dir(dataset_name, baseline_out))
         if name in DEFAULT_BASELINE_SCHEMES:
-            return root / name / "embeddings" / "pt"
-        return root / "baseline" / name / "embeddings" / "pt"
-    return Path(dataset_embedding_dir(dataset_name)) / name / "embeddings" / "pt"
+            path = root / name
+        else:
+            path = root / "baseline" / name
+    else:
+        path = Path(dataset_embedding_dir(dataset_name)) / name
+    return landmark_dir(path, landmark_subdir) / "embeddings" / "pt"
 
 
-def result_table_dir(dataset_name: str, results_root: Path | str | None = None) -> Path:
+def result_table_dir(
+    dataset_name: str,
+    results_root: Path | str | None = None,
+    landmark_tag: str = "",
+) -> Path:
     root = Path(results_root) if results_root else DEFAULT_RESULTS_ROOT
-    return root / DEFAULT_EXP_GROUP / dataset_name
+    group = DEFAULT_LANDMARK_EXP_GROUP if landmark_tag else DEFAULT_EXP_GROUP
+    return root / group / dataset_name
 
 
 def analyzer_results_base(results_root: Path | str | None = None) -> Path:
@@ -104,8 +122,18 @@ def analyzer_results_base(results_root: Path | str | None = None) -> Path:
     return root
 
 
-def analyzer_exp_group() -> str:
-    return ANALYZER_EXP_GROUP
+def analyzer_exp_group(landmark_tag: str = "") -> str:
+    return LANDMARK_ANALYZER_EXP_GROUP if landmark_tag else ANALYZER_EXP_GROUP
+
+
+def landmark_scheme_name(scheme: str, landmark_tag: str = "") -> str:
+    """Row/run scheme label: the landmark arm is part of the scheme name.
+
+    Keeps both arms of H1b as separate rows of one table (the CSV row key is
+    (scheme, encoding, modality)) and matches Clinic_Analyzer's own convention
+    of folding the landmark tag into the scheme (e.g. prompt__landmark_0).
+    """
+    return f"{scheme}__{landmark_tag}" if landmark_tag else scheme
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -193,8 +221,11 @@ def _bash_quote(value: str) -> str:
     return "'" + str(value).replace("'", '\'"\'"\'') + "'"
 
 
-def conf_filename(study: str, scheme: str, modality: str) -> str:
-    return f"{study}__{scheme}__{modality}.conf"
+def conf_filename(study: str, scheme: str, modality: str, landmark_tag: str = "") -> str:
+    name = f"{study}__{scheme}"
+    if landmark_tag:
+        name = f"{name}__{landmark_tag}"
+    return f"{name}__{modality}.conf"
 
 
 def conf_text(
@@ -207,10 +238,16 @@ def conf_text(
     results_base: Path | str,
     seed: int = 0,
     max_epochs: int | None = None,
+    landmark_tag: str = "",
+    exp_group: str | None = None,
+    label_file: Path | str | None = None,
 ) -> str:
+    run_name = f"{study}__{scheme}"
+    if landmark_tag:
+        run_name = f"{run_name}__{landmark_tag}"
     lines = [
-        f"EXP_GROUP={_bash_quote(ANALYZER_EXP_GROUP)}",
-        f"RUN_NAME={_bash_quote(f'{study}__{scheme}')}",
+        f"EXP_GROUP={_bash_quote(exp_group or ANALYZER_EXP_GROUP)}",
+        f"RUN_NAME={_bash_quote(run_name)}",
         f"PRESET={_bash_quote(modality)}",
         f"STUDY={_bash_quote(study)}",
         f"CLINIC_DIR_PATH={_bash_quote(str(Path(clinic_dir)))}",
@@ -219,6 +256,10 @@ def conf_text(
         "WANDB_MODE=disabled",
         f"SEED={int(seed)}",
     ]
+    if label_file is not None:
+        # H1b risk set + time-origin shift: run.sh prefers LABEL_FILE_PATH over
+        # the default metadata CSV; the split files stay untouched.
+        lines.append(f"LABEL_FILE_PATH={_bash_quote(str(Path(label_file)))}")
     if max_epochs is not None:
         lines.append(f"MAX_EPOCHS={int(max_epochs)}")
     return "\n".join(lines) + "\n"
@@ -336,6 +377,9 @@ def iter_cindex_jobs(
     results_root: Path | str | None = None,
     seed: int = 0,
     max_epochs: int | None = None,
+    landmark_tag: str = "",
+    landmark_time=None,
+    landmark_shift: bool = True,
 ) -> list[dict]:
     if not dataset_name:
         raise ValueError("cindex 需要 --dataset，不能走单 JSON 模式")
@@ -355,9 +399,26 @@ def iter_cindex_jobs(
     study = display_to_study(dataset_name)
     split_dir = _split_dir_for(dataset_name)
     results_base = analyzer_results_base(results_root)
+    exp_group = analyzer_exp_group(landmark_tag)
+    clinic_subdir = "" if landmark_tag in ("", LANDMARK_NONE_TAG) else landmark_tag
+    # The invariance check (`--landmark_shift off`) runs the same arm with the
+    # time origin left alone; it needs its own run/conf/row name, otherwise it
+    # would collide with the shifted run of the same arm.
+    run_tag = landmark_tag if (landmark_shift or not landmark_tag) else f"{landmark_tag}__noshift"
+    label_file, label_stats = _landmark_label_file(
+        study=study,
+        landmark_time=landmark_time,
+        results_root=results_root,
+        apply_shift=landmark_shift,
+    )
     out = []
     for job in jobs:
-        clinic_dir = scheme_output_dir(dataset_name, job["scheme"], baseline_out)
+        clinic_dir = scheme_output_dir(
+            dataset_name,
+            job["scheme"],
+            baseline_out,
+            landmark_subdir=clinic_subdir,
+        )
         if not clinic_dir.is_dir():
             print(f"  skip missing embeddings: {job['scheme']} -> {clinic_dir}")
             continue
@@ -365,25 +426,33 @@ def iter_cindex_jobs(
             if modality in MULTIMODAL_MODALITIES and study not in MULTIMODAL_STUDIES:
                 print(f"  skip {modality} for {dataset_name}: multimodal models are {MULTIMODAL_DISPLAY} only")
                 continue
-            run_name = f"{study}__{job['scheme']}"
+            row_scheme = landmark_scheme_name(job["scheme"], run_tag)
+            run_name = f"{study}__{row_scheme}"
             out.append(
                 {
                     "dataset": dataset_name,
                     "study": study,
                     "scheme": job["scheme"],
+                    "row_scheme": row_scheme,
                     "bound_scheme": job["bound_scheme"],
                     "encoding": job["encoding"],
                     "modality": modality,
                     "clinic_dir": clinic_dir,
                     "split_dir": split_dir,
                     "results_base": results_base,
+                    "exp_group": exp_group,
+                    "landmark_tag": landmark_tag,
+                    "landmark_run_tag": run_tag,
+                    "landmark_time": landmark_time,
+                    "label_file": label_file,
+                    "label_stats": label_stats,
                     "run_name": run_name,
-                    "conf_name": conf_filename(study, job["scheme"], modality),
+                    "conf_name": conf_filename(study, job["scheme"], modality, run_tag),
                     "seed": int(seed),
                     "max_epochs": max_epochs,
                     "out_dir": results_dir(
                         DEFAULT_ANALYZER_DIR,
-                        ANALYZER_EXP_GROUP,
+                        exp_group,
                         run_name,
                         modality,
                         results_dir_base=results_base,
@@ -391,6 +460,33 @@ def iter_cindex_jobs(
                 }
             )
     return out
+
+
+def _landmark_label_file(
+    *,
+    study: str,
+    landmark_time,
+    results_root: Path | str | None = None,
+    apply_shift: bool = True,
+) -> tuple[Path | None, dict | None]:
+    """Derived label CSV (risk set + time shift) for a numeric landmark arm.
+
+    landmark_time None (legacy / landmark_none arm) keeps the original label
+    file: arm A must be bit-for-bit the reported-value control.
+    """
+    if landmark_time is None:
+        return None, None
+    label_file, stats = build_landmark_label_file(
+        study=study,
+        landmark_time=landmark_time,
+        results_root=results_root,
+        apply_shift=apply_shift,
+    )
+    print(
+        f"  [landmark T={int(landmark_time)}] {format_risk_set_summary(stats)}"
+        f" -> {label_file}"
+    )
+    return label_file, stats
 
 
 def enqueue_cindex_jobs(
@@ -417,6 +513,9 @@ def enqueue_cindex_jobs(
             results_base=job["results_base"],
             seed=job.get("seed", 0),
             max_epochs=job.get("max_epochs"),
+            landmark_tag=job.get("landmark_run_tag", job.get("landmark_tag", "")),
+            exp_group=job.get("exp_group"),
+            label_file=job.get("label_file"),
         )
         failed = root / "failed" / name
         dest = root / "queue" / name
@@ -530,6 +629,7 @@ def summarize_dataset(
     results_root: Path | str | None = None,
     encoding: str,
     modality: str,
+    landmark_tag: str = "",
 ) -> list[dict]:
     rows = []
     for job in jobs:
@@ -541,7 +641,7 @@ def summarize_dataset(
         payload = read_cindex(reuse_dir)
         row = {
             "dataset": dataset_name,
-            "scheme": job["scheme"],
+            "scheme": job.get("row_scheme") or job["scheme"],
             "encoding": job["encoding"],
             "modality": job["modality"],
             "clinic_dir": str(job["clinic_dir"]),
@@ -560,14 +660,14 @@ def summarize_dataset(
         rows.append(row)
         print(
             "  {}: val={} test={} modality={} log={}".format(
-                job["scheme"],
+                row["scheme"],
                 row["val_c_index_mean"],
                 row["test_c_index_mean"],
                 job["modality"],
                 row["log_path"],
             )
         )
-    out_dir = result_table_dir(dataset_name, results_root)
+    out_dir = result_table_dir(dataset_name, results_root, landmark_tag=landmark_tag)
     out_dir.mkdir(parents=True, exist_ok=True)
     existing_config = _load_json(out_dir / "run_config.json") or {}
     existing_rows = list(existing_config.get("rows") or [])
@@ -608,6 +708,9 @@ def evaluate_dataset_schemes(
     run_queue: bool = True,
     poll_seconds: float = 10.0,
     workers: int = 1,
+    landmark_tag: str = "",
+    landmark_time=None,
+    landmark_shift: bool = True,
 ) -> list[dict]:
     del extra_args
     jobs = iter_cindex_jobs(
@@ -620,6 +723,9 @@ def evaluate_dataset_schemes(
         results_root=results_root,
         seed=seed,
         max_epochs=max_epochs,
+        landmark_tag=landmark_tag,
+        landmark_time=landmark_time,
+        landmark_shift=landmark_shift,
     )
     queued = enqueue_cindex_jobs(jobs, queue_root=queue_root)
     root = queued["root"]
@@ -634,6 +740,7 @@ def evaluate_dataset_schemes(
         results_root=results_root,
         encoding=encoding,
         modality=modality,
+        landmark_tag=landmark_tag,
     )
 
 
@@ -650,7 +757,21 @@ def run_cindex_queue(
     queue_root: Path | str | None = None,
     poll_seconds: float = 10.0,
     workers: int = 1,
+    landmark_setting=None,
+    landmark_shift: bool = True,
 ) -> dict[str, list[dict]]:
+    landmark_tag = getattr(landmark_setting, "arm_tag", "") or ""
+    landmark_time = getattr(landmark_setting, "landmark_time", None)
+    if landmark_tag:
+        print(
+            f"[cindex] landmark arm={landmark_tag} "
+            f"(table -> {DEFAULT_LANDMARK_EXP_GROUP}, runs -> {LANDMARK_ANALYZER_EXP_GROUP})"
+        )
+        if landmark_time is not None:
+            print(
+                f"[cindex] risk set + time origin: gt <= {int(landmark_time)}d excluded, "
+                f"label time -= {int(landmark_time)}d, shift={'on' if landmark_shift else 'off'}"
+            )
     jobs_by_dataset = {}
     all_jobs = []
     for job in jobs:
@@ -667,6 +788,9 @@ def run_cindex_queue(
             results_root=results_root,
             seed=seed,
             max_epochs=max_epochs,
+            landmark_tag=landmark_tag,
+            landmark_time=landmark_time,
+            landmark_shift=landmark_shift,
         )
         key = f"{dataset_name}[{source}]"
         jobs_by_dataset[key] = eval_jobs
@@ -685,5 +809,6 @@ def run_cindex_queue(
             results_root=results_root,
             encoding=encoding,
             modality=modality,
+            landmark_tag=landmark_tag,
         )
     return summaries

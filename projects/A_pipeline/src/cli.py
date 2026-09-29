@@ -41,6 +41,7 @@ from .hgcn_clinic import (
 )
 from .cindex import resolve_cindex_schemes, run_cindex_queue
 from .config import SCHEME_FIELDS
+from .landmark import parse_landmark_setting
 
 
 def _add_common_args(parser: argparse.ArgumentParser):
@@ -72,9 +73,9 @@ def _add_common_args(parser: argparse.ArgumentParser):
         help="编码。所有命令相同：text=CONCH embedding，baseline=D 向量，all=两种都处理。cindex 按它选评测编码。",
     )
     parser.add_argument(
-        "--modality",
+        "--analyzer",
         default="mlp_clinic_flatten",
-        help="cindex 评估模型，逗号分隔。没有内外层。默认 mlp_clinic_flatten；可选 mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox,survgc_f,survpgc_f。",
+        help="cindex 测评器（analyzer），逗号分隔。没有内外层。默认 mlp_clinic_flatten；可选 mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox,survgc_f,survpgc_f。",
     )
     parser.add_argument(
         "--results_dir",
@@ -99,6 +100,25 @@ def _add_common_args(parser: argparse.ArgumentParser):
         type=int,
         default=1,
         help="本终端同时抢活的 worker 数。每个 worker 独立 claim 一条 conf。多 GPU 请开多个终端并设 CUDA_VISIBLE_DEVICES。",
+    )
+    parser.add_argument(
+        "--landmark_time",
+        default=None,
+        help=(
+            "H1b landmark 起点（天）：0/365/730/none。不传=旧行为（产物与 cindex 全部走现有目录）；"
+            "数字=经典 landmark 三要件：只保留 t_hi <= T 的 timed 槽位、排除 ground_truth_time <= T 的患者、"
+            "label 时间改为 gt - T；产物落 outputs/{dataset}/A_manual/{scheme}/landmark_{T}/；"
+            "cindex 传 0/365/730/none 时把该臂写入 results/A_manual_landmark/。"
+        ),
+    )
+    parser.add_argument(
+        "--landmark_shift",
+        default="on",
+        choices=["on", "off"],
+        help=(
+            "时间原点平移开关（只影响 cindex 的 label 侧，用于平移不变性自检）："
+            "on=label 时间 gt-T（默认）；off=只做风险集排除、不平移，写独立 run 名 __noshift。"
+        ),
     )
 
 
@@ -126,6 +146,13 @@ def main(argv=None):
         _add_common_args(p)
 
     args = parser.parse_args(argv)
+
+    try:
+        landmark_setting = parse_landmark_setting(args.landmark_time)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.cmd == "hgcn_clinic" and landmark_setting.provided:
+        parser.error("hgcn_clinic 不支持 --landmark_time；landmark 只作用于 pipeline / json2prompt / encode / baseline / cindex。")
 
     load_custom_schemes(args.template_dir)
     try:
@@ -173,7 +200,7 @@ def main(argv=None):
         parser.error(str(exc))
 
     baseline_mappings_by_source = {}
-    if args.cmd == "baseline" and not args.baseline_stats_dir:
+    if args.cmd == "baseline" and not args.baseline_stats_dir and not landmark_setting.use_landmark:
         jobs_by_source = {}
         for job in jobs:
             if not job.get("name"):
@@ -231,13 +258,15 @@ def main(argv=None):
             jobs=named_jobs,
             baseline_out=args.baseline_out,
             encoding=args.encoding,
-            modality=args.modality,
+            modality=args.analyzer,
             results_root=args.results_dir,
             reuse=args.reuse,
             max_epochs=args.max_epochs,
             seed=args.seed,
             queue_root=args.queue_root,
             workers=args.workers,
+            landmark_setting=landmark_setting,
+            landmark_shift=args.landmark_shift != "off",
         )
         return
 
@@ -267,6 +296,8 @@ def main(argv=None):
                     prompt_dir=job["prompt_dir"],
                     project_ids=job["project_ids"],
                     dataset_name=job["name"],
+                    landmark_time=landmark_setting.landmark_time,
+                    landmark_subdir=landmark_setting.encode_subdir,
                 )
 
         if args.cmd in ("encode", "pipeline"):
@@ -277,6 +308,7 @@ def main(argv=None):
                     ckpt=args.ckpt,
                     out_dir=job["out_dir"],
                     batch_size=args.batch_size,
+                    landmark_subdir=landmark_setting.encode_subdir,
                 )
 
         if args.cmd == "baseline":
@@ -294,6 +326,9 @@ def main(argv=None):
                 global_metadata_dir=(
                     str(source_meta["mapping_dir"]) if source_meta.get("mapping_dir") is not None else None
                 ),
+                landmark_time=landmark_setting.landmark_time,
+                landmark_subdir=landmark_setting.encode_subdir,
+                dataset_name=job["name"],
             )
 
         if args.cmd == "hgcn_clinic":

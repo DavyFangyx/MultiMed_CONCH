@@ -9,7 +9,7 @@
 | D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | **已确认（方案 B）** | 删除：results/{E2_selection,univariate,greedy,linear_probe}、results_display/{univariate,greedy,linear_probe,E1_Fig2_Single-field c-index}、outputs/*/{greedy,univariate}（35 队列）、Clinic_Analyzer/results、Clinic_Analyzer/configs/{E2_selection,greedy,univariate}。保留：results/A_manual、results_display/FigA_Other_Paper_Works、outputs/*/{A_manual,field_bank}、rawdata_stats/。磁盘释放 ~200GB（1.1T→1.3T 可用）。 |
 | D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | **未解决**（U1：锚点 0.05 无推导；改由用户给出效应量先验反推门槛，先验待用户提供） | "有意义差异 0.05" 无推导出处（`event_impact_analysis/README.md:94` 断言）。D1 按用户决议：**由用户给出 H1b/H2 Δc 效应量先验**（至少要分辨到什么量级）后反推每折事件数门槛；先验未给出前门槛不锁定、manifest tier 保持 provisional、训练实验选集不做硬门槛（spec §12 U1）。 |
 | D2 | landmark 有效事件口径（mask vs 排除患者）+ 数据集范围 | **已确认**（用户指令 2026-09-29） | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。**数据集范围：仅 33 TCGA；TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**，H4c 阶段再议。 |
-| D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | 待确认 | — |
+| D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **待确认**（自检已通过，条件见 S3 段） | **推荐放量（S4），三条硬条件**：① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② H1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
 | D4 | H2 最优组合口径（sig_stop 推荐 vs 历史 best） | 待确认 | — |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
 
@@ -271,6 +271,79 @@
 - 新口径（已写入 spec §2.4、§3）：本阶段数据集 = **仅 33 TCGA**；CPTAC / MMRF 等 TCGA 外数据集暂不纳入（H4c 阶段再议）；**未在用户实验清单中明确的事项，执行前必须先向用户报告并获确认**。
 - 决策点：D1 仍待确认（用户听完展开说明后决定）；D2 数据集范围部分已确认（33 TCGA）。
 - 状态：完成。
+
+---
+
+## S3 A_pipeline landmark 扩展与冒烟自检
+
+- 时间 / 执行者：2026-09-29 ~ 09-30 / Claude（S3 执行 agent）
+- 目标：(1) 给 A_pipeline 加 `--landmark_time {0,365,730,none}`，按 spec §2.5 / §6.1 实现经典 landmark 三要件；(2) 覆盖 `pipeline / json2prompt / encode / baseline / cindex`，默认 `none` 保持零行为变化；(3) BRCA × MULTISURV 冒烟自检（臂 A vs 旧 `results/A_manual/TCGA-BRCA[gdc]/cindex.csv`），为 D3 提供事实依据。
+- 输入（文件路径）：
+  - `z_notes/H_series_spec.md`（§2.5 三要件、§6.1 实现点、§6.3 自检）、`A_pipeline/README.md`
+  - 复用：`src/discovery/landmark.py::patient_landmark`（经 `A_pipeline/src/__init__.py` 的 sys.path 接入）、`src/time_stats.py::extract_patient_time_record`（槽位 `t_hi`）
+  - 标签/划分：`Clinic_Analyzer/data/datasets_csv/metadata/tcga_brca.csv`（1051 行）、`Clinic_Analyzer/data/splits/5foldcv/tcga_brca/splits_*.csv`
+- 命令与参数（示例，完整链路）：
+  - `python A_pipeline/run.py json2prompt --dataset TCGA-BRCA --scheme MULTISURV --landmark_time 0`
+  - `python A_pipeline/run.py encode --dataset TCGA-BRCA --scheme MULTISURV --landmark_time 0`
+  - `python A_pipeline/run.py cindex --dataset TCGA-BRCA --scheme MULTISURV --landmark_time 0 --analyzer clinic_cox,mlp_clinic_mean`（走现有 A_manual 队列调度）
+  - 平移不变性自检：同参数加 `--landmark_shift off`（生成 `__noshift` 变体）
+  - 测试：`python -m pytest A_pipeline/tests -q` → 44 passed（其中 `tests/test_landmark_time.py` 25 个）
+
+### 实现（file:line）
+
+| 要件 | 位置 | 说明 |
+|---|---|---|
+| ① 协变量 mask（`t_hi ≤ T`） | `A_pipeline/src/landmark.py:187` `mask_case()`（timed 家族 `:31`、槽位索引 `:131`、保值规则 `:146`）；调用点 `A_pipeline/src/extract.py:103` | timed family 槽位只保留 `t_hi ≤ T` 的取值，其余按现有缺失规则处理；无时点家族不 mask；`landmark_time=None` 原样返回（默认路径零变化） |
+| ② 风险集（排除 `gt ≤ T`） | `A_pipeline/src/landmark_labels.py:110-111`（`excluded_mask = gt_days <= T`）、`:131-132`（排除患者清单）、`:149-151`（统计入 sidecar） | 以"派生 label 文件"实现：被排除患者不在 label 文件中，`SurvivalDatasetFactory` 的 `label ∩ split` 交集自然把该患者从每折移除；**split 文件未改动** |
+| ③ 时间原点平移（`gt − T`） | `A_pipeline/src/landmark_labels.py:114-116`（`shift_months = T/30.4375`，`kept[time_col] -= shift_months`）、`:142` | 平移后 label 落 `results/A_manual_landmark/labels/{study}__landmark_{T}.csv` + `.json` sidecar（rows/events/cases 前后、excluded_cases、shift_months）；`--landmark_shift off` 生成 `__noshift`（仅自检用） |
+| 参数与透传 | `A_pipeline/src/cli.py:105-113`（`--landmark_time`）、`:114-122`（`--landmark_shift`）、`:151-155`（解析 + `hgcn_clinic` 拒绝）、`:203`、`:257-270`、`:299-330` | 默认 `none`：目录、run_name、conf 与旧链路逐字一致 |
+| 产物路由 | `A_pipeline/src/landmark.py:57/75/82/125`（subdir / arm tag）；`A_pipeline/src/cindex.py:35-36`（`A_manual_landmark/runs`）、`:92`、`:110-117`、`:129-136`（run_name `{scheme}__landmark_{T}`）、`:224`、`:231-262`（conf 追加 `LABEL_FILE_PATH=`）、`:369-489`（`iter_cindex_jobs` / `_landmark_label_file`）、`:747+`（`run_cindex_queue`） | 编码产物落 `outputs/{dataset}/A_manual/{scheme}/landmark_{T}/`；cindex 产物只落 `results/A_manual_landmark/`。旧 `results/A_manual/` 未被写（`TCGA-BRCA[gdc]/cindex.csv` mtime 仍 2026-09-07 23:59） |
+| 测试 | `A_pipeline/tests/test_landmark_time.py`（25 用例） | 构造小病例，覆盖 mask 只动 timed 槽、`none` 与旧实现逐值等价、目录/run_name/conf 路由、风险集与平移、`__noshift`、CLI 校验；不跑真实编码 |
+
+### 冒烟自检（BRCA × MULTISURV，spec §6.3）
+
+| 检查项 | 结果 |
+|---|---|
+| 臂 A `clinic_cox` vs 旧表 | **diff = 0**：`0.5056892222943474` / std `0.0646250202971734`，5 折 `val_cindex` 逐位一致 |
+| 臂 A `mlp_clinic_mean` vs 旧表 | 首次 diff = **−0.0035722**（`0.6530100705066605` vs `0.6565822450248358`）→ 归因见下（label 源 + FP），非实现问题 |
+| 编码复现 | 新链路重生成的 prompts 编码 1098/1098 `.pt` 与旧 `outputs/TCGA-BRCA/A_manual/MULTISURV/embeddings/pt` **逐位一致**（(10,512)，max_abs_diff = 0.0） |
+| 字段集一致性（臂 A vs 臂 B） | 11 列同名同序、1098 患者同序；变化单元格只在 2 个 derived 治疗列（BRCA：pharmaceutical 173 / radiation 127）；LUAD 交叉验证只在 4 个诊断列（各 19）+ 2 个治疗列（123/124） |
+| 时间平移不变性（T=365，shift on vs off） | 5 折逐位一致：mean `0.4849119865610933`，max delta = 0.0（`MULTISURV__landmark_365` vs `...__noshift`） |
+| 风险集排除（T=0） | **`tcga_acc` 92→91（事件 34→33）**，与用户预期一致；`tcga_brca` 1051→1030（事件 146→144，排除 21 例）；35 个 label 文件排除 0–50 例。T=365：BRCA 876/事件 125（排除 175）；T=730：576/105 |
+| Δc（BRCA × MULTISURV，同字段集、唯一差异 = landmark mask） | `clinic_cox`：**+0.0127481**（0.5056892222943474 − 0.49294108776358436；折间 std 0.0646 / 0.0519）；`mlp_clinic_mean`：**−0.0056904**（0.6530100705066605 − 0.6587004760401869；折间 std 0.0955 / 0.1058） |
+
+### `mlp_clinic_mean` 首次 diff ≠ 0 的归因（两个诊断 run，非正式产物）
+
+产物：`results/A_manual_landmark/runs/tcga_brca__MULTISURV__landmark_none__det1/`、`.../__landmark_none__oldlabel/`（日志 `/tmp/h1b_smoke/{det1,oldlabel}.log`）
+
+| 探针 | 设置 | 结果 |
+|---|---|---|
+| `det1` | 与臂 A 完全同参重跑（同 label 源） | 5 折 `val_cindex` 与臂 A **逐位一致** → 同环境下分析器逐位可复现 |
+| `oldlabel` | 同新链路，仅 `--label_file` 换回旧 run 所用的 SurvPGC 副本 | 第 0–3 折与旧表**逐位一致**；第 4 折 `0.7018519` vs 旧表 `0.6988889` |
+
+- **主因：label 源差异**。旧 A_manual 共 625 个 run，其中 355 个（9 个 study：brca/coad/kich/kirc/kirp/lihc/prad/read/stad）的 `LABEL_FILE` 指向 `SurvPGC_github_init/datasets_csv/metadata/{study}.csv`，另 270 个（24 study）指向 `Clinic_Analyzer/...`；`Clinic_Analyzer/configs/defaults.conf:29` 的现行口径是**优先 Clinic_Analyzer**（该目录覆盖全部 35 队列，SurvPGC 仅 13 个），故新链路对所有 study 统一用 Clinic_Analyzer。两副本对共同 1051 例的 `survival_months`/`censorship` **逐位相同**，差异只在行序与 `slide_id` 命名；`_get_split_from_df` 按 label 行序构造数据集、`RandomSampler` 按固定 seed 打乱索引 → 同 seed 下批组成不同 → NN 权重不同（`clinic_cox` 闭式求解、对样本顺序不敏感，故仍逐位一致）。量化：换回旧 label 源后，臂 A 值 `0.6530101` → `0.6571748`（**+0.0041648**）。
+- **次因：跨环境 FP 差异**。`oldlabel` 与 2026-09-06 旧 run 的全部 60 个 epoch 的 `val_loss` 都只在第 8–10 位有效数字上不同（fold0 epoch0：`0.4097603142031985` vs `0.40976031603936053`，随训练放大到 ~1e-4）；`val_cindex` 是排序统计量，第 0–3 折 60/60 个 epoch 完全一致，第 4 折 8/12 个 epoch 出现翻转 → 3 周前与现在的环境不保证 NN 逐位复现，残余 **−0.0005926**。
+- 判据结论：`clinic_cox` 用"逐位 diff = 0"硬判据（✓）；NN 模态用等价判据"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（4/5 折逐位 ✓）"。**旧表在 9 个 SurvPGC 时代 study 上的 NN 数值不可由新链路默认口径逐位复现**，属 label 源升级的既有事实，与 landmark 实现无关；H1b 两臂同源同环境，Δc 不受影响。
+
+### 偏差与原因
+
+- **偏差 1（python 版本影响汇总列末位）**：`val_c_index_std` 由汇总脚本计算，CPython ≥3.12 的 `sum()` 用 Neumaier 补偿求和、3.9 用朴素求和 → 同一批 `val_result_fold*.csv` 在 3.13/3.9 下末位 ULP 不同（`...01734` vs `...17339`）。处理：删掉自己刚写的 summary，用**默认 python 3.13.12** 重新汇总 → 与旧表逐位一致。**规则**：H1b 全程用同一 python 版本汇总。
+- **偏差 2（误覆盖旧 prompts.csv，功能等价修复）**：09-29 23:33 单 JSON / 整目录两种用法混用时，曾把 `outputs/TCGA-BRCA/A_manual/MULTISURV/prompts.csv` 覆盖为按新链路生成的版本；事后用该文件重跑 `encode`，产出的 1098 个 `.pt` 与旧 `embeddings/pt` 逐位一致（max_abs_diff = 0.0），即**内容功能等价**，仅该文件 mtime 变化；`embeddings/`、`results/A_manual/` 均未被触碰。
+- **偏差 3（治疗字段语义，供 H1b 解读）**：A_pipeline 的 `_therapy_flag`（`A_pipeline/src/extract.py:47`）只把 `treatment_type == "pharmaceutical therapy, nos" / "radiation therapy, nos"` 计入 yes/no，其余落 unknown，故 mask 后 BRCA 治疗两列变化 173/127 例；H1a 审计把整个 treatment 槽位（含全部治疗条目）计入（1094→26，leak 0.976）。两者口径不同，比较 `leak_rate` 与 `Δc` 时需注意。
+- **偏差 4（工作区遗留改动随提交带入，非本步内容）**：`A_pipeline/src/cli.py` 的 cindex 参数 `--modality` → `--analyzer` 及 `A_pipeline/src/hgcn_clinic.py` 的共享词表改动是**本步之前**的工作区遗留 diff，我的 landmark 改动与其相邻，本步提交（按指令 `git add A_pipeline/src A_pipeline/tests`）会一并带入，特此标注。
+
+### 决策点
+
+- **D3 更新为：待确认（自检通过，附条件）**，推荐 **放量（S4）**，三条硬条件：① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12）；② H1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不必回退旧源）；③ 一致性判据按模态区分（clinic_cox 逐位 diff=0；NN 用"同环境重跑逐位一致 + 换回旧源可复现"）。另：单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，**必须按 §4.2 规则 6 用 mask 后的有效事件数聚合**后再判定，不可由单点下结论。
+- 其余决策点（D0/D1/D2/D4/D5）状态不变。
+
+### 状态
+
+完成（自检通过：clinic_cox 逐位 diff = 0；mlp 差异已定位到 label 源 + 跨环境 FP，并用探针证明新链路忠实）。S4 放量待 D3 确认；确认前不放大批量。
+
+### 提交
+
+`git add A_pipeline/src A_pipeline/tests z_notes/H_series_execution_log.md` → "S3: A_pipeline --landmark_time 扩展与冒烟自检"（未 push；未用 `git add -A`）。
 
 ---
 

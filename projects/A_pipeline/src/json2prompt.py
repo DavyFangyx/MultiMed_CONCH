@@ -11,15 +11,22 @@ from common.fields import field_output_col
 
 from .config import SCHEME_CONFIG, resolve_scheme_template_file
 from .extract import extract_values
+from .landmark import landmark_dir
 
 
 def _fill_template(template: str, value: str) -> str:
     return str(template).replace("{}", str(value), 1)
 
 
-def generate_prompt_row(case: dict, templates: dict, scheme: str) -> dict:
+def generate_prompt_row(
+    case: dict,
+    templates: dict,
+    scheme: str,
+    landmark_time=None,
+    dataset_name: str | None = None,
+) -> dict:
     cfg = SCHEME_CONFIG[scheme]
-    vals = extract_values(case)
+    vals = extract_values(case, landmark_time=landmark_time, dataset_name=dataset_name)
     row = {"patient_id": case["submitter_id"]}
     for field in cfg["fields"]:
         out_col = field_output_col(field)
@@ -34,16 +41,19 @@ def run_json2prompt(
     prompt_dir: str,
     project_ids: list | None = None,
     dataset_name: str | None = None,
+    landmark_time=None,
+    landmark_subdir: str = "",
 ):
     cfg = SCHEME_CONFIG[scheme]
     template_file = resolve_scheme_template_file(scheme, template_dir)
-    output_file = Path(prompt_dir) / scheme / "prompts.csv"
+    output_file = landmark_dir(Path(prompt_dir) / scheme, landmark_subdir) / "prompts.csv"
     json_paths = normalize_json_paths(json_path)
 
     print(f"\n{'='*55}")
     print(f"[json2prompt] 方案 {scheme}")
     if dataset_name:
         print(f"  Dataset : {dataset_name}")
+    print(f"  landmark : {'off' if landmark_time is None else f't_hi <= {int(landmark_time)} days'}")
     print(f"  JSON    : {json_paths}")
     print(f"  模板    : {template_file}")
     print(f"  输出    : {output_file}")
@@ -76,7 +86,15 @@ def run_json2prompt(
         if "submitter_id" not in case:
             skipped += 1
             continue
-        records.append(generate_prompt_row(case, templates, scheme))
+        records.append(
+            generate_prompt_row(
+                case,
+                templates,
+                scheme,
+                landmark_time=landmark_time,
+                dataset_name=dataset_name,
+            )
+        )
     if skipped:
         print(f"      跳过 {skipped} 个缺少 submitter_id 的条目")
 

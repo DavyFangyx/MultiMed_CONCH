@@ -24,6 +24,7 @@ from .baseline import (
     global_mapping_dir,
 )
 from common.clinical_io import load_clinical_cases, normalize_json_paths
+from common.fields import L5_FIELD_PATH_BY_PLACEHOLDER
 
 
 HGCN_PAD_DIM = 1024
@@ -163,7 +164,11 @@ def _load_d_series_nominal_mappings(mapping_path: Path | None = None) -> tuple[d
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     mappings = {
-        field: {str(key): int(index) for key, index in mapping.items()}
+        # 共享词表用 D 组占位键（SEX_AT_BIRTH…），方案字段是 GDC 路径（demographic.sex_at_birth…），
+        # 统一归一化成 GDC 路径后再返回。
+        L5_FIELD_PATH_BY_PLACEHOLDER.get(field, field): {
+            str(key): int(index) for key, index in mapping.items()
+        }
         for field, mapping in payload["fields"].items()
     }
     scope = dict(payload.get("mapping_scope") or {})

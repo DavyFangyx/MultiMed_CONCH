@@ -10,6 +10,7 @@ import pandas as pd
 from .paths import DEFAULT_GPU, REPO_ROOT
 
 from .config import SCHEME_COLS, SCHEME_DIRNAME
+from .landmark import landmark_dir
 
 
 def _lazy_import_conch():
@@ -36,13 +37,20 @@ def _build_patient_prompt_matrix(df: pd.DataFrame, prompt_cols: list) -> list:
     return patient_prompts
 
 
-def run_encode(scheme: str, prompt_dir: str, ckpt: str, out_dir: str, batch_size: int = 64):
+def run_encode(
+    scheme: str,
+    prompt_dir: str,
+    ckpt: str,
+    out_dir: str,
+    batch_size: int = 64,
+    landmark_subdir: str = "",
+):
     os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
 
-    csv_path = Path(prompt_dir) / scheme / "prompts.csv"
-    out_subdir = Path(out_dir) / SCHEME_DIRNAME[scheme]
+    csv_path = landmark_dir(Path(prompt_dir) / scheme, landmark_subdir) / "prompts.csv"
+    out_subdir = landmark_dir(Path(out_dir) / SCHEME_DIRNAME[scheme], landmark_subdir)
     prompt_cols = SCHEME_COLS[scheme]
 
     print(f"\n{'='*55}")
