@@ -253,5 +253,5 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
   | 30–70 | 补充材料，bootstrap/重采样 CI，不排名 | UVM、ACC、UCS、KIRP |
   | <30 | 定量图不收录；单列"低事件组"定性讨论 | 9 个（READ、CHOL、THCA、KICH、PRAD、DLBC、THYM、TGCT、PCPG） |
 
-  **待补（用户标注协议还有 B/C… 节）**：多字段实验/EPV 判据、landmark 有效事件重套、event_rate 降级、退化折等其余判据行；H1b/H2 训练集的口径（README 的"≥150–200 多字段实验（10 个）"待完整协议确认后落地）。
+  **B/C/D 判据：用户 2026-09-30 指令——暂不执行，保持简单**：B（多字段门槛：≥150 可跑 / 100–150 字段数≤3）、C（landmark 有效事件重套）**存档备查**（见执行日志 R5/R6），当前实验执行**全部按 A 判据**；D（次级修正）不采用。若后续需要再启用 B/C，再议。
 - **U2（泛癌种方案绑定）**：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN 是否按各自论文原始队列绑定，**暂按全部 33 TCGA 执行**，记录为未解决问题；待用户给出各论文队列口径后修正。
