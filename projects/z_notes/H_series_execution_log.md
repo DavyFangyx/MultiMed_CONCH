@@ -6,7 +6,7 @@
 
 | ID | 决策点 | 状态 | 结论 |
 |---|---|---|---|
-| D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | 待确认 | — |
+| D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | **已确认（方案 B）** | 删除：results/{E2_selection,univariate,greedy,linear_probe}、results_display/{univariate,greedy,linear_probe,E1_Fig2_Single-field c-index}、outputs/*/{greedy,univariate}（35 队列）、Clinic_Analyzer/results、Clinic_Analyzer/configs/{E2_selection,greedy,univariate}。保留：results/A_manual、results_display/FigA_Other_Paper_Works、outputs/*/{A_manual,field_bank}、rawdata_stats/。磁盘释放 ~200GB（1.1T→1.3T 可用）。 |
 | D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | 待确认 | **推荐：照搬 spec §4.2 现值**（150/70/30、rate<0.1 降一级）。理由：event_impact_analysis 的折间 std 分档表（§五）显示 ≥150 档 std 0.019–0.052，正好落在"能分辨 0.05 差异"的门槛内侧；本步 manifest 已按此跑出 12/10/4/9 的分布，与原型 README 的 12/22(≥70)/4/9 完全吻合，无调整压力。**唯一建议微调**：把 R7（退化折）从"仅标注"升级为"降级"，因为 PCPG/TGCT/DLBC/THYM 的退化折来自结构性事件稀少，标注不足以保护聚合图。 |
 | D2 | landmark 有效事件口径（mask vs 排除患者）+ MMRF 是否纳入 | **口径已确认**（用户指令 2026-09-29）；**MMRF 待确认** | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。MMRF **推荐纳入**（n_event=191、每折 38–39、无退化折）；但其 landmark 变换幅度大（lm365→118、lm730→47），须按新口径重套档位后再决定是否进 S4/S6。 |
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | 待确认 | — |
@@ -246,3 +246,17 @@
 ### 提交
 
 `git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/H_series_execution_log.md` → "S2: H1a 泄露审计模块与全数据集审计结果"（其中 `results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；`results/**`、`results_display/**` 的 png/csv 产物不入库；未 push）。提交 hash：`git log -1 --format=%h`（见仓库历史）。
+
+---
+
+## S0 删除 E 系列结果文件
+
+- 时间 / 执行者：2026-09-29 / Claude（主会话）
+- 目标：按 D0（方案 B，用户确认）删除 E 系列结果文件与陈旧中间产物。
+- 输入：D0 确认（方案 B）。
+- 命令与参数：`rm -rf results/E2_selection results/univariate results/greedy results/linear_probe results_display/univariate results_display/greedy results_display/linear_probe "results_display/E1_Fig2_Single-field c-index" outputs/*/greedy outputs/*/univariate Clinic_Analyzer/results Clinic_Analyzer/configs/E2_selection Clinic_Analyzer/configs/greedy Clinic_Analyzer/configs/univariate`
+- 产物：无（纯删除）。保留目录核对：results/{A_manual,H0_dataset_availability,leak_audit,README.md}、results_display/{FigA_Other_Paper_Works,leak_audit,README.md,scripts}、outputs/TCGA-BRCA/{A_manual,field_bank,longitudinal,schemes}、Clinic_Analyzer/configs/{A_manual,queue,running,done,failed,...}。
+- 审计：删除前后 `df -h`：可用 1.1T → 1.3T（释放 ~200GB）；删除与保留清单与 D0 结论逐项一致。
+- 偏差与原因：无。
+- 决策点：D0 已确认并执行完毕。
+- 状态：完成。
