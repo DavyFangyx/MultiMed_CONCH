@@ -640,3 +640,15 @@
 - 结果：done 345→365（迁移前又完成 20）；被中断的 8 个 conf（KIRP/UCS 臂 A mlp）进 failed 桶，属 kill 中断而非真实失败，watch 下一轮 enqueue 会自动重入队；当前 running=4、queue=0，排空中。
 - 决策点：无。
 - 状态：完成。
+
+---
+
+## S4 H1b 批跑完成
+
+- 时间 / 执行者：2026-09-30 08:06 / watch 自动（Claude 主会话记录）
+- 目标：记录批跑完成。
+- 事实：08:06:18 watch 判定 ALL 552 done；done=553（含 1 个旧冒烟 conf）、failed=0、queue/running=0。
+- 产物核验：results/A_manual_landmark/ 下 33/33 个 TCGA 的 cindex.csv 就位（16 行=4 泛癌种×2 臂×2 分析器；HGCN 绑定癌种 20 行；BRCA 含 S3 冒烟行 20+）；failed 桶已空（被中断的 8 个 KIRP/UCS 已重跑成功）。
+- 审计：watch 自修复循环闭环（07:36/07:38/07:43/07:55 四次拉起 drainer，B2/B3 自动投放），无人工干预到完成。
+- 决策点：无。
+- 状态：完成。
