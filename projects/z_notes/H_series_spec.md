@@ -154,6 +154,17 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 
 新代码：`src/leak/`（audit.py、cli.py）+ `scripts/run_leak_audit.py` + `tests/test_leak_audit.py`。验收：抽查 3 个 (dataset, scheme, field) 与手工 JSON 核对一致。
 
+## 5bis. H1c 单字段泄露对照（串联 H1a 与 H1b）
+
+- **动机**（用户指令 2026-09-30）：H1a 只测"可得性"（leak_rate），H1b 整组合 Δc≈0 时读者无法解释"为何存在泄露却没有转化为高估"。单字段对照把两个实验连起来。
+- **做法**：对每个 (dataset, field)（field = landmark_0 kept 字段集）：
+  - 臂 off：同患者集（排除 gt≤0，与 H1b 臂 B 一致）、取值 **mask 关闭** → c(field, off)；
+  - 臂 t0：同患者集、mask 开 → c(field, landmark_0)；
+  - Δc_field = c(off) − c(t0)，与 H1a 审计的 leak_rate 交叉。
+- **产物**：`results_display/H1c_field_level/`：leak_rate × c(off) × c(t0) × Δc_field 交叉表（逐 dataset 与跨数据集聚合）+ 散点/热图（x=leak_rate, y=Δc_field）；输出"理论上能动组合 Δc 的字段清单"（leak_rate 高且 |Δc_field| 非平凡）。
+- **实现**：新增 field bank 变体 `raw`（字段列表 = landmark_0 kept，取值 mask 关闭，提取 landmark=False），univariate 评估两臂共用同患者集（复用 S4 的派生 label 机制，gt≤0 排除）。
+- **验收**：抽查 3 个 (dataset, field) 手算一致；两臂患者集逐位一致；交叉表与 H1a 审计 leak_rate 数值一致。
+
 ## 6. H1b 规格
 
 ### 6.1 A_pipeline landmark 扩展（S3 实现）

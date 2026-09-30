@@ -711,3 +711,13 @@
 - 决策点：无新增，未改动决策点状态表。
 - 状态：完成。
 - 提交：`git add results_display/scripts/h1b_delta_report.py z_notes/H_series_execution_log.md` → "H1b: Δc 对照报表(报告值vs去泄露值)"（png/csv 产物在 gitignore 内不入库；未 push；未用 git add -A）。
+
+---
+
+## 口径记录 R8：新增 H1c 实验
+
+- 时间 / 执行者：2026-09-30 / Claude（主会话，用户指令）
+- 内容：新增 **H1c 单字段泄露对照**——per-field univariate 的 c(field, mask off) vs c(field, landmark_0)，与 H1a 的 leak_rate 做交叉表，串联 H1a 与 H1b（解释"为何存在泄露却没有转化为整组合高估"），并预判哪些字段的泄露理论上能动 Δc（spec §5bis）。
+- 执行安排：S5（field bank lm0 重生成 + univariate 补跑）完成后执行；实现 = 新增 field bank 变体 `raw`（lm0 字段集 + mask 关闭）+ 两臂同患者集（gt≤0 排除,复用 S4 派生 label 机制）。
+- 决策点：无。
+- 状态：完成（注册；执行待 S5 结束）。
