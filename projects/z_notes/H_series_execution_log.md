@@ -661,3 +661,53 @@
 - 内容：H2 贪婪搜索使用**阈值早停**，增长阈值 **0.005**——即沿用 E2 规格第 9 节 sig_stop（gain(k) < 0.005 且 paired Wilcoxon p >= 0.05 连续 3 步停止，推荐 k_sig = k-3 前缀；另报历史 best）。
 - 决策点：D4 已确认。
 - 状态：完成。
+
+---
+
+## H1b Δc 报表
+
+- 时间 / 执行者：2026-09-30 / Claude（H1b 报表执行 agent）
+- 目标：按 spec §6.4 产出「报告值 vs 去泄露值」Δc 对照报表（纯汇总，不跑训练）：每 (dataset, scheme, analyzer) 报告 c(臂A none)、c(臂B landmark_0)、Δc = c(A) − c(B)（Δc>0 = 去泄露后下降 = 高估证据）；数据集分层按协议 A（n_event 四档）；汇总统计只报效应量、方向一致率与 CI，不做 0.05 显著性宣称。
+- 输入：
+  - `results/A_manual_landmark/{33 TCGA}[gdc]/cindex.csv` + `run_config.json`（S4 两臂产物，556 行 = 552 网格 + 4 条 BRCA S3 冒烟行）
+  - `results/A_manual_landmark/runs/**/val_result_fold*.csv`（5 折 × 552 run 的折文件，全部完整）
+  - `rawdata_stats/_shared/event_summary.csv`（35 行，取 33 TCGA 行做 n_event 分层）
+  - `results/A_manual_landmark/labels/{study}__landmark_0.json`（33 个，审计用排除清单）
+  - 结果分层核对：≥100 → 15 个、70–100 → 5 个（CESC/MESO/ESCA/UCEC/SARC）、30–70 → 4 个（UVM/ACC/UCS/KIRP）、<30 → 9 个，与 spec §12 U1 一致。
+- 命令与参数：
+  - `python3 results_display/scripts/h1b_delta_report.py --audit`（python 3.13.12，与 S4 汇总同版本）
+  - 可复跑：同命令连跑两次，stdout 与全部产物文件（26 个）md5 逐字节一致（diff=0）。
+- 表结构说明（S4 产物 → 报表）：
+  - S4 表：`dataset` 列（如 `TCGA-BRCA[gdc]`，LIHC 为 `TCGA_LIHC[gdc]` 下划线）；`scheme` 列 = `{scheme}__landmark_{none|0}`，**臂标记 = 后缀**（none=臂A 报告值对照，0=臂B 去泄露值）；`modality` 列 = 分析器（本报表只取 `clinic_cox` 与 `mlp_clinic_flatten`，即 S4 网格的 2 个分析器）；BRCA 表内 `landmark_365`/`noshift`/`mlp_clinic_mean` 为 S3 冒烟行，按「臂 ∈ {none,0} × 分析器 ∈ {cox,flatten}」过滤后恰好 552 行、每 (dataset, scheme, analyzer) 恰好 2 臂、HGCN 仅出现在绑定癌种表（20 行表），网格结构零异常。
+  - 报表列：`dataset/scheme/analyzer/tier/n_patients/n_event/event_rate` + `c_report/c_report_std`（臂A，折文件重算）+ `c_deleaked/c_deleaked_std`（臂B）+ `delta/delta_fold_std/delta_ci_lo/delta_ci_hi`（折内配对 t(4) 95% CI，5 折）+ `c_report_table/c_deleaked_table/delta_table`（S4 汇总表冻结值，对照用）+ `table_stale` + `n_folds`。
+- 关键发现（本步审计发现的 S4 汇总时序伪影，未改 results/，只在本报表内处理）：
+  1. **S4 汇总表 100/552 行是跑动中途快照**：`A_pipeline/src/cindex.py::_merge_cindex_rows` 首次写入后不再更新行，晚完成的 run 被冻结在部分折的均值上（例：BLCA×MMSURV flatten 臂A 表值 0.640341 vs 5 折实值 0.645855；分布：臂A 42 / 臂B 58；cox 17 / flatten 83）。本报表 c 值一律按 `read_cindex` 同算术（纯 python sum）从折文件重算，冻结值保留在 `*_table` 列，`table_stale` 标记（75 对至少一臂冻结）。建议后续步骤重跑 summarize 更新 S4 表（不在本步范围）。
+  2. **86/276 对 Δc 精确为 0 是真实结构效应，非复用伪影**（经 run.log 逐 epoch 核对，臂 B 确以派生 label 训练、case 数正确减少）：
+     - 57 对：该数据集 landmark 排除数 = 0 且方案字段在 t0 掩码下无取值变化 → 两臂输入完全相同 → 结果逐位相同；
+     - 29 对：排除数 > 0 但被排除者全部为 `ground_truth_time ≤ 0` 且删失（如 CESC 13/13 为 censored、gt=0）→ 对 c-index 无可比对贡献（c-index 只数可比对），移除不改变数值；含事件（gt<0 死亡）的排除才会改变 c（如 BLCA 2/4 为事件，Δc ≠ 0）。
+- 核心结论（Δc = 报告值 − 去泄露值；Δc>0 = 高估证据）：
+  - **main 档（15 数据集）**：方向一致率最高 = **MULTISURV × clinic_cox：10/15（0.667），mean +0.0063，bootstrap CI (−0.0026, +0.0145)**；正向数据集 = GBM +0.0307、SKCM +0.0252、HNSC +0.0219、STAD +0.0187、LGG +0.0176、KIRC +0.0159、LUAD +0.0130、BRCA +0.0127、PAAD +0.0099、COAD +0.0045；负向 = LAML −0.0301、LUSC −0.0172、LIHC −0.0146、BLCA −0.0142、OV −0.0001。其余方案 × 分析器方向一致率 0.067–0.467、跨数据集均值 −0.005 ~ −0.001，CI 全部跨 0。全 276 对 Δc>0 仅 81（29%），**无数据集级系统性高估证据**；幅度均落在折间 std 之内。
+  - **SKCM 全线负 Δc**（flatten −0.059 ~ −0.099、cox −0.038 ~ −0.039，5 折配对 CI 多不跨 0）：去泄露后 c-index 上升——SKCM 的 t0 后信息反而引入噪声，与高估假设方向相反，值得单列解读。
+  - **main_ci 档（5 数据集，必须带 CI、不排名）**：幅度小（|mean| ≤ 0.012），多数接近 0，CI 全跨 0；HGCN_ESCA flatten +0.0127、HGCN_UCEC flatten +0.0415（n=1 单点）。
+  - **supp 档（4 数据集，30–70）**：clinic_cox 16 对 Δc 全部 ≤ 0（MULTISURV mean −0.0479、CI (−0.0797, −0.0198)），即小事件组去泄露后 c 上升；flatten 方向混杂。n=4 且方差大，仅定性。
+  - **low 档（9 数据集，<30，仅定性）**：多对精确 0（同上结构效应）；MULTISURV flatten mean +0.0500（CI (+0.0106, +0.1014)，7/9>0）为全表最大正向均值，但属最低事件档、仅定性讨论。
+  - **HGCN 绑定癌种单点（n=1，不可与 15 数据集均值直接比）**：UCEC cox −0.0523 / flatten +0.0415；ESCA cox −0.0120 / flatten +0.0127；LUAD flatten −0.0621；LIHC flatten −0.0397；KIRC cox +0.0059 / flatten +0.0113；LUSC cox +0.0039 / flatten −0.0040。
+  - 汇总口径：paired Wilcoxon 以数据集为样本、5 折均值为配对值（summary 表 `wilcoxon_stat/p` 只作数值参考，不做显著性结论）；方向一致率 = Δc>0 比例；CI = bootstrap（B=10000，seed=0，数据集级重采样）+ 行级折内配对 t(4) CI。
+- 产物（`results_display/H1b_delta/`，gitignore 内不入库；全部 26 个文件）：
+  - `h1b_delta_main.csv`（172 行 = 128 main + 44 main_ci，tier 列标注 CI 要求）、`h1b_delta_supp.csv`（32 行）、`h1b_delta_low.csv`（72 行）、`h1b_delta_summary.csv`（44 行 = 方案 × 分析器 × 档组汇总）
+  - `h1b_delta_forest_{scheme}_{analyzer}.png` × 20（每方案×分析器森林图，行=数据集、误差棒=折内配对 95% CI、按协议 A 分档标注、Δc 符号色编码）+ `h1b_delta_overview_{analyzer}.png` × 2（跨方案均值条形 + bootstrap CI + 方向一致率直标）
+  - 脚本：`results_display/scripts/h1b_delta_report.py`（入库；`--audit` 固定种子抽查、同输入重跑 diff=0）
+- 审计（抽查 3 组，固定种子 20260930，ALL PASS）：
+  | 抽查组 | Δc 手算（折文件独立算术） | 与表一致 |
+  |---|---|---|
+  | TCGA-THYM × MULTISURV × clinic_cox | 0.3916461916 − 0.4661889162 = **−0.0745427245** | ✓（low 档，stale=False） |
+  | TCGA-SKCM × SURVPGC × mlp_clinic_flatten | 折文件重算 | ✓ |
+  | TCGA-LAML × MULTISURV × mlp_clinic_flatten | 折文件重算 | ✓ |
+  每组另核 4 项全过：Δc 独立重算一致、stale 标记自洽、SEED 两臂一致（config.snapshot SEED=0）、臂B = 臂A − 排除患者（5 折逐一核对 slide id，`.svs` 后缀归一；如 BLCA 逐折差集恰为 4 名排除者）。字段集控制变量已由 S4 校验（9 组抽查），本步未重复。
+- 偏差与原因：
+  1. S4 汇总表冻结行问题（见「关键发现 1」）：本报表改用折文件口径并在 `*_table` 列保留冻结值；**未修改 results/A_manual_landmark 任何文件**。
+  2. 折内配对 CI 的配对口径：臂 B 每折患者集 = 臂 A − 排除患者（landmark 要件①），两臂折号来自同一 split 源文件；配对 Δc 按同折号相减，排除患者造成的折间患者集差异已计入 CI 方差。
+  3. 图内文字全部用英文（matplotlib 默认字体无 CJK 字形）；图配色用参考调色板红/蓝发散对（light 表面，validate_palette.js 全项通过）。
+- 决策点：无新增，未改动决策点状态表。
+- 状态：完成。
+- 提交：`git add results_display/scripts/h1b_delta_report.py z_notes/H_series_execution_log.md` → "H1b: Δc 对照报表(报告值vs去泄露值)"（png/csv 产物在 gitignore 内不入库；未 push；未用 git add -A）。
