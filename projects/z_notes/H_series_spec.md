@@ -64,7 +64,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
 - 当前实现只有第 3 条——这是已知漏洞，S3/S4 必须补齐第 1、2 条。
-- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（H1b 臂 B、H2 搜索与三臂、H3b 主图）默认 t0。
+- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（H1b 臂 B、H2 搜索与三臂）默认 t0。
 - 365 / 730 作为敏感性；原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups，既非无处理也非规范处理）**更名 `static_only`**，**移出主图**，仅进补充材料。
 - 两个概念澄清（勿混用）：
   1. **取值 mask 状态**：`off`（无 mask，取值全集）/ `0` / `365` / `730`。H1a 审计的 leak_rate 用 off 与 0 对比；H1b 臂 A = off（报告值对照臂）。
@@ -81,7 +81,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | S4 | H1b 批跑（选集 = manifest 主集+扩展集） | `results/A_manual_landmark/` | 异常 → 回推 H0 |
 | S5 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑 | `outputs/*/field_bank/`、`results/univariate/` | 模板人工填写进度 |
 | S6 | H2 贪婪批跑（主集）+ 三臂对照 | Δc、遗漏字段清单 | **D4** 最优组合口径（sig_stop vs best） |
-| S7 | H3a 三档表 + H3b Spearman | `results_display/` | — |
+| S7 | H3a 三档表 | `results_display/` | — |
 | S8 | 回推 H0 manifest v2 + H4 规格起草 | manifest v2 | **D5** 数据集降级/剔除逐项确认 |
 
 依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S6 → S7；S4/S6 异常 → S8。
@@ -217,7 +217,6 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
 ## 8. H3 规格
 
 - **3a 三档表**：每 (dataset, work) 一行：报告值（旧 A_manual）、去泄露值（臂 B）、可达值（臂 C）、档间 Δ；主集定量、扩展集带 CI；并列 n_event / event_rate / 每折事件数。
-- **3b 排序对照**：输入 `results/univariate/prompt/{landmark_tag}/{dataset}/mlp_clinic_flatten/field_cindex.csv`（S5 补跑后）；主图 = `landmark_0` vs `landmark_{365,730}` 的单字段 c-index 排名 Spearman ρ；`static_only` 对照进补充材料；每数据集排名变化最大的字段清单（Δrank 前 k，标升/降）。数据集口径：`n_event ≥ 100` 主表（17 个），70–100 带 CI。
 - 产物：`results_display/H3_three_tiers/`、`results_display/H3_landmark_rank/`。
 
 ## 9. Git 提交协议
