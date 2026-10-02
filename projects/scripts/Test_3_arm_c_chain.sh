@@ -26,18 +26,28 @@ echo "[chain] datasets=${#DATASETS[@]}: ${DATASETS[*]}"
 
 result_json() { echo "results/Test_3_greedy_vs_works/search/$1/mlp_clinic_flatten/seed_0/result.json"; }
 
+declare -A ATTEMPTS=()
+MAX_ATTEMPTS="${T3_CHAIN_MAX_ATTEMPTS:-5}"
 pending=("${DATASETS[@]}")
 while [ "${#pending[@]}" -gt 0 ]; do
     rest=()
     for ds in "${pending[@]}"; do
         if [ ! -f "$(result_json "$ds")" ]; then rest+=("$ds"); continue; fi
+        if [ "${ATTEMPTS[$ds]:-0}" -ge "$MAX_ATTEMPTS" ]; then
+            echo "[chain] $ds 连续失败 ${ATTEMPTS[$ds]} 次，放弃（不阻塞总表；可手动重跑）"
+            continue
+        fi
         echo "[chain] $ds result.json 落盘 $(date '+%F %T') → generate/encode/enqueue"
-        "$PYTHON3" scripts/Test_3_arms.py generate --arm ksig --datasets "$ds" \
-            || { echo "[chain] $ds generate 失败，保留待重试"; rest+=("$ds"); continue; }
-        "$PYTHON3" scripts/Test_3_arms.py encode --arm ksig --gpu "$ENC_GPU" --parallel 2 --datasets "$ds" \
-            || { echo "[chain] $ds encode 失败，保留待重试"; rest+=("$ds"); continue; }
-        "$PYTHON3" scripts/Test_3_arms.py enqueue --arm ksig --datasets "$ds" \
-            || { echo "[chain] $ds enqueue 失败，保留待重试"; rest+=("$ds"); continue; }
+        if ! "$PYTHON3" scripts/Test_3_arms.py generate --arm ksig --datasets "$ds"; then
+            ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds generate 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
+        fi
+        if ! "$PYTHON3" scripts/Test_3_arms.py encode --arm ksig --gpu "$ENC_GPU" --parallel 2 --datasets "$ds"; then
+            ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds encode 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
+        fi
+        if ! "$PYTHON3" scripts/Test_3_arms.py enqueue --arm ksig --datasets "$ds"; then
+            ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds enqueue 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
+        fi
+        ATTEMPTS[$ds]=0
     done
     pending=("${rest[@]}")
     [ "${#pending[@]}" -gt 0 ] && sleep "$POLL"
