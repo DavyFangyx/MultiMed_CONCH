@@ -27,6 +27,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(PROJECT_ROOT / "src"))
+from common.paths import RESULTS_ROOT, test_results_dir as _resolve_results_dir  # noqa: E402
+
+# Test 系列命名公约: 结果臂目录(迁移前 = A_manual/A_manual_landmark,
+# 迁移后 = Test_2b/arm_A/arm_B;断言随解析,两种状态都成立)
+ARM_A = _resolve_results_dir("Test_2b/arm_A").relative_to(RESULTS_ROOT)
+ARM_B = _resolve_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT)
+
 
 A_PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(A_PIPELINE_ROOT) not in sys.path:
@@ -344,17 +353,17 @@ def test_baseline_scheme_output_dir_landmark_subdir(tmp_path):
 
 def test_landmark_paths_never_touch_legacy_a_manual(tmp_path):
     results_root = tmp_path / "results"
-    assert result_table_dir("TCGA-READ", results_root) == results_root / "A_manual" / "TCGA-READ"
+    assert result_table_dir("TCGA-READ", results_root) == results_root / ARM_A / "TCGA-READ"
     assert (
         result_table_dir("TCGA-READ", results_root, landmark_tag="landmark_0")
-        == results_root / "A_manual_landmark" / "TCGA-READ"
+        == results_root / ARM_B / "TCGA-READ"
     )
     assert (
         result_table_dir("TCGA-READ", results_root, landmark_tag=LANDMARK_NONE_TAG)
-        == results_root / "A_manual_landmark" / "TCGA-READ"
+        == results_root / ARM_B / "TCGA-READ"
     )
-    assert analyzer_exp_group() == "A_manual/runs"
-    assert analyzer_exp_group("landmark_0") == "A_manual_landmark/runs"
+    assert analyzer_exp_group() == f"{ARM_A}/runs"
+    assert analyzer_exp_group("landmark_0") == f"{ARM_B}/runs"
 
     # landmark_none = the reported-value arm: same embedding dir as today.
     assert str(scheme_output_dir("TCGA-READ", "L0", str(tmp_path), landmark_subdir="")).endswith(

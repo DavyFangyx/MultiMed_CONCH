@@ -2,7 +2,8 @@
 
 One conf per (dataset, landmark_time). Multiple GPU workers share the same
 queue and claim jobs with an atomic mv, so a running job is not taken again.
-Greedy and univariate use separate default roots.
+Univariate has a default root; greedy must pass --queue_root explicitly (the
+D0 family root was deleted).
 """
 
 from __future__ import annotations
@@ -14,11 +15,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common.paths import PROJECT_ROOT
+from common.paths import config_family_dir
 
 
-DEFAULT_QUEUE_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs" / "greedy"
-DEFAULT_UNIVARIATE_QUEUE_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs" / "univariate"
+# D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy 队列根必须显式传 --queue_root。
+DEFAULT_QUEUE_ROOT = None
+DEFAULT_UNIVARIATE_QUEUE_ROOT = config_family_dir("Test_1a_t0")
 BUCKETS = ("queue", "running", "done", "failed")
 WORKER_LOCAL_KEYS = ("workers", "device", "conch_python", "analyzer_python", "queue_root")
 JOB_KEY_SKIP = set(WORKER_LOCAL_KEYS) | {"dataset", "landmark_tag"}
@@ -34,9 +36,11 @@ def queue_root_from_args(args) -> Path:
         if experiment == "longitudinal":
             return DEFAULT_UNIVARIATE_QUEUE_ROOT.parent / "longitudinal_univariate"
         return DEFAULT_UNIVARIATE_QUEUE_ROOT
-    if experiment == "longitudinal":
-        return DEFAULT_QUEUE_ROOT.parent / "longitudinal"
-    return DEFAULT_QUEUE_ROOT
+    # D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy 队列根必须显式给出。
+    raise ValueError(
+        "greedy 队列根必须显式传 --queue_root（例如 Clinic_Analyzer/configs/Test_3_search）；"
+        "D0 家族 Clinic_Analyzer/configs/greedy 已删除，不再提供默认队列根"
+    )
 
 
 def ensure_queue_dirs(root: Path) -> Path:

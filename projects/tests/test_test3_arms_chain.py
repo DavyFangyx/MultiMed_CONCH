@@ -104,9 +104,9 @@ def test_compare_math_and_missed_fields(tmp_path, monkeypatch):
     name_bp, name_c = C.bp_scheme_name(work, dataset), C.c_scheme_name(dataset)
     work_fields = ["a", "b"]
     c_fields = ["a", "c"]
-    monkeypatch.setattr(CMP, "RESULTS", tmp_path / "results")
+    monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
     monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
-    _write_table(CMP.RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv",
+    _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      work: {"mlp_clinic_flatten": (0.50, 0.01), "clinic_cox": (0.55, 0.02)},
                      name_bp: {"mlp_clinic_flatten": (0.60, 0.01), "clinic_cox": (0.57, 0.02)},
@@ -127,9 +127,9 @@ def test_compare_math_and_missed_fields(tmp_path, monkeypatch):
 
 def test_compare_raises_when_arm_missing(tmp_path, monkeypatch):
     dataset, work = "TCGA-XX", "MULTISURV"
-    monkeypatch.setattr(CMP, "RESULTS", tmp_path / "results")
+    monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
     monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
-    _write_table(CMP.RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv",
+    _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      work: {"mlp_clinic_flatten": (0.50, 0.01)},
                      C.bp_scheme_name(work, dataset): {"mlp_clinic_flatten": (0.60, 0.01)},
@@ -142,14 +142,14 @@ def test_compare_raises_when_arm_missing(tmp_path, monkeypatch):
 
 def test_batch_writes_table_missed_and_figure(tmp_path, monkeypatch):
     dataset, work = "TCGA-XX", "MULTISURV"
-    monkeypatch.setattr(CMP, "RESULTS", tmp_path / "results")
+    monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
     monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
     monkeypatch.setattr(CMP, "OUT_ROOT", tmp_path / "out")
     monkeypatch.setattr(CMP, "DISPLAY_ROOT", tmp_path / "display")
     monkeypatch.setattr(C, "PAN_CANCER_WORKS", (work,))
     monkeypatch.setattr(C, "HGCN_BINDING", {})
     monkeypatch.setattr(C, "main_datasets", lambda *a, **k: [dataset])
-    _write_table(CMP.RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv",
+    _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      work: {"mlp_clinic_flatten": (0.50, 0.01)},
                      C.bp_scheme_name(work, dataset): {"mlp_clinic_flatten": (0.60, 0.01)},

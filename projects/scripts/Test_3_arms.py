@@ -1,16 +1,16 @@
 """Test_3 三臂编排（全走 A_pipeline，同编码器/模型/划分/seed；spec §7.2）。
 
-  臂 B  = 工作完整组合 × scheme 模板 × landmark_0 —— 复用 Test_2b 产物（results/A_manual_landmark/），
+  臂 B  = 工作完整组合 × scheme 模板 × landmark_0 —— 复用 Test_2b 产物（results/Test_2b/arm_B/），
           本脚本只读不跑。
   臂 B' = 工作完整组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}。
   臂 C  = 贪婪最优组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}
           （recommended_subset = sig_stop 参考点；--arm best 用历史 best_subset 作附录对照）。
 
 链路：generate（schemes.json 登记）→ encode（conch 环境 python；landmark_0 槽位过滤 + bank 句子）
-      → enqueue（A_pipeline cindex conf，results/A_manual_landmark 路由）→ drain（Clinic_Analyzer/run.sh）
-      → summarize（写 results/A_manual_landmark/{dataset}[gdc]/cindex.csv，按行键合并，不动 Test_2b 行）。
+      → enqueue（A_pipeline cindex conf，results/Test_2b/arm_B 路由）→ drain（Clinic_Analyzer/run.sh）
+      → summarize（写 results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv，按行键合并，不动 Test_2b 行）。
 
-纪律：只新增 Test_3_* 子目录，绝不覆盖 outputs/*/A_manual 与 results/A_manual_landmark 既有产物；
+纪律：只新增 Test_3_* 子目录，绝不覆盖 outputs/*/A_manual 与 results/Test_2b/arm_B 既有产物；
       仅登记 schemes.json，不改 A_pipeline 源文件（缺口用 Test_3_pipeline_one.apply_patches 进程内补）。
 
 用法（projects/ 根目录）：
@@ -46,9 +46,14 @@ if str(ROOT / "A_pipeline") in sys.path:
     sys.path.remove(str(ROOT / "A_pipeline"))
 sys.path.insert(0, str(ROOT / "A_pipeline"))
 
+from common.paths import config_family_dir, test_results_dir  # noqa: E402
+
 LOG_ROOT = C.OUT_ROOT / "logs"
 ARMS = ("bp", "ksig", "best")
 C_KIND = {"ksig": "ksig", "best": "best"}
+# 命名公约过渡（见 common/paths.py）：新名优先、旧名回退，迁移前后都能跑。
+QUEUE_ROOT = config_family_dir("Test_3_arms")      # cindex conf 队列根（迁移前回退 configs/A_manual）
+ARM_B_RESULTS = test_results_dir("Test_2b/arm_B")  # 臂 B 汇总表根（迁移前回退 results/A_manual_landmark）
 
 
 def conch_python() -> Path:
@@ -152,19 +157,19 @@ def cmd_enqueue(arm: str, datasets: list[str]) -> None:
             missing += 1
             print(f"[test_3][arms] 无 job（缺 embeddings?）: {dataset}/{scheme} -> {embeddings_dir(dataset, scheme)}")
             continue
-        queued = enqueue_cindex_jobs(jobs)
+        queued = enqueue_cindex_jobs(jobs, queue_root=QUEUE_ROOT)
         created += len(queued["created"])
         existing += len(queued["existing"])
     print(f"[test_3][arms] enqueue created={created} existing={existing} missing={missing}")
 
 
 def cmd_drain(gpu: str, workers: int, poll: float) -> None:
-    from src.cindex import DEFAULT_QUEUE_ROOT, drain_queue
+    from src.cindex import drain_queue
 
     _apply_arm_patches(gpu)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    print(f"[test_3][arms] drain queue={DEFAULT_QUEUE_ROOT} gpu={gpu} workers={workers}", flush=True)
-    drain_queue(Path(DEFAULT_QUEUE_ROOT), reuse=True, poll_seconds=poll, workers=workers)
+    print(f"[test_3][arms] drain queue={QUEUE_ROOT} gpu={gpu} workers={workers}", flush=True)
+    drain_queue(Path(QUEUE_ROOT), reuse=True, poll_seconds=poll, workers=workers)
 
 
 def cmd_summarize(datasets: list[str], arm: str) -> None:
@@ -182,16 +187,16 @@ def cmd_summarize(datasets: list[str], arm: str) -> None:
 
 
 def cmd_status(arm: str, datasets: list[str]) -> None:
-    from src.cindex import DEFAULT_QUEUE_ROOT, conf_filename
+    from src.cindex import conf_filename
     from greedy.data import display_to_study
 
-    root = Path(DEFAULT_QUEUE_ROOT)
+    root = Path(QUEUE_ROOT)
     for dataset, scheme, work in scheme_pairs(arm, datasets):
         study = display_to_study(dataset)
         name = conf_filename(study, scheme, C.ANALYZER, f"landmark_{C.LANDMARK_TIME}")
         bucket = next((b for b in ("queue", "running", "done", "failed") if (root / b / name).exists()), "-")
         encoded = "emb" if (embeddings_dir(dataset, scheme).is_dir()) else "   "
-        table = ROOT / "results" / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv"
+        table = ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv"
         c = ""
         if table.exists():
             with table.open(newline="", encoding="utf-8") as fh:

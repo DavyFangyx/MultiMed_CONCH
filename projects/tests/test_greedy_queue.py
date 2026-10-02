@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
@@ -67,11 +69,11 @@ def test_longitudinal_queue_root_is_separate(tmp_path):
             "longitudinal",
         ]
     )
-    from greedy.queue import DEFAULT_QUEUE_ROOT, queue_root_from_args
+    from greedy.queue import queue_root_from_args
 
-    root = queue_root_from_args(args)
-    assert root == DEFAULT_QUEUE_ROOT.parent / "longitudinal"
-    assert root != DEFAULT_QUEUE_ROOT
+    # D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy（含 longitudinal 变体）不再有隐式队列根
+    with pytest.raises(ValueError):
+        queue_root_from_args(args)
     queued = enqueue_jobs(args, ["TCGA-BRCA"], root=tmp_path / "longitudinal")
     created = {p.name.split("__", 1)[1].removesuffix(".conf") for p in queued["created"]}
     assert created == {"TCGA-BRCA__landmark_none"}

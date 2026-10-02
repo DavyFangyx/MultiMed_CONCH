@@ -13,7 +13,7 @@
   c. top-k 字段重叠度（k ∈ --top_k）：两两交集矩阵 + 聚合重叠率。
 
 输入（只读）：
-  - results/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
     （S5 univariate 补跑，33/33，5 折 × seed 0，与 Test_1a t0 臂同源）
   - datasets.json（数据集清单：TCGA 前缀，**禁止硬编码**）
   - results/Test_0_dataset_availability/manifest.csv（tier 列 + provisional 标注）
@@ -51,6 +51,7 @@ import csv
 import json
 import os
 import random
+import sys
 import textwrap
 from collections import Counter
 from pathlib import Path
@@ -65,11 +66,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
+SRC = REPO_ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from common.paths import test_results_dir
+
 # --------------------------------------------------------------------------- 常量
 CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
 DEFAULT_UNIV_ROOT = (
-    REPO_ROOT / "results" / "univariate" / "prompt" / "landmark_0"
+    test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
 )
 DEFAULT_MANIFEST = (
     REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"

@@ -68,6 +68,10 @@ from .paths import (
     require_landmark_tag,
     validate_encoding,
     validate_scheme,
+    config_family_dir,
+    config_family_bucket_dir,
+    test_results_dir,
+    test_display_dir,
 )
 from .types import infer_type, to_numeric
 
@@ -106,6 +110,10 @@ __all__ = [
     "landmark_tag",
     "landmark_tag_from_args",
     "require_landmark_tag",
+    "config_family_dir",
+    "config_family_bucket_dir",
+    "test_results_dir",
+    "test_display_dir",
     "extract_path_values",
     "DERIVED_FIELD_SOURCE_PATH",
     "DERIVED_FIELD_TYPES",

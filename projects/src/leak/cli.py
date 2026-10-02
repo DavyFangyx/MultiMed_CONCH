@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out_dir",
         default=str(DEFAULT_OUTPUT_ROOT),
-        help="产物根目录，默认 results/leak_audit",
+        help="产物根目录，默认 results/Test_2a_leak_audit",
     )
     parser.add_argument(
         "--event_summary",

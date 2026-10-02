@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from common.paths import test_results_dir
+
 from .config import DELTA, budget_for
 from .search.exhaustive import optimality_gap
 
@@ -330,8 +332,9 @@ def _plot_landmarks(aggregates, display_root):
         plt.close(fig)
 
 
-def generate_report(results_root="results/E2_selection/prompt", display_root="results_display/E2_selection/prompt",
-                    anchor_root="results/E2_selection/anchor/prompt"):
+def generate_report(results_root=test_results_dir("Test_3_search") / "prompt",
+                    display_root="results_display/E2_selection/prompt",
+                    anchor_root=test_results_dir("Test_3_search") / "anchor" / "prompt"):
     results_root = Path(results_root)
     seed_dirs = sorted(path.parent for path in results_root.glob("**/seed_*/result.json"))
     anchor_root = Path(anchor_root)
@@ -360,9 +363,9 @@ def generate_report(results_root="results/E2_selection/prompt", display_root="re
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Aggregate E2 CV results and draw E2 figures")
-    parser.add_argument("--results-root", default="results/E2_selection/prompt")
+    parser.add_argument("--results-root", default=str(test_results_dir("Test_3_search") / "prompt"))
     parser.add_argument("--display-root", default="results_display/E2_selection/prompt")
-    parser.add_argument("--anchor-root", default="results/E2_selection/anchor/prompt")
+    parser.add_argument("--anchor-root", default=str(test_results_dir("Test_3_search") / "anchor" / "prompt"))
     args = parser.parse_args(argv)
     print(json.dumps(generate_report(args.results_root, args.display_root, args.anchor_root), ensure_ascii=False, allow_nan=True))
 

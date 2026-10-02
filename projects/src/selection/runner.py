@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from common.paths import test_results_dir
+
 from .config import MODALITY, parse_seeds, budget_for
 from .evaluator import Evaluator
 from .cache import SQLiteCache
@@ -27,7 +29,7 @@ SEARCHERS = {s.name: s for s in (RandomSearcher, GreedySearcher, BeamSearcher,
 
 
 def _univariate_paths(dataset, landmark_tag, seed, modality, csv_path=None, config_path=None):
-    root = Path("results/univariate/prompt") / landmark_tag / dataset / modality
+    root = test_results_dir("Test_1a/arm_t0") / "prompt" / landmark_tag / dataset / modality
     if int(seed) != 0:
         root = root / f"seed_{seed}"
     return Path(csv_path) if csv_path else root / "field_cindex.csv", Path(config_path) if config_path else root / "run_config.json"
@@ -168,15 +170,15 @@ def main(argv=None):
     if args.out:
         base_root = Path(args.out)
     elif args.algo == "ANCHOR_TIMING":
-        base_root = Path("results/E2_selection/timing") / args.dataset / tag
+        base_root = test_results_dir("Test_3_search") / "timing" / args.dataset / tag
     elif args.anchor_p is not None and args.algo != "ANCHOR":
-        base_root = Path("results/E2_selection/anchor/prompt") / tag / args.dataset / args.algo
+        base_root = test_results_dir("Test_3_search") / "anchor" / "prompt" / tag / args.dataset / args.algo
     else:
-        base_root = Path("results/E2_selection/prompt") / tag / args.dataset / args.algo
+        base_root = test_results_dir("Test_3_search") / "prompt" / tag / args.dataset / args.algo
     index_path = bank_dir / "field_index.json"
     index_hash = hashlib.sha256(index_path.read_bytes()).hexdigest() if index_path.exists() else ""
     split_hashes = tuple(hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(split_dir.glob("splits_*.csv")))
-    cache = SQLiteCache(Path("results/E2_selection") / "cache.sqlite")
+    cache = SQLiteCache(test_results_dir("Test_3_search") / "cache.sqlite")
     for modality in modalities:
         base = base_root / modality
         fields = fields_by_modality[modality]
@@ -186,8 +188,8 @@ def main(argv=None):
             if args.semantic_embeddings:
                 semantic = np.load(args.semantic_embeddings)
             else:
-                semantic_root = (Path("results/E2_selection/anchor/prompt") if args.anchor_p is not None
-                                 else Path("results/E2_selection/prompt"))
+                semantic_root = (test_results_dir("Test_3_search") / "anchor" / "prompt" if args.anchor_p is not None
+                                 else test_results_dir("Test_3_search") / "prompt")
                 cache_name = f"field_semantics__{modality}.npy" if args.anchor_p is not None else "field_semantics.npy"
                 semantic = load_or_encode_field_semantics(
                     fields,

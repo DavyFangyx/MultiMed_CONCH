@@ -33,8 +33,8 @@
 
 产物
 ----
-``results/leak_audit/{dataset}/{scheme}.json`` 逐字段明细；
-``results/leak_audit/leak_audit_summary.csv`` (dataset, scheme) 级聚合 + 并列 n_event/event_rate。
+``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` 逐字段明细；
+``results/Test_2a_leak_audit/leak_audit_summary.csv`` (dataset, scheme) 级聚合 + 并列 n_event/event_rate。
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from common.datasets import (
     resolve_dataset_names,
 )
 from common.fields import field_gdc_path
-from common.paths import DEFAULT_DATASETS_CONFIG, PROJECT_ROOT, RESULTS_ROOT
+from common.paths import DEFAULT_DATASETS_CONFIG, PROJECT_ROOT, test_results_dir
 from discovery.field_bank import extract_field_bank_raw_values, load_kept_fields
 from discovery.landmark import patient_landmark, timed_family_for_field
 from discovery.longitudinal import SOURCE_FIELDS, is_derived_field
@@ -102,7 +102,7 @@ BINDING_ALL = "all"    # 仅用于 ad-hoc 方案：全部 TCGA × 全部方案�
 BINDING_KINDS = ("hgcn_cancer", "pan_cancer", "pan_cancer_default", "all")
 
 DEFAULT_TEMPLATES_ROOT = PROJECT_ROOT / "A_pipeline" / "templates"
-DEFAULT_OUTPUT_ROOT = RESULTS_ROOT / "leak_audit"
+DEFAULT_OUTPUT_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_EVENT_SUMMARY = PROJECT_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 SUMMARY_FILENAME = "leak_audit_summary.csv"
 

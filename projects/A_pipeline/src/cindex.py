@@ -9,6 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from common.paths import RESULTS_ROOT, config_family_dir, test_results_dir
+
 from greedy.clinic import (
     DEFAULT_INNER_MODALITY,
     MULTIMODAL_DISPLAY,
@@ -28,13 +30,22 @@ from .paths import PROJECT_ROOT, dataset_baseline_embedding_dir, dataset_embeddi
 
 
 DEFAULT_ANALYZER_MODALITY = DEFAULT_INNER_MODALITY
-DEFAULT_RESULTS_ROOT = PROJECT_ROOT / "results"
-DEFAULT_EXP_GROUP = "A_manual"
+DEFAULT_RESULTS_ROOT = RESULTS_ROOT
+ARM_A_RESULTS = "Test_2b/arm_A"       # 无 landmark 臂（旧 results/A_manual）
+ARM_B_RESULTS = "Test_2b/arm_B"       # Test_1b landmark 臂（旧 results/A_manual_landmark，独立子树不污染 arm A）
+
+
+def _arm_exp_group(arm: str) -> str:
+    """analyzer 树的 arm 子目录（相对 results/）：新名优先、旧名回退（命名公约）。"""
+    return test_results_dir(arm).relative_to(RESULTS_ROOT).as_posix()
+
+
+DEFAULT_EXP_GROUP = _arm_exp_group(ARM_A_RESULTS)
 ANALYZER_EXP_GROUP = f"{DEFAULT_EXP_GROUP}/runs"
-# Test_1b: landmark arms live in their own subtree so results/A_manual is never touched.
-DEFAULT_LANDMARK_EXP_GROUP = "A_manual_landmark"
+DEFAULT_LANDMARK_EXP_GROUP = _arm_exp_group(ARM_B_RESULTS)
 LANDMARK_ANALYZER_EXP_GROUP = f"{DEFAULT_LANDMARK_EXP_GROUP}/runs"
-DEFAULT_QUEUE_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs" / "A_manual"
+# 当前活跃用途 = Test_3 臂 B'/C；Test_2b 历史批次队列在 Test_2b_arms（旧名同为 configs/A_manual）。
+DEFAULT_QUEUE_ROOT = config_family_dir("Test_3_arms")
 DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
 QUEUE_BUCKETS = ("queue", "running", "done", "failed")
 

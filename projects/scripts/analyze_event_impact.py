@@ -2,11 +2,18 @@
 """Join event_summary with all result tables and analyze few-event effects."""
 import json
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 PROJ = Path("/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects")
+for _path in (PROJ, PROJ / "src"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+from common.paths import test_results_dir  # noqa: E402
+
 EVENT = PROJ / "rawdata_stats/_shared/event_summary.csv"
 RESULTS = PROJ / "results"
 
@@ -17,8 +24,8 @@ rows = []
 for ds in ev["dataset"]:
     key = ds.upper()
     rec = {"dataset": ds, **ev[ev.dataset == ds].iloc[0].to_dict()}
-    # --- univariate (landmark_none) ---
-    f = RESULTS / "univariate/prompt/landmark_none" / ds / "field_cindex.csv"
+    # --- univariate / Test_1a arm_t0 (landmark_none) ---
+    f = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_none" / ds / "field_cindex.csv"
     if f.exists():
         u = pd.read_csv(f)
         ok = u[u.status == "ok"] if "status" in u.columns else u
@@ -42,10 +49,11 @@ for ds in ev["dataset"]:
         rec["greedy_n_fields"] = last.n_fields
         rec["greedy_mean"] = last.c_index_mean
         rec["greedy_std"] = last.c_index_std
-    # --- A_manual ---
-    f = RESULTS / f"A_manual/{ds}[gdc]" / "cindex.csv"
+    # --- A_manual / Test_2b arm_A ---
+    arm_a = test_results_dir("Test_2b/arm_A")
+    f = arm_a / f"{ds}[gdc]" / "cindex.csv"
     if not f.exists():
-        f = RESULTS / f"A_manual/{ds}" / "cindex.csv"
+        f = arm_a / ds / "cindex.csv"
     if f.exists():
         a = pd.read_csv(f)
         rec["aman_rows"] = len(a)

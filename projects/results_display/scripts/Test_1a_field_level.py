@@ -5,15 +5,15 @@
 本步纯分析，**不新增训练**。
 
 两臂（同患者集，唯一差异 = 取值 mask 状态）：
-  - t0 臂：results/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
-  - off 臂：results/univariate_raw/univariate/prompt/landmark_none/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - t0 臂：results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - off 臂：results/Test_1a/arm_off/univariate/prompt/landmark_none/{dataset}/mlp_clinic_flatten/field_cindex.csv
   - Δc_field = c(off) − c(t0)
 
 数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event 派生
 （R13：n_event >= 100），veriyfier 与 scripts/s5b_univariate_enqueue.py 同口径。
 
 leak_rate 列（Test_2a 审计）：
-  - 来源 results/leak_audit/{dataset}/{scheme}.json（scheme = G1_{md5(field_idx)}，逐字段条目）；
+  - 来源 results/Test_2a_leak_audit/{dataset}/{scheme}.json（scheme = G1_{md5(field_idx)}，逐字段条目）；
     该逐字段审计（用户新 Test_2a）尚未运行时，leak_rate 列留空并标 pending_test_2a，
     脚本可在审计出数后直接重跑填列（无需改代码）。
   - 「理论上能动组合 Δc 的字段清单」= leak_rate > --leak_threshold 且 |Δc_field| >= --delta_threshold。
@@ -61,15 +61,17 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from common.paths import test_results_dir
+
 CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
-DEFAULT_T0_ROOT = REPO_ROOT / "results" / "univariate" / "prompt" / "landmark_0"
+DEFAULT_T0_ROOT = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
 DEFAULT_OFF_ROOT = (
-    REPO_ROOT / "results" / "univariate_raw" / "univariate" / "prompt" / "landmark_none"
+    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "landmark_none"
 )
 DEFAULT_MANIFEST = REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
-DEFAULT_LEAK_ROOT = REPO_ROOT / "results" / "leak_audit"
+DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
 MIN_EVENT = 100  # R13
 
@@ -744,7 +746,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_leak_available": coverage["n_leak_available"],
         "leak_rate_status": coverage["leak_rate_status"],
         "leak_rate_todo": (
-            "TODO: 用户新版 Test_2a 逐字段审计（results/leak_audit/{dataset}/G1_*.json）出数后重跑本脚本，"
+            "TODO: 用户新版 Test_2a 逐字段审计（results/Test_2a_leak_audit/{dataset}/G1_*.json）出数后重跑本脚本，"
             "leak_rate 列与 leak × Δc 散点自动补齐"
             if coverage["leak_rate_status"] != LEAK_STATUS_OK
             else ""

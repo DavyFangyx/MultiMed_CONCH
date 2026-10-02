@@ -4,7 +4,7 @@ The script intentionally performs no search and disables the SQLite cache so
 that cProfile/py-spy capture one real five-fold Clinic Analyzer evaluation.
 
 `--analyzer` accepts a comma-separated list; each analyzer gets its own
-output directory under results/E2_selection/profiling/{dataset}/{tag}/{analyzer}/,
+output directory under results/Test_3_search/profiling/{dataset}/{tag}/{analyzer}/,
 created automatically. A cProfile report (sorted by cumtime) is written there
 as profile.txt, so no manual mkdir / shell redirection is needed.
 """
@@ -25,7 +25,7 @@ for item in (ROOT, ROOT / "src"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
-from common.paths import dataset_field_bank_dir
+from common.paths import dataset_field_bank_dir, test_results_dir
 from greedy.clinic import DEFAULT_INNER_MODALITY, ensure_modalities_allowed, parse_modalities
 from greedy.clinic_evaluator import ClinicSubsetEvaluator
 from greedy.data import default_analyzer_split_dir, load_field_bank
@@ -48,7 +48,7 @@ def profile_one(args, *, modality: str, tag: str, bank_dir: Path, fields, split_
     selected = tuple(str(row["field"]) for row in ranked[: min(args.top_k, len(fields))])
     selected_indices = tuple(fields.index(name) for name in selected)
 
-    out_dir = Path(args.out_dir) / modality if args.out_dir else ROOT / "results" / "E2_selection" / "profiling" / args.dataset / tag / modality
+    out_dir = Path(args.out_dir) / modality if args.out_dir else test_results_dir("Test_3_search") / "profiling" / args.dataset / tag / modality
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "subset.json").write_text(
         json.dumps({"dataset": args.dataset, "landmark_tag": tag, "modality": modality,

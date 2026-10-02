@@ -24,11 +24,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "A_pipeline"))
 
+from common.paths import test_results_dir  # noqa: E402
 from greedy.clinic import read_cindex  # noqa: E402
 from greedy.data import display_to_study  # noqa: E402
 
-OLD_ROOT = PROJECT_ROOT / "results" / "A_manual"
-NEW_ROOT = PROJECT_ROOT / "results" / "A_manual_landmark"
+OLD_ROOT = test_results_dir("Test_2b/arm_A")
+NEW_ROOT = test_results_dir("Test_2b/arm_B")
 OUTPUTS = PROJECT_ROOT / "outputs"
 
 PAN_CANCER_SCHEMES = ["MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN"]

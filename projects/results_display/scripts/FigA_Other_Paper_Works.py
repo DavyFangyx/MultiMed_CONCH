@@ -29,14 +29,14 @@ from collect_common import (
     resolve_collect_context,
 )
 from common.datasets import DATASET_ALIASES, canonical_dataset_name
-from common.paths import dataset_greedy_results_dir
+from common.paths import dataset_greedy_results_dir, test_results_dir
 
 
 CSV_STEM = "cindex_by_n_fields"
 SOURCE_COLUMNS = ["step", "n_fields", "added", "c_index_mean", "c_index_std", "c_index_se", "subset"]
 DEFAULT_MODALITY = "mlp_clinic_flatten"
 DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "A_pipeline" / "templates"
-DEFAULT_PAPER_RESULTS_ROOT = PROJECT_ROOT / "results" / "A_manual"
+DEFAULT_PAPER_RESULTS_ROOT = test_results_dir("Test_2b/arm_A")
 FIG_DIRNAME = "FigA_Other_Paper_Works"
 
 PAPER_SCHEMES = [
@@ -148,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--paper_results_root",
         default=str(DEFAULT_PAPER_RESULTS_ROOT),
-        help="Root of paper-scheme cindex.csv files. Default: results/A_manual.",
+        help="Root of paper-scheme cindex.csv files. Default: results/Test_2b/arm_A.",
     )
     parser.add_argument(
         "--template_dir",

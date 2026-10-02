@@ -33,6 +33,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.paths import RESULTS_ROOT, test_results_dir
+
 from .paths import PROJECT_ROOT
 
 
@@ -41,7 +43,14 @@ DEFAULT_TIME_COL = "survival_months"
 DEFAULT_CENSORSHIP_COL = "censorship"
 DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
 SURVPGC_ROOT = Path("/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init")
-LABEL_OUT_SUBDIR = Path("A_manual_landmark") / "labels"
+
+
+def label_out_subdir() -> Path:
+    """labels 目录相对 results/ 的路径：新名优先、旧名回退（命名公约同 common.paths）。
+
+    旧名 results/A_manual_landmark = Test_1b landmark 臂（对应结果树的 arm B）。
+    """
+    return test_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT) / "labels"
 
 
 def resolve_label_file(
@@ -73,9 +82,9 @@ def landmark_label_path(
     results_root: Path | str | None = None,
     apply_shift: bool = True,
 ) -> Path:
-    root = Path(results_root) if results_root else (PROJECT_ROOT / "results")
+    root = Path(results_root) if results_root else RESULTS_ROOT
     suffix = "" if apply_shift else "__noshift"
-    return root / LABEL_OUT_SUBDIR / f"{study}__landmark_{int(landmark_time)}{suffix}.csv"
+    return root / label_out_subdir() / f"{study}__landmark_{int(landmark_time)}{suffix}.csv"
 
 
 def build_landmark_label_file(

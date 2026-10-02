@@ -9,6 +9,16 @@ A_PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(A_PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(A_PIPELINE_ROOT))
 
+# common 包只存在于 projects/src(append 避免遮蔽 A_pipeline 的 src)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(PROJECT_ROOT / "src"))
+from common.paths import RESULTS_ROOT, test_results_dir as _resolve_results_dir  # noqa: E402
+
+# Test 系列命名公约: 结果臂目录(迁移前 = A_manual/A_manual_landmark,
+# 迁移后 = Test_2b/arm_A/arm_B;断言随解析,两种状态都成立)
+ARM_A = _resolve_results_dir("Test_2b/arm_A").relative_to(RESULTS_ROOT)
+ARM_B = _resolve_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT)
+
 from src.baseline import (  # noqa: E402
     BASELINE_CONTINUOUS_FIELDS,
     BASELINE_DICTIONARY_FIELD_TYPES,
@@ -531,7 +541,7 @@ def test_cindex_output_paths():
     assert str(baseline_dir) == "/tmp/outputs/TCGA-READ/A_manual/D0/embeddings/pt"
     assert str(paper_baseline_dir) == "/tmp/outputs/TCGA-KIRC/A_manual/baseline/HGCN_KIRC/embeddings/pt"
     table_dir = result_table_dir("TCGA-READ")
-    assert table_dir.as_posix().endswith("/results/A_manual/TCGA-READ")
+    assert table_dir.as_posix().endswith(f"/results/{ARM_A}/TCGA-READ")
     assert "Clinic_Analyzer" not in table_dir.parts
 
 
@@ -560,7 +570,7 @@ def test_cindex_queue_conf_and_claim(tmp_path, monkeypatch):
     assert len(queued["created"]) == 1
     conf_path = queued["created"][0]
     payload = parse_conf(conf_path)
-    assert payload["EXP_GROUP"] == "A_manual/runs"
+    assert payload["EXP_GROUP"] == f"{ARM_A}/runs"
     assert payload["RUN_NAME"] == "tcga_read__L0"
     assert payload["PRESET"] == "mlp_clinic_flatten"
     assert payload["STUDY"] == "tcga_read"
@@ -589,7 +599,7 @@ def test_cindex_queue_conf_and_claim(tmp_path, monkeypatch):
     assert not (queue_root / "queue" / claimed.name).exists()
     assert claim_conf(queue_root) is None
 
-    out_dir = results_base / "A_manual" / "runs" / "tcga_read__L0" / "mlp_clinic_flatten"
+    out_dir = results_base / ARM_A / "runs" / "tcga_read__L0" / "mlp_clinic_flatten"
     out_dir.mkdir(parents=True)
     (out_dir / "val_result_fold0.csv").write_text("val_cindex\n0.7\n", encoding="utf-8")
 
@@ -600,7 +610,7 @@ def test_cindex_queue_conf_and_claim(tmp_path, monkeypatch):
     dest = run_claimed_conf(claimed, reuse=True)
     assert dest.parent.name == "done"
     assert dest.name == claimed.name
-    assert (out_dir / "run.log").as_posix().endswith("/A_manual/runs/tcga_read__L0/mlp_clinic_flatten/run.log")
+    assert (out_dir / "run.log").as_posix().endswith(f"/{ARM_A}/runs/tcga_read__L0/mlp_clinic_flatten/run.log")
 
     failed = queue_root / "failed" / dest.name
     failed.parent.mkdir(parents=True, exist_ok=True)
@@ -634,7 +644,7 @@ def test_cindex_workers_claim_in_parallel(tmp_path, monkeypatch):
                 "conf_name": f"tcga_read__L0__{modality}.conf",
             }
         )
-        out_dir = results_base / "A_manual" / "runs" / "tcga_read__L0" / modality
+        out_dir = results_base / ARM_A / "runs" / "tcga_read__L0" / modality
         out_dir.mkdir(parents=True)
         (out_dir / "val_result_fold0.csv").write_text("val_cindex\n0.7\n", encoding="utf-8")
         (out_dir / "run.log").write_text("ok\n", encoding="utf-8")
@@ -658,7 +668,7 @@ def test_cindex_workers_claim_in_parallel(tmp_path, monkeypatch):
 
 def test_summarize_dataset_adds_new_modality_without_overwriting(tmp_path):
     results_root = tmp_path / "results"
-    table_dir = results_root / "A_manual" / "TCGA_LIHC"
+    table_dir = results_root / ARM_A / "TCGA_LIHC"
     table_dir.mkdir(parents=True)
     existing = [
         {

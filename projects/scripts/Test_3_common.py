@@ -14,7 +14,15 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import sys
+
 ROOT = Path(__file__).resolve().parents[1]
+
+for _p in (ROOT, ROOT / "src"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from common.paths import test_results_dir
 
 # --- 协议 A / R13 -----------------------------------------------------------
 MAIN_N_EVENT_MIN = 100  # 协议 A 主集阈值（R13：训练类实验只在 n_event >= 100 上训练）
@@ -25,7 +33,7 @@ EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 # --- Test_3 产物路径 --------------------------------------------------------
 OUT_ROOT = ROOT / "results" / "Test_3_greedy_vs_works"
 SEARCH_ROOT = OUT_ROOT / "search"           # 搜索 run 落盘（evaluations.jsonl / result.json）
-SEARCH_CACHE = ROOT / "results" / "E2_selection" / "cache.sqlite"
+SEARCH_CACHE = test_results_dir("Test_3_search") / "cache.sqlite"
 COMPARE_ROOT = OUT_ROOT                     # Test_3_compare.py 的三臂 json/csv
 
 ANALYZER = "mlp_clinic_flatten"             # E2 唯一搜索目标模型（spec §7.1）

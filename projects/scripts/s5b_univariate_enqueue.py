@@ -8,8 +8,8 @@ raw 臂参数（与 t0 臂的唯一差异 = 取值 mask 关 + 患者集显式 la
     --landmark_time none --extraction_mask off --label_tag landmark_0
     --field_bank_root  {ROOT}/outputs/_raw
     --embeddings_root  {ROOT}/outputs/_raw
-    --results_dir      {ROOT}/results/univariate_raw
-    --queue_root       {ROOT}/Clinic_Analyzer/configs/univariate_raw
+    --results_dir      {ROOT}/results/Test_1a/arm_off
+    --queue_root       {ROOT}/Clinic_Analyzer/configs/Test_1a_off
 
 数据集名单不硬编码：从 datasets.json 注册表取 TCGA- / TCGA_ 前缀（= 33 个 TCGA，spec §2.4）。
 运行环境：base python 3.13.12（不训练）。
@@ -32,6 +32,7 @@ for item in (ROOT, ROOT / "src"):
         sys.path.insert(0, str(item))
 
 from common.datasets import load_dataset_configs
+from common.paths import config_family_dir, test_results_dir
 from greedy.queue import (
     count_bucket,
     ensure_queue_dirs,
@@ -40,13 +41,13 @@ from greedy.queue import (
 )
 from greedy.univariate_cli import make_parser
 
-QUEUE_ROOT = ROOT / "Clinic_Analyzer" / "configs" / "univariate_raw"
+QUEUE_ROOT = config_family_dir("Test_1a_off")
 PARKED_DIR = QUEUE_ROOT / "parked"
 RETRY_STATE = QUEUE_ROOT / "retry_state.json"
 MAX_RETRIES = 3
 RAW_LANDMARK_TAG = "landmark_none"
 RAW_BANK_ROOT = ROOT / "outputs" / "_raw"
-RAW_RESULTS_ROOT = ROOT / "results" / "univariate_raw"
+RAW_RESULTS_ROOT = test_results_dir("Test_1a/arm_off")
 RESULTS_ROOT = RAW_RESULTS_ROOT / "univariate" / "prompt" / RAW_LANDMARK_TAG
 MANIFEST_PATH = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 EVENT_SUMMARY_PATH = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"

@@ -21,6 +21,7 @@ for item in (ROOT, ROOT / "src"):
         sys.path.insert(0, str(item))
 
 from common.datasets import load_dataset_configs
+from common.paths import test_results_dir
 from greedy.queue import (
     DEFAULT_UNIVARIATE_QUEUE_ROOT,
     count_bucket,
@@ -84,7 +85,7 @@ def cmd_status(workers: int) -> None:
     total = sum(counts.values())
     print(f"[s5] status key={key} queue={counts['queue']} running={counts['running']} "
           f"done={counts['done']} failed={counts['failed']} total={total}/{EXPECTED_JOBS}")
-    results_root = ROOT / "results" / "univariate" / "prompt" / LANDMARK_TAG
+    results_root = test_results_dir("Test_1a/arm_t0") / "prompt" / LANDMARK_TAG
     n_csv = 0
     n_complete = 0
     for ds in datasets:
@@ -165,7 +166,7 @@ def _pid_alive(pid: int) -> bool:
 
 
 def cmd_report() -> None:
-    results_root = ROOT / "results" / "univariate" / "prompt" / LANDMARK_TAG
+    results_root = test_results_dir("Test_1a/arm_t0") / "prompt" / LANDMARK_TAG
     datasets = tcga_datasets()
     total_rows = 0
     total_ok = 0

@@ -551,7 +551,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--queue_root",
         default=None,
-        help="greedy conf 队列根目录。默认 Clinic_Analyzer/configs/greedy/{queue,running,done,failed}",
+        help="greedy conf 队列根目录；必须显式传入（例如 Clinic_Analyzer/configs/Test_3_search/{queue,running,done,failed}）。"
+        "D0 家族 Clinic_Analyzer/configs/greedy 已删除，不再提供默认值",
     )
     return parser
 

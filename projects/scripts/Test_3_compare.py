@@ -1,7 +1,7 @@
 """Test_3 三臂对照报表: 贪婪最优组合 vs 各工作组合（字段轴链收口, spec §7.2）。
 
 三臂（全部 landmark_0 × mlp_clinic_flatten × seed 0 × 5 折）:
-  臂 B  = 工作完整组合 × scheme 模板 (results/A_manual_landmark/{dataset}[gdc]/cindex.csv
+  臂 B  = 工作完整组合 × scheme 模板 (results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv
           行 {work}__landmark_0; 复用 Test_2b 产物, 不新增训练)
   臂 B' = 工作完整组合 × bank 模板 (自定义方案 Test_3_{work}_{dataset})
   臂 C  = 贪婪最优组合 × bank 模板 (自定义方案 Test_3_greedy_{dataset}, field 取搜索 result.json)
@@ -28,9 +28,11 @@ for _p in (ROOT, ROOT / "src", ROOT / "scripts", ROOT / "A_pipeline"):
         sys.path.insert(0, str(_p))
 
 import Test_3_common as C  # noqa: E402
+from common.paths import test_results_dir  # noqa: E402
 
 A_TEMPLATES = ROOT / "A_pipeline" / "templates"
-RESULTS = ROOT / "results"
+# 命名公约过渡（见 common/paths.py）：新名优先、旧名回退，迁移前后都能跑。
+ARM_B_RESULTS = test_results_dir("Test_2b/arm_B")  # 臂 B 汇总表根（迁移前回退 results/A_manual_landmark）
 OUT_ROOT = C.OUT_ROOT
 DISPLAY_ROOT = ROOT / "results_display" / "Test_3_greedy_vs_works"
 HEADLINE_MODALITY = C.ANALYZER                      # mlp_clinic_flatten（E2 唯一搜索目标模型）
@@ -62,7 +64,7 @@ def bank_sentences(dataset: str, landmark_tag: str = f"landmark_{C.LANDMARK_TIME
 
 
 def rows_for(dataset: str, scheme: str) -> pd.DataFrame:
-    path = RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv"
+    path = ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv"
     if not path.exists():
         raise MissingArm(f"缺 cindex 表: {path}")
     df = pd.read_csv(path)

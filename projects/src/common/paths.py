@@ -41,6 +41,66 @@ RAWDATA_STATS_ROOT = PROJECT_ROOT / "rawdata_stats"
 RAWDATA_STATS_SHARED_DIR = RAWDATA_STATS_ROOT / "_shared"
 RESULTS_ROOT = PROJECT_ROOT / "results"
 RESULTS_DISPLAY_ROOT = PROJECT_ROOT / "results_display"
+
+
+# ---- Test 系列命名公约(z_notes/experiment_list/naming_convention.md) ----
+# 主键 = Test 编号;三处目录(configs/results/results_display)同名对应。
+# 物理迁移完成前新旧目录并存:resolve 一律新名优先、旧名回退,读/写都安全。
+# 旧名字符串只允许出现在下面的 *_LEGACY 映射与公约文档对照表中。
+
+TEST_CONFIGS_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs"
+
+TEST_CONFIG_FAMILY_LEGACY = {
+    "Test_1a_t0": ("univariate",),
+    "Test_1a_off": ("univariate_raw",),
+    "Test_2b_arms": ("A_manual",),
+    "Test_3_arms": ("A_manual",),
+    "Test_3_search": ("E2_selection",),
+}
+
+TEST_RESULTS_LEGACY = {
+    "Test_1a/arm_t0": ("univariate",),
+    "Test_1a/arm_off": ("univariate_raw",),
+    "Test_2a_leak_audit": ("leak_audit",),
+    "Test_2b/arm_A": ("A_manual",),
+    "Test_2b/arm_B": ("A_manual_landmark",),
+    "Test_3_search": ("E2_selection",),
+}
+
+TEST_DISPLAY_LEGACY = {
+    "Test_2a_leak_audit": ("leak_audit",),
+}
+
+
+def _resolve_dir(base: Path, name: str, legacy_map: dict) -> Path:
+    """新名优先、旧名回退的目录解析(命名公约过渡规则)。"""
+    new = base / name
+    if new.is_dir():
+        return new
+    for legacy in legacy_map.get(name, ()):
+        old = base / legacy
+        if old.is_dir():
+            return old
+    return new
+
+
+def config_family_dir(family: str) -> Path:
+    """configs 家族根目录(Test 名,含 queue/running/done/failed 桶)。"""
+    return _resolve_dir(TEST_CONFIGS_ROOT, family, TEST_CONFIG_FAMILY_LEGACY)
+
+
+def config_family_bucket_dir(family: str, bucket: str) -> Path:
+    return config_family_dir(family) / bucket
+
+
+def test_results_dir(name: str) -> Path:
+    """results/ 下 Test 编号目录(可含 /arm_X 子层)。"""
+    return _resolve_dir(RESULTS_ROOT, name, TEST_RESULTS_LEGACY)
+
+
+def test_display_dir(name: str) -> Path:
+    """results_display/ 下 Test 编号目录。"""
+    return _resolve_dir(RESULTS_DISPLAY_ROOT, name, TEST_DISPLAY_LEGACY)
 DEFAULT_GDC_CASES_MAPPING = (
     PROJECT_ROOT / "ClinicDatasets" / "gdc_clinical" / "field_tables" / "gdc_cases_mapping.csv"
 )

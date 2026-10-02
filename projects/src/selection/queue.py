@@ -8,9 +8,11 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from common.paths import config_family_dir
+
 
 BUCKETS = ("queue", "running", "done", "failed")
-DEFAULT_ROOT = Path("Clinic_Analyzer/configs/E2_selection")
+DEFAULT_ROOT = config_family_dir("Test_3_search")
 WORKER_LOCAL_KEYS = {"queue_root", "poll_seconds", "max_jobs"}
 
 

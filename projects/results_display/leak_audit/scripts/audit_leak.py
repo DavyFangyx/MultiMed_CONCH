@@ -3,8 +3,8 @@
 
 Reads the audit products written by ``scripts/run_leak_audit.py``:
 
-  * ``results/leak_audit/leak_audit_summary.csv``  —— (dataset, scheme) aggregates,
-  * ``results/leak_audit/{dataset}/{scheme}.json`` —— per-field detail.
+  * ``results/Test_2a_leak_audit/leak_audit_summary.csv``  —— (dataset, scheme) aggregates,
+  * ``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` —— per-field detail.
 
 Renders two figures:
 
@@ -18,7 +18,7 @@ Renders two figures:
 用法::
 
     python results_display/leak_audit/scripts/audit_leak.py
-    python results_display/leak_audit/scripts/audit_leak.py --audit_root results/leak_audit
+    python results_display/leak_audit/scripts/audit_leak.py --audit_root results/Test_2a_leak_audit
 """
 
 from __future__ import annotations
@@ -26,14 +26,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_AUDIT_ROOT = PROJECT_ROOT / "results" / "leak_audit"
-DEFAULT_OUT_DIR = PROJECT_ROOT / "results_display" / "leak_audit"
+
+SRC = PROJECT_ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from common.paths import test_display_dir, test_results_dir
+
+DEFAULT_AUDIT_ROOT = test_results_dir("Test_2a_leak_audit")
+DEFAULT_OUT_DIR = test_display_dir("Test_2a_leak_audit")
 
 # spec §2.4 方案顺序（10 个论文工作）
 SCHEME_ORDER = [
@@ -90,7 +98,7 @@ def setup_matplotlib():
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--audit_root", default=str(DEFAULT_AUDIT_ROOT), help="results/leak_audit 目录")
+    parser.add_argument("--audit_root", default=str(DEFAULT_AUDIT_ROOT), help="results/Test_2a_leak_audit 目录")
     parser.add_argument("--summary", default="", help="汇总 CSV；默认 <audit_root>/leak_audit_summary.csv")
     parser.add_argument("--out_dir", default=str(DEFAULT_OUT_DIR), help="图片与聚合表输出目录")
     parser.add_argument("--top_fields", type=int, default=12, help="字段图中展示的字段数上限（0=全部）")
@@ -139,7 +147,7 @@ def load_field_rows(audit_root: Path, summary: pd.DataFrame) -> pd.DataFrame:
 def load_bindings(audit_root: Path, summary: pd.DataFrame) -> dict:
     """读每方案「被允许的队列」= spec §2.4 绑定，来自审计产物本身（不重复硬编码范围）。
 
-    ``results/leak_audit/{dataset}/{scheme}.json`` 的 ``scheme_binding`` /
+    ``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` 的 ``scheme_binding`` /
     ``binding_datasets`` 由 ``src/leak/audit.py`` 写入。
     返回 {"allowed": {scheme: [dataset, ...]}, "kind": {scheme: 绑定类型}}。
     """

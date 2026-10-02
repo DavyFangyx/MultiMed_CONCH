@@ -93,7 +93,8 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--queue_root",
         default=None,
-        help="cindex conf 队列根目录。默认 Clinic_Analyzer/configs/A_manual/{queue,running,done,failed}",
+        help="cindex conf 队列根目录。默认 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed}"
+        "（当前活跃用途 = Test_3 臂 B'/C；Test_2b 历史批次的队列在 Clinic_Analyzer/configs/Test_2b_arms）",
     )
     parser.add_argument(
         "--workers",
@@ -108,7 +109,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
             "Test_1b landmark 起点（天）：0/365/730/none。不传=旧行为（产物与 cindex 全部走现有目录）；"
             "数字=经典 landmark 三要件：只保留 t_hi <= T 的 timed 槽位、排除 ground_truth_time <= T 的患者、"
             "label 时间改为 gt - T；产物落 outputs/{dataset}/A_manual/{scheme}/landmark_{T}/；"
-            "cindex 传 0/365/730/none 时把该臂写入 results/A_manual_landmark/。"
+            "cindex 传 0/365/730/none 时把该臂写入 results/Test_2b/arm_B/。"
         ),
     )
     parser.add_argument(
@@ -130,7 +131,7 @@ def main(argv=None):
             "L0-L5 / D0-D5 / 论文方案 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
             "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: manual=L0-L5，paper=论文方案，all=两组。encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。hgcn_clinic 只落地 L0-L5。\n"
             "每个方案在 templates/{scheme}/fields.json 写 source=lizhe|gdc。L0-L5 / D0-D5 用 lizhe 9 个；paper 绑定全部 33 个 TCGA + GDC raw_json。--dataset all 按方案来源展开。\n"
-            "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/A_manual/{queue,running,done,failed}，再由 run.sh 抢活；汇总表写到 results/A_manual。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
+            "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed}，再由 run.sh 抢活；汇总表写到 results/Test_2b/arm_A。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
         ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)

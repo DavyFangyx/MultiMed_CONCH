@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT / "src"))
+from common.paths import config_family_dir, test_results_dir
 # A_pipeline/src 必须排在最前：projects/src 也是名为 "src" 的包，
 # 若 PROJECT_ROOT 在前会遮蔽 A_pipeline 的 src 命名空间包。
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -163,7 +165,7 @@ def cmd_enqueue(slice_name: str, results_root: Path) -> None:
     print(f"[S4] slice={slice_name} arm=landmark_{ARMS[arm]} wave={wave} "
           f"combos={len(combos)} confs_expected={len(combos) * len(ANALYZERS)}")
     jobs = _jobs_for_combos(combos, arm, results_root)
-    queued = enqueue_cindex_jobs(jobs, queue_root=None)
+    queued = enqueue_cindex_jobs(jobs, queue_root=str(config_family_dir("Test_2b_arms")))
     print(f"[S4] queue={queued['root']} created={len(queued['created'])} "
           f"existing={len(queued['existing'])} retried={len(queued.get('retried', []))}")
     print(f"[S4] 下一步: 由 drainer 进程 claim 并训练（见 scripts/s4_Test_2b_queue.sh）")
@@ -237,7 +239,7 @@ def cmd_list() -> None:
         for prefix in ("", "H"):
             _, _, combos = slice_spec(f"A{wave}{prefix}", waves)
             for dataset, scheme in combos:
-                table = PROJECT_ROOT / "results" / "A_manual" / f"{dataset}[gdc]" / "cindex.csv"
+                table = test_results_dir("Test_2b/arm_A") / f"{dataset}[gdc]" / "cindex.csv"
                 if not table.exists():
                     missing_old += 1
                     continue
@@ -249,13 +251,12 @@ def cmd_list() -> None:
 
 
 def cmd_status() -> None:
-    from src.cindex import DEFAULT_QUEUE_ROOT
     for bucket in ("queue", "running", "done", "failed"):
-        root = DEFAULT_QUEUE_ROOT / bucket
+        root = config_family_dir("Test_2b_arms") / bucket
         count = len(list(root.glob("*.conf"))) if root.is_dir() else 0
         print(f"{bucket}: {count}")
-    done_new = len(list((DEFAULT_QUEUE_ROOT / "done").glob("*__landmark_*.conf"))) \
-        if (DEFAULT_QUEUE_ROOT / "done").is_dir() else 0
+    done_new = len(list((config_family_dir("Test_2b_arms") / "done").glob("*__landmark_*.conf"))) \
+        if (config_family_dir("Test_2b_arms") / "done").is_dir() else 0
     print(f"done (landmark confs): {done_new}")
 
 

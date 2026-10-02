@@ -10,7 +10,7 @@
 用法（base python 3.13.12，不训练）：
     python scripts/s5b_audit_arms.py --pair TCGA-BLCA:0 TCGA-BLCA:1 TCGA-BRCA:0
     python scripts/s5b_audit_arms.py --pair-file pairs.txt   # 每行 dataset:field_idx
-产物：results/univariate_raw/_audit_pairs.json（追加更新）
+产物：results/Test_1a/arm_off/_audit_pairs.json（追加更新）
 """
 
 from __future__ import annotations
@@ -27,15 +27,16 @@ for item in (ROOT, ROOT / "src"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
+from common.paths import test_results_dir
 from greedy.embeddings import subset_scheme_name
 
-LM0_RESULTS = ROOT / "results" / "univariate" / "prompt" / "landmark_0"
-RAW_RESULTS = ROOT / "results" / "univariate_raw" / "univariate" / "prompt" / "landmark_none"
+LM0_RESULTS = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
+RAW_RESULTS = test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "landmark_none"
 RAW_BANK_ROOT = ROOT / "outputs" / "_raw"
 LM0_BANK_ROOT = ROOT / "outputs"
 MODALITY = "mlp_clinic_flatten"
 N_FOLDS = 5
-OUT_JSON = ROOT / "results" / "univariate_raw" / "_audit_pairs.json"
+OUT_JSON = test_results_dir("Test_1a/arm_off") / "_audit_pairs.json"
 
 
 def bank_fields(dataset: str, raw: bool) -> list[str]:

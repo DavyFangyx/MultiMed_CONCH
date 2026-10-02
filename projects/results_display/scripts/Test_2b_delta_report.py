@@ -9,12 +9,12 @@
     / 30–70 supp / <30 low（仅定性讨论）
 
 输入：
-  - results/A_manual_landmark/{dataset}[gdc]/cindex.csv + run_config.json（S4 两臂产物）
-  - results/A_manual_landmark/runs/{study}__{scheme}__landmark_{T}/{modality}/val_result_fold*.csv
+  - results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv + run_config.json（S4 两臂产物）
+  - results/Test_2b/arm_B/runs/{study}__{scheme}__landmark_{T}/{modality}/val_result_fold*.csv
     （run 折文件 = c 值的最终口径；S4 汇总表首次写入后不再更新，100/552 行为中途快照，
     本脚本按同算术（纯 python sum，python 3.13）从折文件重算，表冻结值保留在 *_table 列）
   - rawdata_stats/_shared/event_summary.csv（n_event 分层）
-  - results/A_manual_landmark/labels/{study}__landmark_0.json（审计用：排除病例清单）
+  - results/Test_2b/arm_B/labels/{study}__landmark_0.json（审计用：排除病例清单）
 
 输出（默认 results_display/Test_2b_delta/，全部为 gitignore 产物，不入库）：
   - Test_2b_delta_main.csv / Test_2b_delta_supp.csv / Test_2b_delta_low.csv
@@ -46,7 +46,14 @@ import pandas as pd
 from scipy import stats
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RESULTS_LM = REPO_ROOT / "results" / "A_manual_landmark"
+
+SRC = REPO_ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from common.paths import test_results_dir
+
+RESULTS_LM = test_results_dir("Test_2b/arm_B")
 EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 
 ANALYZERS = ("clinic_cox", "mlp_clinic_flatten")

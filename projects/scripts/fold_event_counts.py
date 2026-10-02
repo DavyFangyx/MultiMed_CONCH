@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Per-fold validation event counts for A_manual runs, joined with dataset event tables."""
+"""Per-fold validation event counts for Test_2b arm_A (A_manual) runs, joined with dataset event tables."""
 import glob
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 PROJ = Path("/data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects")
+for _path in (PROJ, PROJ / "src"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+from common.paths import test_results_dir  # noqa: E402
+
+ARM_A_RESULTS = test_results_dir("Test_2b/arm_A")  # 迁移前回退 results/A_manual
 ev = pd.read_csv(PROJ / "rawdata_stats/_shared/event_summary.csv")
 
 studies = ["tcga_dlbc", "tcga_pcpg", "tcga_gbm", "tcga_prad", "tcga_thca",
@@ -21,7 +29,7 @@ for s in studies:
     per = pd.read_csv(PROJ / f"rawdata_stats/{ds}/event_stats.csv")
     per["case"] = per.submitter_id
     n_tot = int(ev.loc[ev.dataset == ds, "n_event"].iloc[0])
-    splits = sorted(glob.glob(str(PROJ / f"results/A_manual/runs/{s}__MULTISURV/mlp_clinic_mean/splits_*.csv")))
+    splits = sorted(glob.glob(str(ARM_A_RESULTS / "runs" / f"{s}__MULTISURV/mlp_clinic_mean/splits_*.csv")))
     per_fold = []
     for f in splits:
         df = pd.read_csv(f)
