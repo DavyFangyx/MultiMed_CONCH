@@ -1055,3 +1055,14 @@ python3 scripts/Test_3_compare.py --all
 **补记（20:10）**：为避免人工守候搜索结果，新增 `scripts/Test_3_arm_c_chain.sh`（后台轮询：某数据集 `result.json` 落盘即自动 `generate --arm ksig` → `encode` → `enqueue`，15/15 就绪后自动 drain + summarize + `compare --all`），已以 nohup 挂起（日志 `results/Test_3_greedy_vs_works/logs/arm_c_chain.log`）。臂 best 附录（历史最优 `best_subset`）未自动跑，需要时：`python3 scripts/Test_3_arms.py generate/encode/enqueue/drain --arm best`。
 
 **补记 2（20:30）**：`Test_3_compare.py` 补齐 spec §7.3 的展示层图：`--all` 在有三臂行时输出 `results_display/Test_3_greedy_vs_works/three_arm_delta.png`（左：每数据集均值 Δc 头条 C−B′ 与交叉 C−B；右：Δc vs 遗漏字段数散点）；英文标签（沿既有 matplotlib 约定，默认字体无 CJK 字形）。新增测试 `test_batch_writes_table_missed_and_figure`（表/遗漏清单/镜像/图路径全链路，空表不画图）。
+
+---
+
+## 维护（M1）命名统一重构：Test 编号为主键的三处目录公约
+
+- 时间 / 执行者：2026-10-02 / Claude（主会话）
+- 目标：`Clinic_Analyzer/configs`（实验定义）、`results`（结果）、`results_display`（展示）三处目录以 Test 编号为主键统一命名，同一实验在三处用同一名字，便于检索。
+- 用户决策（2026-10-02）：① 全量统一（共享家族拆分：A_manual→Test_2b_arms+Test_3_arms 等）；② 物理迁移等当前跑批（Test_3 搜索/三臂、Test_1a off 臂）自然结束后执行；③ 遗留目录归档到 `results/_archive/`。
+- 公约与对照表：`z_notes/experiment_list/naming_convention.md`（唯一权威）；实验清单 `experiment_list.md`、三处 README 已按新名更新。
+- 执行方式：分步进行，每步一次本地提交（不 push）：① 基线归档（1ca3f45）；② 公约文档 + README（本步）；③ 代码路径登记与新旧兼容；④ configs 家族物理迁移（drain-gated）；⑤ results/results_display 物理迁移与收尾。
+- 状态：进行中（截至本条目完成第 ①② 步）。

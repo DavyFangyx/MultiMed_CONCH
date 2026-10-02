@@ -49,3 +49,4 @@ templates/field_bank/**
 # Downloaded raw clinical dumps; ignore folders, not *.txt
 ClinicDatasets/gdc_clinical/biotab/
 ClinicDatasets/gdc_clinical/raw_json/
+*.pid

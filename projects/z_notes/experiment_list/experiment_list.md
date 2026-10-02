@@ -1,6 +1,6 @@
 # 实验清单与协议速查
 
-口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。
+口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。三处目录命名(configs/results/results_display)的唯一公约见 [naming_convention.md](naming_convention.md)。
 
 ## 背景(一句话)
 
@@ -38,10 +38,10 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | 实验 | 内容 | 数据集 | 产物 |
 |---|---|---|---|
 | **Test_0** 可用数据集评估 | 按 n_event 把 33 TCGA 分四档(协议 A);两链准入前提 | 33 TCGA | `results/Test_0_dataset_availability/manifest.csv` |
-| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 15 个主集(n_event ≥100)× landmark_0 kept 字段 | `results/univariate_raw/`、`results_display/Test_1a_field_level/` |
+| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 15 个主集(n_event ≥100)× landmark_0 kept 字段 | `results/Test_1a/{arm_t0,arm_off}/`、`results_display/Test_1a_field_level/` |
 | **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 33 TCGA | `results_display/Test_1b_dataset_cindex/` |
-| **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/leak_audit/` |
-| **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |
+| **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2a_leak_audit/` |
+| **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
 | **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(sig_stop 0.005)最优组合 vs 各工作组合 → 低估证据,三臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
 | **Test_5** 不变性 | 编码/模型/数据轴重复 Test_2b 与 Test_3 | 待定 | 待定 |
@@ -65,21 +65,21 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 ### Test_1b 各数据集 Cindex 情况(字段轴链动机)
 
 - **数据集**:33 TCGA(报告按协议 A 四档分层)。
-- **评估器**:不新增训练——数据源 = S5 univariate 结果 `results/univariate/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(33/33 已完成)。
+- **评估器**:不新增训练——数据源 = S5 univariate 结果 `results/Test_1a/arm_t0/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(33/33 已完成)。
 - **轮数 / 协议**:三个量化指标:① 各数据集单字段 c-index 分布(原 E1 Fig2 升级);② 同一字段跨数据集 c-index 分布;③ top-k 字段重叠度(k ∈ {5,10,20},决策点 S5c)。验收:重跑 diff=0 + 抽查 3 个 (dataset, field)。产物 `results_display/Test_1b_dataset_cindex/`。
 
 ### Test_2a 泄露审计(时间轴链主体)
 
 - **数据集**:33 TCGA × 10 方案按绑定 = **138 组合**(4 泛癌种 × 33 + 6 HGCN × 本癌种)。
 - **评估器**:无(描述性统计,不训练)。直接跑论文管线(A_pipeline,不做泄露处理)逐字段追溯每个值来源槽位的 t_hi;新口径 leak_rate = 值来自 t_hi>0 槽位的患者比例。
-- **轮数 / 协议**:单次全量 + 重跑 diff=0;抽查 ≥3 个 (dataset, scheme, field) 与手工核对。**纠错由用户接手**。产物 `results/leak_audit/`。
+- **轮数 / 协议**:单次全量 + 重跑 diff=0;抽查 ≥3 个 (dataset, scheme, field) 与手工核对。**纠错由用户接手**。产物 `results/Test_2a_leak_audit/`。
 
 ### Test_2b 去泄露对照(时间轴链主体,已跑完)
 
 - **数据集**:33 TCGA × 10 方案按绑定(138 组合)。
 - **两臂**:臂 A = 原字段集 × mask 关闭(报告值对照);臂 B = 同字段集 × landmark_0 三要件(去泄露值)。**唯一差异 = mask**。
 - **评估器**:`clinic_cox` + `mlp_clinic_flatten`(2 个)。
-- **轮数 / 协议**:5 折 × seed 0 × 2 臂 × 2 评估器 = **552 confs**;控制变量审计、按模态一致性判据验收。产物 `results/A_manual_landmark/`、`results_display/Test_2b_delta/`。
+- **轮数 / 协议**:5 折 × seed 0 × 2 臂 × 2 评估器 = **552 confs**;控制变量审计、按模态一致性判据验收。产物 `results/Test_2b/arm_B`、`results_display/Test_2b_delta/`。
 - **结论**:无数据集级系统性高估;MULTISURV × Cox 方向一致率最高(10/15)。
 
 ### Test_3 贪婪搜索对照(字段轴链主体)

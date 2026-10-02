@@ -32,7 +32,7 @@ python3 results_display/scripts/Test_1a_field_level.py --audit    # 追加 3 组
 ```
 
 - Test_1a（§5bis，范围 = R13 主集 n_event ≥ 100 的 15 个 TCGA）：两臂同患者集，唯一差异 = 取值 mask 状态
-  （off 臂 `results/univariate_raw/univariate/prompt/landmark_none/`，t0 臂 `results/univariate/prompt/landmark_0/`），
+  （off 臂 `results/Test_1a/arm_off/univariate/prompt/landmark_none/`，t0 臂 `results/Test_1a/arm_t0/prompt/landmark_0/`），
   输出 Δc_field = c(off) − c(t0) 交叉表（`results_display/Test_1a_field_level/`）。
-  `leak_rate` 列来自 Test_2a 逐字段审计（`results/leak_audit/{dataset}/G1_*.json`）；审计未出数时该列留空标
+  `leak_rate` 列来自 Test_2a 逐字段审计（`results/Test_2a_leak_audit/{dataset}/G1_*.json`）；审计未出数时该列留空标
   `pending_test_2a`，出数后重跑本脚本即自动填列（含 leak×Δc 散点与「能动字段清单」）。
