@@ -163,7 +163,7 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 ## 5bis. Test_1a 单字段泄露对照（时间轴链动机 + Test_2b 的机制解释）
 
 - **动机**（用户指令 2026-09-30）：TCGA clinical 记录自带时间，同一字段在有无 t0 时间口径下 c-index 会实质变化——时间处理是应该的；且 Test_2a 只测"可得性"（leak_rate），Test_2b 整组合 Δc≈0 时读者无法解释"为何存在泄露却没有转化为高估"。单字段对照把两个实验连起来。
-- **做法**：对每个 (dataset, field)（field = landmark_0 kept 字段集）：
+- **做法**：对每个 (dataset, field)（field = landmark_0 kept 字段集；dataset 仅 n_event ≥ 100 的 15 个主集，见执行日志 R13）：
   - 臂 off：同患者集（排除 gt≤0，与 Test_2b 臂 B 一致）、取值 **mask 关闭** → c(field, off)；
   - 臂 t0：同患者集、mask 开 → c(field, landmark_0)；
   - Δc_field = c(off) − c(t0)，与 Test_2a 审计的 leak_rate 交叉。
@@ -280,6 +280,8 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
   | 70–100 | 进主图，**必须报告 CI，不参与严格排名** | CESC、MESO、ESCA、UCEC、SARC |
   | 30–70 | 补充材料，bootstrap/重采样 CI，不排名 | UVM、ACC、UCS、KIRP |
   | <30 | 定量图不收录；单列"低事件组"定性讨论 | 9 个（READ、CHOL、THCA、KICH、PRAD、DLBC、THYM、TGCT、PCPG） |
+
+  **训练范围（R13，2026-10-02 用户指令）**：后续训练类实验**只在 n_event ≥ 100 的 15 个数据集上训练**；<100 档不新增训练，其已有训练结果按协议 A 分层报告（70–100 带 CI 不排名、30–70 补充、<30 定性）。Test_3 的主集即这 15 个。
 
   **B/C/D 判据：用户 2026-09-30 指令——暂不执行，保持简单**：B（多字段门槛：≥150 可跑 / 100–150 字段数≤3）、C（landmark 有效事件重套）**存档备查**（见执行日志 R5/R6），当前实验执行**全部按 A 判据**；D（次级修正）不采用。若后续需要再启用 B/C，再议。
 - **U2（泛癌种方案绑定）**：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN 是否按各自论文原始队列绑定，**暂按全部 33 TCGA 执行**，记录为未解决问题；待用户给出各论文队列口径后修正。

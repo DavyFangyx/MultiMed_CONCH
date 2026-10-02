@@ -30,7 +30,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **评估**:5 折交叉验证的 val c-index(`cv_c_mean` 5 折均值),不伪造独立测试集。
 - **landmark = 经典三要件**(t0 = 诊断日):① 风险集只留 `ground_truth_time > T`;② 终点平移到 `gt − T`;③ 协变量只取 `t_hi ≤ T` 的槽位。默认 `landmark_0`。
 - **数据协议 A(n_event 四档)**:≥100 主图干净集;70–100 主图带 CI 不排名;30–70 补充材料;<30 低事件组定性。
-- **执行口径(训练 vs 报告,R6)**:训练**不过滤**——Test_1a/1b/2a/2b 在全部 33 TCGA(138 组合)上执行;Test_0/协议 A 的筛选作用在**报告端**:≥100 与 70–100 共 20 个进主图定量,30–70 的 4 个进补充材料,<30 的 9 个不进定量图、仅定性讨论。例外:Test_3 贪婪搜索只跑主集 15 个(spec §7.1)。
+- **执行口径(训练 vs 报告)**:训练范围(R13,2026-10-02)= **n_event ≥ 100 的 15 个数据集**;70–100 / 30–70 / <30 档**不新增训练**(其已有结果——Test_2b 552 confs、S5 t0 臂 33 队列——保留磁盘,报告按协议 A 四档分层:≥100 主图定量,70–100 带 CI 不排名,30–70 补充,<30 定性)。Test_3 主集即这 15 个。
 - **方案 × 数据集绑定(138 组合)**:泛癌种 4 方案(MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN)× 33 TCGA;HGCN_* 6 方案各绑定本癌种(KIRC / LIHC / ESCA / LUSC / LUAD / UCEC)。
 
 ## 实验清单总表
@@ -38,7 +38,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | 实验 | 内容 | 数据集 | 产物 |
 |---|---|---|---|
 | **Test_0** 可用数据集评估 | 按 n_event 把 33 TCGA 分四档(协议 A);两链准入前提 | 33 TCGA | `results/Test_0_dataset_availability/manifest.csv` |
-| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 33 TCGA × landmark_0 kept 字段 | `results/univariate_raw/`、`results_display/Test_1a_field_level/` |
+| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 15 个主集(n_event ≥100)× landmark_0 kept 字段 | `results/univariate_raw/`、`results_display/Test_1a_field_level/` |
 | **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 33 TCGA | `results_display/Test_1b_dataset_cindex/` |
 | **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/leak_audit/` |
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |

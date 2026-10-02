@@ -878,3 +878,14 @@ python3 results_display/scripts/Test_1b_dataset_cindex.py --audit    # 追加 3 
 ### 状态
 
 完成（脚本 + 本日志随本次提交入库；产物 `results_display/Test_1b_dataset_cindex/` 就绪，供 Test_3 动机与 Test_4 引用）。
+
+---
+
+## 口径记录 R13：训练范围限定 n_event ≥ 100（2026-10-02，用户指令）
+
+- 时间 / 执行者：2026-10-02 / Claude（主会话，用户指令）
+- 内容：**后续训练类实验只在 n_event ≥ 100 的 15 个数据集上训练**——PAAD、COAD、LGG、LIHC、LAML、BRCA、STAD、KIRC、BLCA、LUAD、LUSC、SKCM、HNSC、OV、GBM。70–100 / 30–70 / <30 档**不新增训练**；其已有训练结果（Test_2b 552 confs、S5 t0 臂 33 队列、Test_1b 分析）保留磁盘，报告端仍按协议 A 四档分层（70–100 带 CI 不排名、30–70 补充材料、<30 定性）。Test_3 的"主集 15 个"与此口径一致。
+- 用户附统计依据：100–150 档 5 个（std 0.036–0.056，每折 20–30 事件）；≥150 档 12 个（std 0.019–0.052，每折 ≥30 事件）。
+- 生效动作：已通知 S5b（Test_1a off 臂）执行 agent 限流到 15 个主集；spec §5bis、§12 与 experiment_list 同步更新。
+- 决策点：无新增（R6 的"训练不过滤"被本记录取代）。
+- 状态：完成。
