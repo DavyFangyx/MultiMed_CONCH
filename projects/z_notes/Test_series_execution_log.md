@@ -750,11 +750,11 @@
 | 实验 | 实验内容 | 论证的命题 | 状态 | 产物位置 |
 |---|---|---|---|---|
 | **Test_0** 可用数据集评估 | 按事件数/删失对 33 TCGA 分层（协议 A 四档） | 哪些数据集在统计上支撑定量结论（n_event 是评估方差下限；低事件集只能定性讨论）——两链共同的准入前提 | ✅ 完成，分层规则执行中 | `results/Test_0_dataset_availability/`、`scripts/run_Test_0_availability.py` |
-| **Test_1a** 单字段泄露对照（时间轴链动机） | per-field c(mask off) vs c(t0)，与 Test_2a 的 leak_rate 交叉 | TCGA clinical 记录自带时间，同一字段在有无 t0 口径下 c-index 会实质变化——对 clinic 生存分析，按协议做字段时间处理是**应该的**（之前的工作都没做）；兼作 Test_2b"为何泄露未转为组合高估"的机制解释 | 🔧 执行中（t0 臂 = S5 已完成；off 臂待 `raw` 变体） | `results_display/Test_1a_field_level/` |
+| **Test_1a** 单字段泄露对照（时间轴链动机） | per-field c(mask off) vs c(t0)，与 Test_2a 的 leak_rate 交叉 | TCGA clinical 记录自带时间，同一字段在有无 t0 口径下 c-index 会实质变化——对 clinic 生存分析，按协议做字段时间处理是**应该的**（之前的工作都没做）；兼作 Test_2b"为何泄露未转为组合高估"的机制解释 | ✅ 完成（15 主集两臂，Δc 报表 22:10 重出；leak_rate 列待 Test_2a 审计） | `results_display/Test_1a_field_level/` |
 | **Test_1b** 各数据集 Cindex 情况（字段轴链动机） | 单字段 c-index：各数据集分布 + 跨数据集字段分布 + top-k 重叠度 | 字段能力随数据集而异，每个数据集理论上有各自最优字段组合——针对数据集选字段是**应该的** | 🔧 执行中（数据源 S5 已齐） | `results_display/Test_1b_dataset_cindex/`（原 E1 Fig2 升级） |
 | **Test_2a** 泄露审计（时间轴链主体） | 对每个论文方案，**不进行时间处理**，追溯每个患者实际进入模型的值来自哪个时间槽 | 论文方案在无时点约束下，模型输入里混入了多少预测时点之后才产生的信息（泄露：值来自 t_hi > 0 的槽位） | ⚠️ 完成一版，但指标口径有误（t0 完全缺失比例 ≠ 混入未来信息比例），纠错已由用户接手 | `src/leak/`、`results/leak_audit/`（旧口径数字作废） |
 | **Test_2b** 去泄露对照（时间轴链主体） | 同一字段集两臂：臂A 含泄露 vs 臂B landmark_0，唯一差异 = mask，Δc = A−B | 泄露信息确实抬高了临床模态的预后表现（高估：含泄露的 c-index 被人为抬高、超过规范时间处理后的真实能力） | ✅ 完成（552 confs，33 TCGA×两臂×Cox/MLP），Δc 报表已出：无数据集级系统性高估，MULTISURV×Cox 方向一致率最高 10/15 | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |
-| **Test_3** 贪婪搜索对照（字段轴链主体） | A2 前向贪婪 + sig_stop 0.005 在 landmark_0 池找最优组合，vs 各工作去泄露组合（三臂 Δc、遗漏字段清单） | 各工作的字段组合在去泄露池上是**次优**的（低估：无依据的字段选择漏掉了本可带来额外预测力的有效字段）——**收回** Test_1b 的"各数据集有各自最优组合" | 🔧 代码已就绪（方案生成器冒烟通过），搜索冒烟已中止 | `scripts/Test_3_custom_scheme.py`、`scripts/Test_3_compare.py` |
+| **Test_3** 贪婪搜索对照（字段轴链主体） | A2 前向贪婪 + sig_stop 0.005 在 landmark_0 池找最优组合，vs 各工作去泄露组合（三臂 Δc、遗漏字段清单） | 各工作的字段组合在去泄露池上是**次优**的（低估：无依据的字段选择漏掉了本可带来额外预测力的有效字段）——**收回** Test_1b 的"各数据集有各自最优组合" | ⏸ 提前终止（2026-10-02 用户指令）：搜索 9/15 进行中被叫停，B′ 617 confs 完成，C 未开始；结果留盘可续跑 | `scripts/Test_3_custom_scheme.py`、`scripts/Test_3_compare.py`、`results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**（非实验） | 报告值 / 去泄露值 / 可达值 | 两链收口：报告值−去泄露值 = 时间轴链收口（高估量）；去泄露值−可达值 = 字段轴链收口（低估量） | ⏸ 前两档数据已齐（Test_2b），可达值待 Test_3 | 未生成 |
 | **Test_5** 不变性 | 编码轴/模型轴/数据轴重复 Test_2b 与 Test_3 | 以上结论不随编码、模型、数据改变——偏差来自数据本身，不是某条管线的产物 | 📋 仅占位（后期，Test_1–Test_3 完成后再说） | spec §12 未解决问题 |
 
@@ -889,6 +889,20 @@ python3 results_display/scripts/Test_1b_dataset_cindex.py --audit    # 追加 3 
 - 生效动作：已通知 S5b（Test_1a off 臂）执行 agent 限流到 15 个主集；spec §5bis、§12 与 experiment_list 同步更新。
 - 决策点：无新增（R6 的"训练不过滤"被本记录取代）。
 - 状态：完成。
+
+---
+
+## S6 提前终止与归档（2026-10-02 晚，用户指令）
+
+- 时间 / 执行者：2026-10-02 22:30 / Claude（主会话，用户指令"先提前结束，归档当前结果"）
+- 停止的进程：Test_3 搜索 drainer（9 个数据集 runner）+ watch（`Test_3_search_queue.py`）+ 臂 C 接力链（`Test_3_arm_c_chain.sh`）；全部 SIGTERM，已确认 **0 残留**。Test_1a 相关进程此前已自然结束。
+- 当前进度快照：
+  - **Test_1a（S5b）**：15/15 主集全部完成、0 failed；收尾钩子已于 22:10 自动重出 Δc 报表（`results_display/Test_1a_field_level/`，含 mask_unaffected 噪声对照组）；`results/univariate_raw/_s5b_report.json` 在档。leak_rate 列待 Test_2a 审计出数后填。
+  - **Test_3（S6）**：搜索 9/15 数据集进行中被叫停（BLCA/BRCA/COAD/GBM/HNSC/KIRC/LAML/LGG/LUAD，各 G1–G3 步中间产物留盘，0 个 result.json）；臂 B′ **617/617 confs 完成、0 failed**；臂 C 未开始；`three_arm.csv` 仅表头。
+- 留盘（未删除）：`results/Test_3_greedy_vs_works/`（search/ 中间评估、logs/、missed_fields.csv、three_arm.csv 表头）、`Clinic_Analyzer/configs/` 各队列桶、`results/univariate_raw/`、`results/univariate/`。
+- 续跑方法（届时）：`bash scripts/Test_3_queue.sh all_status` 看状态；重启搜索 watch/drainer（命令见 S6 日志条目或该脚本）；臂 C 链由 result.json 落盘自动触发。搜索实测约 1.5h/步（GPU 与他人共存），可加 GPU（0/6/7 空闲）提速。
+- 决策点：无新增。
+- 状态：完成（批跑全部停止，结果归档，本条目 + 命题总表状态随本次提交）。
 
 ---
 
