@@ -110,16 +110,20 @@ def analyzer_run_name(dataset: str, scheme: str) -> str:
 
 def _relative_to_results(path: Path, results_dir_base: Path | str | None = None) -> Path:
     path = Path(path)
-    for root in (RESULTS_ROOT, DEFAULT_RESULTS_DIR):
-        try:
-            return path.relative_to(root)
-        except ValueError:
-            continue
+    # 先剥离显式给出的 results 根（Test_1a off 臂的 results/univariate_raw 等），再回退规范
+    # results/ 根。顺序不能颠倒：当 base 本身位于 results/ 之内时，已按 base 重定过的路径
+    # 仍能 relative_to(RESULTS_ROOT)，会把 base 叠加两次（analyzer_exp_group /
+    # analyzer_results_dir 由此得到 {base}/{base}/... 的嵌套目录）。
     if results_dir_base is not None:
         try:
             return path.relative_to(Path(results_dir_base))
         except ValueError:
             pass
+    for root in (RESULTS_ROOT, DEFAULT_RESULTS_DIR):
+        try:
+            return path.relative_to(root)
+        except ValueError:
+            continue
     return path
 
 

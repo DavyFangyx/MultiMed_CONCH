@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import os
@@ -14,19 +15,22 @@ from timeit import default_timer as timer
 from common.datasets import load_dataset_configs, resolve_dataset_names
 from common.paths import (
     DEFAULT_DATASETS_CONFIG,
+    LANDMARK_OFF_TAG,
     PROJECT_ROOT,
+    RESULTS_ROOT,
     VALID_ENCODINGS,
     dataset_field_bank_dir,
     dataset_univariate_dir,
     dataset_univariate_results_dir,
     experiment_from_args,
     landmark_tag_from_args,
+    require_landmark_tag,
     resolve_cli_out_dir,
     validate_encoding,
 )
 from discovery.landmark import add_landmark_cli_args
 
-from .clinic import DEFAULT_INNER_MODALITY, ensure_modalities_allowed, parse_one_modality
+from .clinic import DEFAULT_INNER_MODALITY, ensure_modalities_allowed, parse_modalities, parse_one_modality
 from .clinic_evaluator import DEFAULT_CONCH_PYTHON, DEFAULT_SURVPGC_PYTHON, ClinicSubsetEvaluator
 from .data import default_analyzer_split_dir, load_candidate_fields, load_field_bank
 from .embeddings import subset_embedding_dir, subset_scheme_name
@@ -259,6 +263,37 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument(
+        "--field_bank_root",
+        default=None,
+        help="非规范 field bank 根目录：按 {root}/{dataset}/field_bank/{encoding}/{landmark_tag} 解析；"
+        "Test_1a off 臂（raw 变体）用它指向 outputs/_raw。默认 None（走 outputs/{dataset}/field_bank/...）",
+    )
+    parser.add_argument(
+        "--embeddings_root",
+        default=None,
+        help="subset embeddings 根目录（outputs/{dataset}/greedy/{encoding}/{tag}/subsets/...）；默认 outputs/。"
+        "Test_1a off 臂用 outputs/_raw 与 t0 臂隔离。",
+    )
+    parser.add_argument(
+        "--results_dir",
+        default=None,
+        help="Clinic_Analyzer 结果根目录（results/ 的替身）；默认 None（=results/）。"
+        "Test_1a off 臂用 results/univariate_raw 避免污染 t0 的 results/univariate/。",
+    )
+    parser.add_argument(
+        "--extraction_mask",
+        default="auto",
+        choices=["auto", "on", "off"],
+        help="字段取值提取时的患者级 t0 mask 状态：auto=跟随 --landmark_time（天数=on，none=off）；"
+        "off（raw 臂）=显式声明 mask 关闭，要求 field bank 的 landmark_policy=off 且必须用 --label_tag/--label_file 声明患者集",
+    )
+    parser.add_argument(
+        "--label_tag",
+        default=None,
+        help="患者集（S4 派生 label {study}__{label_tag}.csv）使用的 landmark tag；默认跟随 --landmark_time。"
+        "Test_1a off 臂用 --label_tag landmark_0 保证与 t0 臂同患者集。",
+    )
+    parser.add_argument(
         "--experiment",
         default="",
         help="空=默认 Field Bank 实验；longitudinal=走 outputs/{dataset}/longitudinal/...",
@@ -274,11 +309,22 @@ def make_parser() -> argparse.ArgumentParser:
         default=None,
         help="覆盖现成 splits 目录；默认读 Clinic_Analyzer/data/splits/5foldcv/{study}",
     )
+    parser.add_argument(
+        "--label_file",
+        default=None,
+        help="显式覆盖 label 文件；默认不传，由 --landmark_labels_dir/{study}__{tag}.csv 派生（见 --landmark_labels_dir）",
+    )
+    parser.add_argument(
+        "--landmark_labels_dir",
+        default=str(PROJECT_ROOT / "results" / "A_manual_landmark" / "labels"),
+        help="S4 派生的 landmark label 目录（{study}__landmark_{T}.csv，含经典三要件风险集排除）。"
+        "开启 landmark（landmark_time 为天数）时强制使用，保证与 Test_1b 臂 B 同患者集。",
+    )
     parser.add_argument("--out", default=None)
     parser.add_argument(
-        "--modality",
+        "--analyzer",
         default=DEFAULT_INNER_MODALITY,
-        help="只允许一个 clinic 模型，默认 mlp_clinic_flatten",
+        help="clinic analyzer，逗号分隔；每个 analyzer 独立生成队列 conf 与结果目录。默认 mlp_clinic_flatten",
     )
     parser.add_argument(
         "--workers",
@@ -326,6 +372,122 @@ def _require_field_bank(field_bank_dir: Path, encoding: str) -> dict:
     return loaded
 
 
+def resolve_extraction_mask(args, tag: str) -> str:
+    """Field Bank 取值 mask 状态：'on'（landmark_{T} 取 t_hi<=T）或 'off'（raw，取值全集）。
+
+    auto（默认）= 跟随 --landmark_time 推出的 tag；显式 on/off 必须与 tag 自洽。
+    Test_1a off 臂用 --landmark_time none --extraction_mask off（field bank 由 mask off 提取）。
+    """
+    requested = str(getattr(args, "extraction_mask", "auto") or "auto").strip().lower()
+    if requested not in {"auto", "on", "off"}:
+        raise ValueError(f"--extraction_mask 只能是 auto/on/off，收到 {requested!r}")
+    derived = "off" if tag == LANDMARK_OFF_TAG else "on"
+    if requested == "auto":
+        return derived
+    if requested != derived:
+        raise ValueError(
+            f"--extraction_mask {requested} 与 --landmark_time 推出的 tag {tag} 冲突："
+            f"mask {'关闭' if requested == 'off' else '开启'}需要 "
+            f"--landmark_time {'none' if requested == 'off' else '天数'}"
+        )
+    return requested
+
+
+def resolve_patient_label_tag(args, tag: str, mask_state: str) -> str:
+    """患者集（S4 派生 label）使用的 landmark tag。
+
+    raw 臂（--extraction_mask off）必须显式声明患者集来源，否则会退回全患者集、
+    与 t0 臂不同患者集（Test_1a 两臂同患者集是硬要求）。
+    """
+    label_tag = str(getattr(args, "label_tag", "") or "").strip() or tag
+    require_landmark_tag(label_tag)
+    requested = str(getattr(args, "extraction_mask", "auto") or "auto").strip().lower()
+    if mask_state == "off" and requested == "off":
+        if label_tag == LANDMARK_OFF_TAG and not getattr(args, "label_file", None):
+            raise ValueError(
+                "--extraction_mask off（raw 臂）必须显式声明患者集：--label_tag landmark_0"
+                "（S4 派生 label，与 t0 臂同患者集）或 --label_file。"
+                "否则 mask 关闭会退回全患者集，两臂患者集不一致。"
+            )
+    return label_tag
+
+
+def resolve_field_bank_dir(args, dataset: str, encoding: str, tag: str, experiment: str) -> Path:
+    """--field_bank_dir（直接路径）> --field_bank_root（按 {root}/{dataset}/field_bank/{encoding}/{tag} 解析）> 规范路径。"""
+    explicit = getattr(args, "field_bank_dir", None)
+    if explicit:
+        return Path(explicit)
+    root = getattr(args, "field_bank_root", None)
+    if root:
+        return Path(root) / dataset / "field_bank" / validate_encoding(encoding) / require_landmark_tag(tag)
+    return dataset_field_bank_dir(dataset, encoding, tag, experiment=experiment)
+
+
+def resolve_embeddings_root(args) -> Path:
+    raw = getattr(args, "embeddings_root", None)
+    return Path(raw) if raw else PROJECT_ROOT / "outputs"
+
+
+def resolve_results_root(args) -> Path | None:
+    raw = getattr(args, "results_dir", None)
+    return Path(raw) if raw else None
+
+
+def assert_field_bank_mask(field_bank_dir: Path, mask_state: str, index: dict | None) -> None:
+    """防止把 raw 臂指向 mask 开着的 field bank（或反之）——取值 mask 是 Test_1a 的唯一控制变量。"""
+    policy = str((index or {}).get("landmark_policy") or "").strip()
+    if not policy:
+        return
+    if mask_state == "off" and policy != "off":
+        raise ValueError(
+            f"--extraction_mask off 需要 mask 关闭（landmark_policy=off）的 field bank，"
+            f"但 {field_bank_dir} 的 landmark_policy={policy}"
+        )
+    if mask_state == "on" and policy == "off":
+        raise ValueError(
+            f"--extraction_mask on 与 mask 关闭的 field bank 冲突：{field_bank_dir} 的 landmark_policy=off"
+        )
+
+
+def resolve_univariate_label_file(args, split_dir: Path, tag: str) -> str | None:
+    """landmark 开启时强制使用 S4 派生的 {study}__landmark_{T}.csv（经典三要件风险集排除），
+    保证 univariate 与 Test_1b 臂 B / 未来 Test_1c 同患者集。landmark_none（static_only）不用派生 label。"""
+    if getattr(args, "label_file", None):
+        path = Path(args.label_file)
+        if not path.exists():
+            raise FileNotFoundError(f"--label_file 不存在: {path}")
+        return str(path)
+    if tag == "landmark_none":
+        return None
+    labels_dir = Path(getattr(args, "landmark_labels_dir", None) or "")
+    candidate = labels_dir / f"{split_dir.name}__{tag}.csv"
+    if not candidate.exists():
+        raise FileNotFoundError(
+            f"未找到 landmark 派生 label: {candidate}。"
+            "univariate 必须与 Test_1b 臂 B 同患者集（S4 派生 label，经典三要件风险集排除）。"
+            "请确认 results/A_manual_landmark/labels/ 下该文件存在（可用 A_pipeline 的 "
+            "landmark_labels 派生），或显式传 --label_file。"
+        )
+    return str(candidate)
+
+
+def univariate_out_dir(args, dataset: str, encoding: str, landmark_tag: str, experiment: str, modality: str) -> Path:
+    default_dir = dataset_univariate_results_dir(dataset, encoding, landmark_tag, experiment=experiment) / modality
+    out_dir = resolve_cli_out_dir(args, default_dir, dataset, landmark_tag)
+    if getattr(args, "out", None):
+        out_dir = out_dir / modality  # 自定义 --out 不含 analyzer 层
+    elif getattr(args, "results_dir", None):
+        # --results_dir 是 results/ 的替身（Test_1a off 臂 = results/univariate_raw）：
+        # 把 {results}/{exp_name}/{encoding}/{tag}/{ds}/{modality} 整体搬到 {results_dir}/ 下，
+        # 与 analyzer 树（results_dir/univariate/.../{ds}/runs/...）同根对齐。
+        try:
+            rel = out_dir.relative_to(RESULTS_ROOT)
+        except ValueError:
+            rel = out_dir
+        out_dir = Path(args.results_dir) / rel
+    return out_dir
+
+
 def run_one(args, dataset: str) -> Path:
     encoding = validate_encoding(getattr(args, "encoding", "prompt"))
     args.encoding = encoding
@@ -333,33 +495,35 @@ def run_one(args, dataset: str) -> Path:
     args.landmark_tag = tag
     experiment = experiment_from_args(args)
     args.experiment = experiment
+    mask_state = resolve_extraction_mask(args, tag)
+    label_tag = resolve_patient_label_tag(args, tag, mask_state)
+    embeddings_root = resolve_embeddings_root(args)
+    results_root = resolve_results_root(args)
+    modality = parse_one_modality(args.analyzer)
+    ensure_modalities_allowed(dataset, [modality])
     work_dir = dataset_univariate_dir(dataset, encoding, tag, experiment=experiment)
-    out_dir = resolve_cli_out_dir(
-        args,
-        dataset_univariate_results_dir(dataset, encoding, tag, experiment=experiment),
-        dataset,
-        tag,
-    )
+    out_dir = univariate_out_dir(args, dataset, encoding, tag, experiment, modality)
     work_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     started = timer()
 
-    field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding, tag, experiment=experiment)
+    field_bank_dir = resolve_field_bank_dir(args, dataset, encoding, tag, experiment)
     loaded = _require_field_bank(field_bank_dir, encoding)
+    assert_field_bank_mask(field_bank_dir, mask_state, loaded.get("index"))
     field_index_path = Path(args.field_index) if args.field_index else loaded["dir"] / "field_index.json"
     fields = load_candidate_fields(dataset, field_index_path=field_index_path)
     if not fields:
         raise ValueError(f"field_index has no fields: {field_index_path}")
 
     splits, split_dir = _load_splits(args, dataset)
-    modality = parse_one_modality(args.modality)
-    ensure_modalities_allowed(dataset, [modality])
+    label_file = resolve_univariate_label_file(args, split_dir, label_tag)
 
     evaluator = ClinicSubsetEvaluator(
         dataset=dataset,
         fields=fields,
         splits=splits,
         field_bank_dir=field_bank_dir,
+        embeddings_root=embeddings_root,
         work_dir=work_dir,
         modality=modality,
         seed=args.seed,
@@ -371,12 +535,14 @@ def run_one(args, dataset: str) -> Path:
         landmark_tag=tag,
         experiment=experiment,
         exp_group="univariate",
+        label_file=label_file,
+        results_dir_base=results_root,
     )
     rows = evaluate_all_fields(
         evaluator,
         fields,
         workers=args.workers,
-        embeddings_root=PROJECT_ROOT / "outputs",
+        embeddings_root=embeddings_root,
         encoding=encoding,
     )
     config = write_univariate_outputs(
@@ -395,6 +561,11 @@ def run_one(args, dataset: str) -> Path:
             "n_patients": len(list(loaded["pt_dir"].glob("*.pt"))),
             "experiment": experiment,
             "landmark_tag": tag,
+            "label_file": label_file,
+            "label_tag": label_tag,
+            "extraction_mask": mask_state,
+            "embeddings_root": str(embeddings_root),
+            "results_dir_base": str(results_root) if results_root else "",
             "work_dir": str(work_dir),
             "results_dir": str(out_dir),
         },
@@ -411,6 +582,9 @@ def resolve_dataset_list(args) -> list[str]:
     names = resolve_dataset_names(args.dataset, datasets)
     if not names:
         names = [args.dataset]
+    names = [name for name in names if name and str(name).strip()]
+    if not names:
+        raise ValueError("--dataset 解析结果为空（shell 变量未定义时会展开成空串）；请检查 --dataset 取值")
     return names
 
 
@@ -444,6 +618,15 @@ def run_claimed_jobs(args) -> None:
         print(f"[queue] done {dest.name} dataset={dataset} landmark={landmark}")
 
 
+def expand_analyzer_args(args):
+    expanded = []
+    for analyzer in parse_modalities(args.analyzer):
+        analyzer_args = copy.copy(args)
+        analyzer_args.analyzer = analyzer
+        expanded.append(analyzer_args)
+    return expanded
+
+
 def main(argv=None):
     parser = make_parser()
     args = parser.parse_args(argv)
@@ -455,7 +638,8 @@ def main(argv=None):
         or "," in str(args.landmark_time)
         or str(args.landmark_time).strip().lower() == "all"
     )
-    run_claimed_jobs(args)
+    for analyzer_args in expand_analyzer_args(args):
+        run_claimed_jobs(analyzer_args)
 
 
 if __name__ == "__main__":

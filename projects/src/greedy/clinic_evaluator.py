@@ -37,6 +37,8 @@ class ClinicSubsetEvaluator:
         landmark_tag: str | None = None,
         experiment: str | None = None,
         exp_group: str | None = None,
+        label_file: Path | str | None = None,
+        results_dir_base: Path | str | None = None,
     ):
         self.dataset = dataset
         self.fields = list(fields)
@@ -78,6 +80,8 @@ class ClinicSubsetEvaluator:
         self.extra_args = list(extra_args or [])
         self.overwrite_embeddings = bool(overwrite_embeddings)
         self.split_dir = Path(split_dir) if split_dir is not None else None
+        self.label_file = Path(label_file) if label_file is not None else None
+        self.results_dir_base = Path(results_dir_base) if results_dir_base is not None else None
 
     def evaluate(self, subset_idx) -> dict:
         idx = [int(i) for i in list(subset_idx)]
@@ -122,6 +126,9 @@ class ClinicSubsetEvaluator:
 
         run_tag = scheme
         job_log = self.work_dir / "jobs" / f"{run_tag}.json"
+        extra_args = list(self.extra_args)
+        if self.label_file is not None:
+            extra_args.extend(["--label_file", str(self.label_file)])
         payload = evaluate_clinic_dir(
             clinic_dir,
             dataset=self.dataset,
@@ -136,10 +143,11 @@ class ClinicSubsetEvaluator:
             split_dir=split_dir,
             max_epochs=self.max_epochs,
             seed=self.seed,
-            extra_args=self.extra_args,
+            extra_args=extra_args,
             prefer_val=not self.for_test,
             reuse=True,
             job_log=job_log,
+            results_dir_base=self.results_dir_base,
             encoding=self.encoding,
             landmark_tag=self.landmark_tag,
             experiment=self.experiment,

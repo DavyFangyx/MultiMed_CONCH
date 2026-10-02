@@ -889,3 +889,92 @@ python3 results_display/scripts/Test_1b_dataset_cindex.py --audit    # 追加 3 
 - 生效动作：已通知 S5b（Test_1a off 臂）执行 agent 限流到 15 个主集；spec §5bis、§12 与 experiment_list 同步更新。
 - 决策点：无新增（R6 的"训练不过滤"被本记录取代）。
 - 状态：完成。
+
+---
+
+## S5b: Test_1a off 臂（单字段泄露对照，mask off）落地（2026-10-02）
+
+- 时间 / 执行者：2026-10-02 / Claude（S5b 执行 agent，Test_1a off 臂；规格 §5bis，范围按 R13）
+- 目标：实现并投放 Test_1a 的 **off 臂**——字段集与 t0 臂完全相同（landmark_0 的 kept 字段），
+  唯一差异 = 取值 mask 状态（off，`raw` 变体）；患者集与 t0 臂逐位一致（S4 派生 label，gt≤0 排除）。
+  产出 Δc_field = c(off) − c(t0) 逐 (dataset, field) 表与 `results_display/Test_1a_field_level/` 交叉表骨架
+  （leak_rate 列留空标 `pending_test_2a`，待用户新 Test_2a 逐字段审计出数后重跑自动填列）。
+
+### 输入
+
+- `results/univariate/prompt/landmark_0`（t0 臂，S5 已完成 33/33）；`results/Test_0_dataset_availability/manifest.csv`
+  与 `rawdata_stats/_shared/event_summary.csv` 的 n_event（R13 名单派生，不硬编码）；33 数据集清单取自
+  datasets.json（TCGA- 前缀）；S4 派生 label（`--label_tag landmark_0`）。
+
+### 命令与参数
+
+- raw Field Bank 构建（conch env 3.10.20，GPU 7）：`python3 scripts/s5b_build_raw_field_bank.py --dataset all`
+  （与 t0 bank 构建同法：全部 prompt 单次全局 tokenize(`padding=True,truncation=True`) → 批量
+  `encode_text(..., embed_cls=False)` + L2 归一化；落盘 `outputs/_raw/{ds}/field_bank/prompt/landmark_none/`
+  与 `raw_value_diff.json` 取值差异审计）
+- 队列（base python 3.13.12）：`bash scripts/s5b_univariate_queue.sh bank/check/enqueue/trim/drain/watch/status/report`；
+  job_key = `4f95c1617ab5`（≠ t0 臂 `7eba8097c4ca`，root = `Clinic_Analyzer/configs/univariate_raw/`）
+- 训练（每 GPU 一个 drainer，`--workers 8`，3 卡 GPU 7/2/6；co-tenancy 允许）：
+  `python3 scripts/run_univariate_cindex.py --landmark_time none --extraction_mask off --label_tag landmark_0
+  --field_bank_root|--embeddings_root outputs/_raw --results_dir results/univariate_raw
+  --queue_root Clinic_Analyzer/configs/univariate_raw --encoding prompt --analyzer mlp_clinic_flatten
+  --seed 0 --workers 8 --dataset <R13 15 主集>`
+- 两臂一致性抽查：`python3 scripts/s5b_audit_arms.py --pair TCGA-BLCA:0 TCGA-BLCA:7 TCGA-GBM:0 TCGA-GBM:7
+  TCGA-COAD:0 TCGA-COAD:8`（字段名同序 / 逐折 splits 三列患者集逐位一致 / 逐折 pkl 键集合一致 / Δc）
+- 报表：`python3 results_display/scripts/Test_1a_field_level.py --audit`
+
+### 产物
+
+- 代码（入库）：`scripts/s5b_build_raw_field_bank.py`、`scripts/s5b_univariate_enqueue.py`、
+  `scripts/s5b_univariate_queue.sh`、`scripts/s5b_audit_arms.py`、`tests/test_univariate_raw_arm.py`（15 用例）；
+  改造 `src/greedy/univariate_cli.py`（`--extraction_mask off`、`--label_tag`、`--field_bank_root`/`--embeddings_root`/
+  `--results_dir` 重定向与 guard：off 臂必须显式声明患者集）、`src/greedy/clinic.py`（`_relative_to_results`
+  先剥离 `results_dir_base` 再回退规范根，修掉 `{base}/{base}/…` 双层嵌套）、`src/greedy/clinic_evaluator.py`
+  （`label_file`/`results_dir_base` 透传）；`results_display/scripts/Test_1a_field_level.py` 与
+  `results_display/README.md` Test 系列小节
+- 结果（不入库）：`results/univariate_raw/univariate/prompt/landmark_none/{ds}/{mlp_clinic_flatten,runs}`、
+  `results/univariate_raw/_audit_pairs.json`；报表目录 `results_display/Test_1a_field_level/`（8 表/图 + metrics + audit json）
+
+### 审计
+
+- **两臂一致性抽查 6/6 通过**（3 数据集 × 2 字段，含 timed 与 non-timed 各半）：字段名同序、逐折
+  splits_{i}.csv 的 train/val/test 患者集**逐位一致**、逐折 `split_{i}_results.pkl` 键集合一致；
+  `all_ok=True`（`results/univariate_raw/_audit_pairs.json`）。
+- **取值差异只出现在会被 mask 影响的字段**：raw vs lm0 全量比对 1083 (dataset×field) 行，504 字段行 /
+  67,926 cells 有改动，**非 timed 家族改动字段 = 0**（33/33 数据集 `untimed_changed_fields: []`）。
+- **患者集同源**：off 臂 label 显式 `--label_tag landmark_0`（S4 派生 label，gt≤0 排除），抽查确认两臂
+  n_patients/n_event/splits/pkl 键全同。
+- **可复跑 diff=0**：报表脚本两次独立运行（不同 out_dir）全部产物（含 audit json）**字节级一致**。
+- **回归**：`python3 -m pytest tests/ -q` → 185 passed / 6 skipped（无回归；新增 15 用例）。
+- **首批数据（3/15 数据集就绪，97 对字段）**：Δc 均值 +0.0255 / 中位 +0.0027，范围 [−0.0134, +0.1953]；
+  其中 **17 个字段 Δc ≥ 0.05 全部落在 mask_affected 组**（GBM treatments 家族前 5 名 +0.151..+0.195）。
+
+### 偏差与原因
+
+- **R13 限流**：off 臂训练范围限定 n_event ≥ 100 的 15 主集（名单从 manifest 派生）。已投放的 17 个
+  非主集 conf 用 `trim` 撤到 `Clinic_Analyzer/configs/univariate_raw/parked/`（不删除）；ACC 等已完成的
+  非主集结果保留磁盘、**不进报表**（报表脚本按 manifest n_event 过滤，覆盖度只会是 15 主集）。
+- **编码噪声本底（重要）**：两臂嵌入来自两次独立构建（raw bank vs lm0 bank）。CONCH 文本编码
+  **对全局 padding 长度不敏感度有限**（同文本在不同全局 padding 下 cos≈0.78–0.93），且 bank 构建是
+  全局 tokenize，raw bank 的长文本会拉长整个 build 的 padding → 即使取值未被 mask 改动的字段，
+  嵌入也有轻微差异、Δc 非零。应对：报表增设"mask_unaffected 对照组"（本底）列/图/指标
+  （`mask_affected`、`value_cells_changed`、`delta_c_by_mask_group`、`Test_1a_delta_by_mask_group.png`）；
+  首批 3 数据集显示本底可控（n=58：均值 +0.0017、中位 +0.0007、p90|Δc|=0.0107、无一个 >0.05），
+  被 mask 改动组显著更大（n=39：均值 +0.0609、中位 +0.0308、p90=0.1517）。**Δc 归因于 mask 需显著超过本底**。
+- GPU 争用：先 `nvidia-smi` 选最闲卡（7/2/6），与他 agent 进程共卡（不动他人进程）；一次自愈循环
+  重放 stale pidfile 导致 GPU 2 上出现重复 drainer，已 kill 孤儿进程（1301277）并 `recover` 归还 running→queue。
+- `src/discovery/field_bank.py` 有一行与本步无关的未提交改动（`FIELD_BANK_GPU` 环境变量，树内无使用者），
+  **不随本步提交**；`scripts/s5_univariate_enqueue.py` 为其作者未跟踪文件，亦不代提交。
+
+### 决策点
+
+- **待上报**：① 噪声本底口径（如上）已固化进报表，Δc 结论一律以"显著超过 mask_unaffected 本底"为准；
+  ② R13 覆盖度：报表只覆盖 15 主集，非主集结果保留但不入表；③ leak_rate 列暂空（`pending_test_2a`），
+  待用户新 Test_2a 逐字段审计（`results/leak_audit/{dataset}/G1_*.json`）出数后重跑报表自动填列。
+
+### 状态
+
+进行中：off 臂训练 3/15 完成（BLCA 44、COAD 34、GBM 19 字段），11 个主集在队列（3 running / 9 queued / 0
+failed），3 个 drainer（GPU 7/2/6）+ watch 后台运行（自愈：drainer 死后拉起 / failed 重试 ≤3 / running 回收 /
+全 done 自动 report）。Δc_field 表与 `results_display/Test_1a_field_level/` 已按现有 3 数据集出数，
+其余 12 个数据集完成后重跑同一脚本即补齐（脚本幂等、diff=0）。
