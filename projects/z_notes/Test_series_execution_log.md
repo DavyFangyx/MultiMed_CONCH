@@ -813,3 +813,68 @@
   - 移除 `z_notes/H_series_spec.md`、`z_notes/H_series_execution_log.md`（Test_ 系列文档为准）
   - 新增 `z_notes/experiment_list/experiment_list.md`（速查清单）
 - 状态：完成。
+
+---
+
+## S5c: Test_1b 各数据集 Cindex 情况（字段轴链动机）落地（2026-10-02）
+
+- 时间 / 执行者：2026-10-02 / Claude（S5c 执行 agent）
+- 目标：Test_1b 三量化指标落地（① 各数据集单字段 c-index 分布（原 E1 Fig2 升级）；② 同一字段跨数据集分布；③ top-k 字段重叠度 k∈{5,10,20}）；改写 `results_display/scripts/Test_1b_dataset_cindex.py`，输入改为 S5 产物（旧 `results/univariate` 已在 S0 删除，改为直接解析 `results/univariate/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`，不经旧 collect 模块）。纯分析，无训练。
+
+### 输入（先核验完整性）
+
+- `datasets.json`：数据集名单唯一来源（禁用硬编码）；过滤 `startswith("TCGA")`（大小写不敏感）得 **33** 个（`TCGA_LIHC` 是下划线命名，若严格按 `TCGA-` 会漏成 32，故按前缀 "TCGA" 匹配）。
+- `results/univariate/prompt/landmark_0/{33 ds}/mlp_clinic_flatten/field_cindex.csv`：33/33 存在、全部 `status=ok`；每数据集行数 == `rawdata_stats/{ds}/landmark_0/kept_fields.json` 字段数，合计 **1083** 行（(dataset, field) 值），**188** 个不同字段。
+- `results/Test_0_dataset_availability/manifest.csv`：33 行；`note` 列全部以 `provisional(D1)` 开头 → 不采信其 tier。
+- `rawdata_stats/_shared/event_summary.csv`：n_event / n_patients / event_rate（与 manifest 的 n_event 逐行一致，已核）。
+
+### 命令与参数
+
+```
+python3 results_display/scripts/Test_1b_dataset_cindex.py            # 生成全部产物
+python3 results_display/scripts/Test_1b_dataset_cindex.py --audit    # 追加 3 组 (dataset, field) 抽查
+# 可选：--out_dir / --analyzer / --top_k 5,10,20 / --min_datasets 10
+```
+
+分档口径（D1 provisional 的处置）：manifest 非 provisional 才采信 manifest tier；本步 33 行全 provisional，故按协议 A 从 n_event 重算（≥100 main / 70–100 main_ci / 30–70 supp / <30 low），逐行写 `tier_source` 列并在图注标注。结果：**main=15、main_ci=5、supp=4、low=9**（main=15 与 experiment_list 中 Test_3 主集 15 个一致）。
+
+### 产物（`results_display/Test_1b_dataset_cindex/`，png/csv 不入库）
+
+- 图 5：`Test_1b_per_dataset_profile.png`（原 E1 Fig2 升级：共享字段轴 37 字段 × 33 数据集，分层分隔线+文字标注）、`Test_1b_per_dataset_distribution.png`（指标 a）、`Test_1b_cross_dataset_field_distribution.png`（指标 b）、`Test_1b_topk_overlap_matrix.png`（指标 c：k=5/10/20 三张 528 对数据集两两重叠率热图）、`Test_1b_topk_overlap_summary.png`（指标 c 汇总：均值/中位 + 逐 k 零共享占比）
+- 表 7：`Test_1b_dataset_summary.csv`、`Test_1b_field_summary.csv`、`Test_1b_cindex_matrix.csv`（数据集 × 字段全矩阵）、`Test_1b_topk_members.csv`、`Test_1b_topk_pairwise_k{5,10,20}.csv`、`Test_1b_topk_overlap_summary.csv`、`Test_1b_metrics.json`
+
+### 量化结论（不均衡幅度）
+
+**(a) 各数据集单字段分布**：1083 值中 77.4%（838/1083）单字段 c ≥ 0.5。
+- 各数据集 top-1：**0.572（TCGA-LUSC）.. 0.930（TCGA-THCA），跨度 0.358**；中位 0.666。
+- 各数据集字段中位 c：0.407（TCGA-PCPG）.. 0.567（TCGA-THCA），跨度 0.160。
+- 数据集内字段跨度（max−min）：中位 0.230、最大 0.608（TCGA-DLBC）→ 同一数据集内换字段的收益空间与跨数据集差同量级。
+- 33 个数据集的 top-1 落在 **18 个不同字段**：age_at_diagnosis 覆盖 6 个、ajcc_pathologic_n 5 个、ajcc_pathologic_t 4 个，其余 15 个字段各自只在 1 个数据集夺冠 → "每个数据集有各自最优字段"的直接证据。
+
+**(b) 跨数据集同字段分布**（37 个覆盖 ≥10 数据集的公共字段）：同一字段的跨数据集 c-index 跨度中位 **0.230**、最大 **0.691**（`diagnoses[].age_at_diagnosis`，33/33 数据集）、最小 0.004；**17/37 字段跨度 ≥ 0.25**，仅 7/37 ≤ 0.10 → 单字段判别力高度随数据集变化，字段清单不可跨数据集照搬。
+
+**(c) top-k 重叠度**（528 对数据集，重叠率 = |∩|/k）：
+- k=5：均值 0.149、中位 0.200、Jaccard 0.090；**249/528（47.2%）对数据集 top-5 零共享**。
+- k=10：均值 0.197、中位 0.200；72/528（13.6%）零共享；top-10 共涉及 112 个不同字段，**62 个只出现在一个数据集的 top-10，0 个字段进入全部 33 个数据集**。
+- k=20：均值 0.327、中位 0.300；0 对零共享；148 个字段、70 个唯一、0 个进入全部。
+→ 低位重叠 + 无字段通吃 ⇒ 跨数据集最优组合不通用，直接支持 Test_3 的 per-dataset 贪婪搜索（即 Test_1b 的动机命题）。
+
+### 审计
+
+- **可重复性（diff=0）**：两次独立运行（不同 out_dir）14/14 产物**字节级一致**（5 张 PNG + 7 CSV + metrics.json；PNG 无时间戳、排序与数值格式固定、抽样 seed 固定 AUDIT_SEED=20261002）；交付目录与验证运行逐字节一致。
+- **抽查 3 组**（与源 CSV 手算一致，全精度 diff=0）：TCGA-GBM × `diagnoses[].treatments[].treatment_anatomic_sites` = 0.5013796431989072；TCGA-ESCA × `diagnoses[].pathology_details[].lymph_nodes_positive` = 0.534564751019368；TCGA-SARC × `diagnoses[].pathology_details[].tumor_depth_descriptor` = 0.49464080353292345。校验链：手算 mean(per_fold raw JSON) == CSV `c_index_mean` == 脚本内部 record == field_summary，`[audit] ALL PASS`。
+- 数据完整性：33/33 CSV、status 全 ok、行数 == kept_fields 字段数（1083）、188 字段、manifest 与 event_summary 的 n_event 一致。
+
+### 偏差与原因
+
+- manifest 33 行全 provisional → 按上文重算 tier 并标 `tier_source`（`protocolA_provisional_manifest`），图/表注明；manifest 若日后转正只需重跑。
+- 分层不用颜色（避免与 red/blue 发散对撞车），用分隔线 + 文字标注（沿用 Test_2b 惯例）；颜色只承载两个语义：c-index vs 0.5 极性（红/蓝发散对）、重叠率量级（单色蓝顺序）。
+- 图表风格沿用既有 matplotlib 约定（英文标签，默认字体无 CJK 字形）；调色板与 `Test_2b_delta_report.py` 的红/蓝发散对一致，已过 dataviz 验证器（对 + 顺序色阶）。
+
+### 决策点
+
+- 无新增待决项。本步固化：① top-k 重叠口径按**字段名集合**（非索引），重叠率 = |∩|/k（对称），另报 Jaccard；k 固定 {5,10,20}；② 公共字段阈值 ≥10 数据集（37 字段）；③ tier 来源优先级 = manifest 非 provisional > 协议 A on n_event。
+
+### 状态
+
+完成（脚本 + 本日志随本次提交入库；产物 `results_display/Test_1b_dataset_cindex/` 就绪，供 Test_3 动机与 Test_4 引用）。
