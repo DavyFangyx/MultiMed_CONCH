@@ -1,9 +1,9 @@
-"""H2 对照报表: 贪婪最优组合 vs 各工作去泄露后的组合。
+"""Test_2 对照报表: 贪婪最优组合 vs 各工作去泄露后的组合。
 
-三臂(见 z_notes/H_series_spec.md §7.2, 全部 landmark_0):
+三臂(见 z_notes/Test_series_spec.md §7.2, 全部 landmark_0):
   臂 B  = 工作完整组合 × scheme 模板 (results/A_manual_landmark/{dataset}[gdc]/cindex.csv 行 {work}__landmark_0)
-  臂 B' = 工作完整组合 × bank 模板 (自定义方案 H2_{work}_{dataset})
-  臂 C  = 贪婪最优组合 × bank 模板 (自定义方案 H2_greedy_{dataset})
+  臂 B' = 工作完整组合 × bank 模板 (自定义方案 Test_3_{work}_{dataset})
+  臂 C  = 贪婪最优组合 × bank 模板 (自定义方案 Test_3_greedy_{dataset})
 
 输出: Δc = C − B'(模板控制头条) 与 C − B(交叉验证), 遗漏字段清单(C \\ 工作组合)。
 """
@@ -23,24 +23,24 @@ for _p in (ROOT, ROOT / "src", ROOT / "A_pipeline"):
 
 A_TEMPLATES = ROOT / "A_pipeline" / "templates"
 RESULTS = ROOT / "results"
-OUT_ROOT = ROOT / "results_display" / "H2_greedy_vs_works"
+OUT_ROOT = ROOT / "results_display" / "Test_3_greedy_vs_works"
 
 
 def load_fields(scheme: str) -> list[str]:
     path = A_TEMPLATES / scheme / "fields.json"
     if not path.exists():
-        raise SystemExit(f"[h2] 方案不存在: {scheme}")
+        raise SystemExit(f"[test_2] 方案不存在: {scheme}")
     return [str(f).strip() for f in json.loads(path.read_text(encoding="utf-8")).get("fields", [])]
 
 
 def rows_for(dataset: str, scheme: str) -> pd.DataFrame:
     path = RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv"
     if not path.exists():
-        raise SystemExit(f"[h2] 缺 cindex 表: {path}")
+        raise SystemExit(f"[test_2] 缺 cindex 表: {path}")
     df = pd.read_csv(path)
     mask = df["scheme"] == f"{scheme}__landmark_0"
     if not mask.any():
-        raise SystemExit(f"[h2] 表内无 {scheme}__landmark_0 行: {path}")
+        raise SystemExit(f"[test_2] 表内无 {scheme}__landmark_0 行: {path}")
     return df[mask]
 
 
@@ -76,23 +76,23 @@ def compare(dataset: str, work: str, name_bp: str, name_c: str) -> dict:
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description="H2 贪婪 vs 工作 对照")
+    parser = argparse.ArgumentParser(description="Test_2 贪婪 vs 工作 对照")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--work", required=True, help="工作方案名(如 MULTISURV)")
-    parser.add_argument("--name-bp", default=None, help="臂 B' 自定义方案名(默认 H2_{work}_{dataset})")
-    parser.add_argument("--name-c", default=None, help="臂 C 自定义方案名(默认 H2_greedy_{dataset})")
+    parser.add_argument("--name-bp", default=None, help="臂 B' 自定义方案名(默认 Test_3_{work}_{dataset})")
+    parser.add_argument("--name-c", default=None, help="臂 C 自定义方案名(默认 Test_3_greedy_{dataset})")
     parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
 
-    name_bp = args.name_bp or f"H2_{args.work}_{args.dataset}"
-    name_c = args.name_c or f"H2_greedy_{args.dataset}"
+    name_bp = args.name_bp or f"Test_3_{args.work}_{args.dataset}"
+    name_c = args.name_c or f"Test_3_greedy_{args.dataset}"
     report = compare(args.dataset, args.work, name_bp, name_c)
 
     out = Path(args.out) if args.out else OUT_ROOT / f"{args.dataset}__{args.work}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    print(f"[h2] 写 {out}")
+    print(f"[test_2] 写 {out}")
 
 
 if __name__ == "__main__":

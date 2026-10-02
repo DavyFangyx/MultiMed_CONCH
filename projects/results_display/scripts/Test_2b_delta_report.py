@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""H1b Δc 对照报表生成器（纯汇总，无训练）。
+"""Test_2b Δc 对照报表生成器（纯汇总，无训练）。
 
-口径（z_notes/H_series_spec.md §6.4 / §12 U1 协议 A）：
+口径（z_notes/Test_series_spec.md §6.4 / §12 U1 协议 A）：
   - 臂 A（报告值对照）= scheme__landmark_none（S4 新链路，同字段集、同编码、同模型、同划分）
   - 臂 B（去泄露值）  = scheme__landmark_0（经典 landmark 三要件全开）
   - Δc = c(A) − c(B)；Δc > 0 表示去掉未来信息后 c-index 下降 = 文献报告值被高估的证据
@@ -16,16 +16,16 @@
   - rawdata_stats/_shared/event_summary.csv（n_event 分层）
   - results/A_manual_landmark/labels/{study}__landmark_0.json（审计用：排除病例清单）
 
-输出（默认 results_display/H1b_delta/，全部为 gitignore 产物，不入库）：
-  - h1b_delta_main.csv / h1b_delta_supp.csv / h1b_delta_low.csv
-  - h1b_delta_summary.csv（按 scheme × analyzer × tier_group 汇总）
-  - h1b_delta_forest_{scheme}_{analyzer}.png（每方案 × 分析器森林图，共 20 张）
-  - h1b_delta_overview_{analyzer}.png（跨方案总览，共 2 张）
+输出（默认 results_display/Test_2b_delta/，全部为 gitignore 产物，不入库）：
+  - Test_2b_delta_main.csv / Test_2b_delta_supp.csv / Test_2b_delta_low.csv
+  - Test_2b_delta_summary.csv（按 scheme × analyzer × tier_group 汇总）
+  - Test_2b_delta_forest_{scheme}_{analyzer}.png（每方案 × 分析器森林图，共 20 张）
+  - Test_2b_delta_overview_{analyzer}.png（跨方案总览，共 2 张）
 
 可复跑：同输入重跑 diff=0（固定随机种子、固定行列序、无时间戳）。
 用法：
-  python3 results_display/scripts/h1b_delta_report.py            # 生成全部产物
-  python3 results_display/scripts/h1b_delta_report.py --audit    # 生成 + 3 组抽查
+  python3 results_display/scripts/Test_2b_delta_report.py            # 生成全部产物
+  python3 results_display/scripts/Test_2b_delta_report.py --audit    # 生成 + 3 组抽查
 """
 from __future__ import annotations
 
@@ -252,9 +252,9 @@ def write_tier_tables(rows: list[dict], out_dir: Path) -> dict[str, Path]:
     df = pd.DataFrame(rows)[COLUMNS]
     files = {}
     for tier, fname in (
-        ("main", "h1b_delta_main.csv"),
-        ("supp", "h1b_delta_supp.csv"),
-        ("low", "h1b_delta_low.csv"),
+        ("main", "Test_2b_delta_main.csv"),
+        ("supp", "Test_2b_delta_supp.csv"),
+        ("low", "Test_2b_delta_low.csv"),
     ):
         sub = df[df["tier"] == tier]
         path = out_dir / fname
@@ -262,7 +262,7 @@ def write_tier_tables(rows: list[dict], out_dir: Path) -> dict[str, Path]:
         files[tier] = path
     # main_ci（70–100）并入主表文件，用 tier 列标注 CI 要求（不排名）
     main = df[df["tier"].isin(("main", "main_ci"))]
-    path = out_dir / "h1b_delta_main.csv"
+    path = out_dir / "Test_2b_delta_main.csv"
     main.to_csv(path, index=False)
     files["main_ci"] = path
     return files
@@ -320,7 +320,7 @@ def summarize(rows: list[dict], out_dir: Path) -> Path:
     out = pd.DataFrame(recs).sort_values(
         ["analyzer", "scheme", "tier_group"], kind="mergesort"
     )
-    path = out_dir / "h1b_delta_summary.csv"
+    path = out_dir / "Test_2b_delta_summary.csv"
     out.to_csv(path, index=False)
     return path
 
@@ -426,7 +426,7 @@ def forest_figure(rows: list[dict], scheme: str, analyzer: str, out_dir: Path) -
         plt.Line2D([], [], marker="o", linestyle="", color=COL_NEG, label="Δc < 0"),
     ]
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="lower right", labelcolor=INK)
-    path = out_dir / f"h1b_delta_forest_{scheme}_{analyzer}.png"
+    path = out_dir / f"Test_2b_delta_forest_{scheme}_{analyzer}.png"
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
     return path
@@ -504,7 +504,7 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
     )
     _setup_axes(ax)
     ax.legend(frameon=False, fontsize=8, loc="upper right", labelcolor=INK)
-    path = out_dir / f"h1b_delta_overview_{analyzer}.png"
+    path = out_dir / f"Test_2b_delta_overview_{analyzer}.png"
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
     return path
@@ -579,10 +579,10 @@ def audit(rows: list[dict]) -> None:
 
 # --------------------------------------------------------------------------- 主流程
 def main() -> None:
-    ap = argparse.ArgumentParser(description="H1b Δc 对照报表（纯汇总）")
+    ap = argparse.ArgumentParser(description="Test_2b Δc 对照报表（纯汇总）")
     ap.add_argument(
-        "--out", default=str(REPO_ROOT / "results_display" / "H1b_delta"),
-        help="产物目录（默认 results_display/H1b_delta）",
+        "--out", default=str(REPO_ROOT / "results_display" / "Test_2b_delta"),
+        help="产物目录（默认 results_display/Test_2b_delta）",
     )
     ap.add_argument("--audit", action="store_true", help="生成后执行 3 组固定种子抽查")
     ap.add_argument("--no-figs", action="store_true", help="跳过出图")

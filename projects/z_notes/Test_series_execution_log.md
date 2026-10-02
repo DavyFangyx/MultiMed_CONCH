@@ -1,16 +1,16 @@
-# H 系列执行日志
+# Test_ 系列执行日志
 
-规格与口径唯一来源：`z_notes/H_series_spec.md`。本文件是**所有执行报告的统一归档**，追加写，不另开文件；追加前先重读文件末尾。
+规格与口径唯一来源：`z_notes/Test_series_spec.md`。本文件是**所有执行报告的统一归档**，追加写，不另开文件；追加前先重读文件末尾。
 
 ## 决策点状态表
 
 | ID | 决策点 | 状态 | 结论 |
 |---|---|---|---|
 | D0 | S0 删除范围（results/results_display 的 E1/E2/旧 greedy/univariate/linear_probe；是否连 outputs/*/greedy、outputs/*/univariate、Clinic_Analyzer/results 中间产物） | **已确认（方案 B）** | 删除：results/{E2_selection,univariate,greedy,linear_probe}、results_display/{univariate,greedy,linear_probe,E1_Fig2_Single-field c-index}、outputs/*/{greedy,univariate}（35 队列）、Clinic_Analyzer/results、Clinic_Analyzer/configs/{E2_selection,greedy,univariate}。保留：results/A_manual、results_display/FigA_Other_Paper_Works、outputs/*/{A_manual,field_bank}、rawdata_stats/。磁盘释放 ~200GB（1.1T→1.3T 可用）。 |
-| D1 | H0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | **已解决（2026-09-30，用户数据协议 A）** | 弃用无推导的 0.05 锚点。执行口径 = 用户数据协议 A（n_event 四档）：≥100 主图干净集；70–100 主图带 CI 不排名；30–70 补充材料 bootstrap CI；<30 不收录、单列低事件组定性讨论。适用于全部工作（含泛癌种）。B/C 存档不执行、D 不采用（R6）。 |
-| D2 | landmark 有效事件口径（mask vs 排除患者）+ 数据集范围 | **已确认**（用户指令 2026-09-29） | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。**数据集范围：仅 33 TCGA；TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**，H4c 阶段再议。 |
-| D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **已确认（2026-09-30）：放量，按三条硬条件执行** | ① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② H1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
-| D4 | H2 最优组合口径（sig_stop 推荐 vs 历史 best） | 待确认 | — |
+| D1 | Test_0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | **已解决（2026-09-30，用户数据协议 A）** | 弃用无推导的 0.05 锚点。执行口径 = 用户数据协议 A（n_event 四档）：≥100 主图干净集；70–100 主图带 CI 不排名；30–70 补充材料 bootstrap CI；<30 不收录、单列低事件组定性讨论。适用于全部工作（含泛癌种）。B/C 存档不执行、D 不采用（R6）。 |
+| D2 | landmark 有效事件口径（mask vs 排除患者）+ 数据集范围 | **已确认**（用户指令 2026-09-29） | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。**数据集范围：仅 33 TCGA；TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**，Test_4c 阶段再议。 |
+| D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **已确认（2026-09-30）：放量，按三条硬条件执行** | ① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② Test_1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
+| D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）** | 贪婪用 sig_stop 阈值早停（0.005），另报历史 best |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
 
 ---
@@ -18,33 +18,33 @@
 ## S-1 准备：规格文档与执行日志
 
 - 时间 / 执行者：2026-09-29 / Claude（主会话）
-- 目标：建立 H 系列单步执行框架：规格文档、步骤注册表、决策点清单、执行日志模板与 Git 提交协议。
-- 输入：用户实验清单（H1–H4）、`project_overview.md`、`z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`、`rawdata_stats/_shared/event_impact_analysis/`。
+- 目标：建立 Test_ 系列单步执行框架：规格文档、步骤注册表、决策点清单、执行日志模板与 Git 提交协议。
+- 输入：用户实验清单（Test_1–Test_4）、`project_overview.md`、`z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`、`rawdata_stats/_shared/event_impact_analysis/`。
 - 命令与参数：无（纯文档）。
-- 产物：`z_notes/H_series_spec.md`、`z_notes/H_series_execution_log.md`（本文件）。
-- 审计：规格中锁定口径（定量泄露、控制变量、三档、H0 规则、Git 协议）与用户三轮反馈一致。
+- 产物：`z_notes/Test_series_spec.md`、`z_notes/Test_series_execution_log.md`（本文件）。
+- 审计：规格中锁定口径（定量泄露、控制变量、三档、Test_0 规则、Git 协议）与用户三轮反馈一致。
 - 偏差与原因：无。
 - 决策点：无新增；D0–D5 注册待确认。
 - 状态：完成。
 
 ---
 
-## S1 H0 可用数据集评估
+## S1 Test_0 可用数据集评估
 
 - 时间 / 执行者：2026-09-29 / Claude（S1 执行 agent）
-- 目标：(1) 只读调查 landmark 对生存终点与事件的处理方式（D2 事实基础）；(2) 实现 H0 可用数据集评估脚本与初版 manifest；(3) 不跑任何训练。
+- 目标：(1) 只读调查 landmark 对生存终点与事件的处理方式（D2 事实基础）；(2) 实现 Test_0 可用数据集评估脚本与初版 manifest；(3) 不跑任何训练。
 - 输入（文件路径 + 行数/条数/hash）：
   - `datasets.json`（177 行，35 队列 = 33 TCGA + CPTAC + MMRF，md5 `5918c06884bc`）
   - `rawdata_stats/_shared/event_summary.csv`（35 行 + 表头，md5 `e4fa8bfef99a`）
   - `rawdata_stats/{dataset}/event_stats.csv`（35 个，患者级 `submitter_id/event/ground_truth_time`）
   - `Clinic_Analyzer/data/splits/5foldcv/{study}/splits_*.csv`（35 个目录 × 5 折 = 175 个文件）
 - 命令与参数：
-  - `python3 scripts/run_h0_availability.py`（默认）；重跑一次 `--quiet` 做 diff 校验
-  - `python3 -m pytest tests/test_h0_availability.py -q`；`python3 -m pytest tests/ -q`
+  - `python3 scripts/run_Test_0_availability.py`（默认）；重跑一次 `--quiet` 做 diff 校验
+  - `python3 -m pytest tests/test_0_availability.py -q`；`python3 -m pytest tests/ -q`
 - 产物（路径 + 行数/条数）：
-  - `results/H0_dataset_availability/manifest.csv`（36 行 = 表头 + 35 队列，md5 `55762283a740`）
-  - `results/H0_dataset_availability/{dataset}_profile.json`（35 个）
-  - `scripts/run_h0_availability.py`（533 行）、`tests/test_h0_availability.py`（372 行）
+  - `results/Test_0_dataset_availability/manifest.csv`（36 行 = 表头 + 35 队列，md5 `55762283a740`）
+  - `results/Test_0_dataset_availability/{dataset}_profile.json`（35 个）
+  - `scripts/run_Test_0_availability.py`（533 行）、`tests/test_0_availability.py`（372 行）
   - 注：`results/**` 已被 .gitignore，产物不入库。
 
 ### 任务 1：D2 事实调查（只读，未修改任何代码）
@@ -73,7 +73,7 @@
    `effective_events_lmT = #{ i : event_i == 1 且 ground_truth_time_i > T }`
    即"在 T 时刻仍处于随访中、且事件发生在 T 之后"的患者数。配套要求（S3/S4 须实现，当前缺失）：
    - **排除** `ground_truth_time <= T` 的患者（T 前已死亡者不是 T 时刻的风险集；T 前删失者无 T 后随访），
-   - 保留其余患者的**原 event 指示**（不重新定义终点；如需严格 re-baseline，时间轴改为 `gt-T`，但 c-index 对单调变换不变，故对 H1b/H2 无影响）。
+   - 保留其余患者的**原 event 指示**（不重新定义终点；如需严格 re-baseline，时间轴改为 `gt-T`，但 c-index 对单调变换不变，故对 Test_1b/Test_2 无影响）。
 2. **不推荐**沿用现状口径（只 mask）：该口径下 `effective_events_lmT ≡ n_event`，门槛重套退化为恒等，spec §4.2-6 失去意义；且 T 前已死亡患者仍带着"未来终点"留在训练/评估集里，是**终点侧的残留泄露**。
 
 **口径差异的量级（候选数值已存 profile JSON，未写入 manifest）**——若采用严格口径，主集 12 个里 4 个会掉档：
@@ -87,9 +87,9 @@
 
 （其余队列 lm0 与 n_event 基本相同：T=0 时严格口径只剔除 gt≤0 的极端个案，如 TCGA-ACC 34→33。）
 
-### 任务 2：H0 脚本与初版 manifest
+### 任务 2：Test_0 脚本与初版 manifest
 
-- 新代码：`scripts/run_h0_availability.py`（纯函数 `base_tier` / `classify_tier` / `degen_fold_indices` / `epv_field_budget` / `strict_landmark_events` 可单测；`run()` 端到端）。
+- 新代码：`scripts/run_Test_0_availability.py`（纯函数 `base_tier` / `classify_tier` / `degen_fold_indices` / `epv_field_budget` / `strict_landmark_events` 可单测；`run()` 端到端）。
 - 规则实现（spec §4.2）：R1 `n_event≥150`→主集；R2 `70–150`→扩展集；R3 `30–70`→补充集；R4 `<30`→排除集；R5 `event_rate<0.1` 降一级（严格小于，恰好 0.1 不降）；R7 结构退化折 = 折内 val 事件数 ≤1 的折数（c-index 只能取精确 0/1 或无定义）；R8 EPV 字段预算 = `floor(min(每折事件数)/10)`。R6（landmark 重套）因 D2 未定，未实施。
 - **tier 全部标注 `provisional`**（D1 未确认）：manifest `note` 列每行以 `provisional(D1)` 开头。
 - **`effective_events_lm0/lm365/lm730` 三列留空**，`note` 内每行写 `effective_events_lm*: TODO(D2)`；候选口径的两个数值存 `{dataset}_profile.json` 的 `landmark.candidates`（`current_implementation` + `strict_landmark_exclude_le_T`，含每折受限版）。
@@ -121,28 +121,28 @@
 | 队列名→splits 目录映射 | `TCGA-*`→`tcga_*`、`TCGA_LIHC`→`tcga_lihc`、`MMRF/CPTAC`→`mmrf/cptac`，35/35 全部命中 |
 | 未跑训练 / 未碰真实数据做测试 | 通过：脚本无任何模型调用；测试全部用 `tmp_path` 假数据 |
 | 未修改 src/ 与 A_pipeline/ | 通过：本步仅新增 2 个文件 + 追加本日志 |
-| 测试 | `tests/test_h0_availability.py` 20 passed；全量 `tests/` 123 passed, 6 skipped（无回归） |
+| 测试 | `tests/test_0_availability.py` 20 passed；全量 `tests/` 123 passed, 6 skipped（无回归） |
 
 ### 偏差与原因
 
 - **偏差 1（口径相关，非错误）**：spec §4.3 的 manifest 列含 `effective_events_lm*`，但 D2 未确认，故按任务要求**留空 + TODO**。候选数值（含"现状 mask-only ≡ n_event"与"严格排除 t≤T"两解）已写入每个 `{dataset}_profile.json` 的 `landmark.candidates`，供 D2 决策直接取用，无需重跑。
-- **偏差 2（R7 定义细化）**：spec §4.2-7 原文为"c-index 精确 0.0/1.0"，但那需要训练结果；H0 不训练，故实现为**结构退化折**（折内 val 事件数 ≤1，其 c-index 必然只能取 0/1 或无定义）。该定义仅依赖 splits，可重复且不受 S0 删除结果文件影响。语义已写入 profile 的 `degen_fold_definition`。
+- **偏差 2（R7 定义细化）**：spec §4.2-7 原文为"c-index 精确 0.0/1.0"，但那需要训练结果；Test_0 不训练，故实现为**结构退化折**（折内 val 事件数 ≤1，其 c-index 必然只能取 0/1 或无定义）。该定义仅依赖 splits，可重复且不受 S0 删除结果文件影响。语义已写入 profile 的 `degen_fold_definition`。
 - **偏差 3（R7 只标注未降级）**：spec §4.2-7 要求"标注并降级"，但降级动作依 §4.4 属 S8/D5 的逐项确认范围；本步只标注（`degen_folds` + `rule_hits` 含 `R7`），未改动 tier。已记入 D1 推荐意见。
-- **偏差 4（R8 的粒度）**：R8 是 (dataset, scheme) 级约束（取决于方案字段数），H0 在数据集级无法判定命中；故只计算 `epv_field_budget` 并在预算为 0 时标 `R8`（此时任何多字段实验都不可行）。
+- **偏差 4（R8 的粒度）**：R8 是 (dataset, scheme) 级约束（取决于方案字段数），Test_0 在数据集级无法判定命中；故只计算 `epv_field_budget` 并在预算为 0 时标 `R8`（此时任何多字段实验都不可行）。
 - **偏差 5（命名）**：`datasets.json` 中该队列注册名为 `TCGA_LIHC`（下划线，其余为连字符），splits 目录为 `tcga_lihc`；脚本按统一规则转换，manifest 保留注册名原样，未做重命名。
 
 ### 决策点
 
-- **D1** H0 门槛与降级规则数值 → **本步结论：照搬 spec §4.2 现值**（150/70/30、rate<0.1 降一级）；建议把 R7 由"仅标注"升级为"降级"。**待用户确认**（本步 manifest 的 tier 均标 `provisional`）。
+- **D1** Test_0 门槛与降级规则数值 → **本步结论：照搬 spec §4.2 现值**（150/70/30、rate<0.1 降一级）；建议把 R7 由"仅标注"升级为"降级"。**待用户确认**（本步 manifest 的 tier 均标 `provisional`）。
 - **D2** landmark 有效事件口径 + MMRF 是否纳入 → **本步结论（推荐）**：口径 = `mask（已实现）+ 排除 ground_truth_time ≤ T 的患者（S3/S4 需新增）+ 保留原 event 指示`，`effective_events_lmT = #{event==1 且 ground_truth_time > T}`；MMRF **纳入**。**待用户确认**。确认前：manifest 的 `effective_events_lm*` 保持留空，不推进 S3/S4。
 
 ### 状态
 
-完成（本步产物就绪）；**S2 不受 D1/D2 阻塞可继续**（H1a 是纯描述性审计、全部数据集都做），但 **S3/S4 依赖 D2、S4/S6 选集依赖 D1，二者未确认前不推进**。
+完成（本步产物就绪）；**S2 不受 D1/D2 阻塞可继续**（Test_1a 是纯描述性审计、全部数据集都做），但 **S3/S4 依赖 D2、S4/S6 选集依赖 D1，二者未确认前不推进**。
 
 ### 提交
 
-`git add scripts/run_h0_availability.py tests/test_h0_availability.py z_notes/H_series_execution_log.md` → "S1: H0 可用数据集评估脚本与初版 manifest"（提交 hash 见日志末尾追加或 `git log -1`）。
+`git add scripts/run_Test_0_availability.py tests/test_0_availability.py z_notes/Test_series_execution_log.md` → "S1: Test_0 可用数据集评估脚本与初版 manifest"（提交 hash 见日志末尾追加或 `git log -1`）。
 
 ---
 
@@ -152,8 +152,8 @@
 - 目标：落实用户口径指令：后续实验的评估默认 landmark_0；现有 landmark_none（关 mask + R0 整层删 diagnoses/follow_ups）既非无处理也非规范处理，更名为 **static_only**，移出主图、仅进补充材料。
 - 输入：用户指令（2026-09-29 会话内）。
 - 命令与参数：无。
-- 产物：`z_notes/H_series_spec.md` §2.5 重写（两个概念澄清：取值 mask 状态 {off,0,365,730} vs field-bank 筛选变体 {landmark_0,365,730,static_only}）、§5.2 与 §8 相应措辞更新；本日志本条目。
-- 审计：逐条核对影响面——S1 manifest（无影响，tier 与命名无关）；S2 H1a 审计（无影响：leak_rate 对比的是取值 mask off 与 t0，其"landmark_none 有效值"= 无 mask 取值全集，措辞已在 spec §5.2 澄清，无需重跑）；S3 A_pipeline `--landmark_time`（`none` = 无 mask 取值，与 static_only 概念不同，保留 none 值；S3 不受影响）；S5 生成 field-bank 变体时用新名 static_only（届时同步更名 rawdata_stats/{dataset}/landmark_none 目录）；H3b 主图改为 landmark_0 vs {365,730}，static_only 对照进补充。
+- 产物：`z_notes/Test_series_spec.md` §2.5 重写（两个概念澄清：取值 mask 状态 {off,0,365,730} vs field-bank 筛选变体 {landmark_0,365,730,static_only}）、§5.2 与 §8 相应措辞更新；本日志本条目。
+- 审计：逐条核对影响面——S1 manifest（无影响，tier 与命名无关）；S2 Test_1a 审计（无影响：leak_rate 对比的是取值 mask off 与 t0，其"landmark_none 有效值"= 无 mask 取值全集，措辞已在 spec §5.2 澄清，无需重跑）；S3 A_pipeline `--landmark_time`（`none` = 无 mask 取值，与 static_only 概念不同，保留 none 值；S3 不受影响）；S5 生成 field-bank 变体时用新名 static_only（届时同步更名 rawdata_stats/{dataset}/landmark_none 目录）；Test_3b 主图改为 landmark_0 vs {365,730}，static_only 对照进补充。
 - 偏差与原因：无。
 - 决策点：无新增（用户已拍板，直接生效）。
 - 状态：完成。
@@ -167,19 +167,19 @@
 - 输入：用户指令（2026-09-29 会话内）。
 - 命令与参数：无（规格文档更新；已通过 SendMessage 将新要求补发给正在执行的 S3 agent）。
 - 产物：spec §2.5（三要件定义）、§4.2-6（有效事件数口径）、§6.1（S3 实现要求：mask + 风险集排除 + gt−T + 平移不变性自检）；本日志 D2 行更新（口径部分标记已确认，MMRF 部分仍待确认）。
-- 审计：S1 的 D2 推荐与本指令一致；S1 的 strict_landmark_exclude_le_T 候选数值可直接采用，无需重跑。S2（H1a 审计）不受影响（leak_rate 是值级对比）。S3 受影响：实现范围从"仅 mask"扩大为三要件。
+- 审计：S1 的 D2 推荐与本指令一致；S1 的 strict_landmark_exclude_le_T 候选数值可直接采用，无需重跑。S2（Test_1a 审计）不受影响（leak_rate 是值级对比）。S3 受影响：实现范围从"仅 mask"扩大为三要件。
 - 偏差与原因：无。
 - 决策点：D2 口径部分已确认；D2 的 MMRF 是否纳入仍待用户确认。
 - 状态：完成。
 
 ---
 
-## S2 H1a 泄露审计
+## S2 Test_1a 泄露审计
 
 - 时间 / 执行者：2026-09-29 / Claude（S2 执行 agent）
-- 目标：(1) 实现 H1a 泄露审计模块（**无训练**，纯描述性统计）：对 `datasets.json` 全部注册队列 × 10 个论文方案，逐字段量化 `leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none`（= t0 时刻该字段不可得的比例）；(2) 产出 `results/leak_audit` 明细 + 汇总与 `results_display/leak_audit` 两张图；(3) 抽查 ≥3 个 (dataset, scheme, field) 与手工 JSON 核对（本步实际做 4 个）；(4) 不跑训练、不改 `src/` 其他模块与 `A_pipeline`。
+- 目标：(1) 实现 Test_1a 泄露审计模块（**无训练**，纯描述性统计）：对 `datasets.json` 全部注册队列 × 10 个论文方案，逐字段量化 `leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none`（= t0 时刻该字段不可得的比例）；(2) 产出 `results/leak_audit` 明细 + 汇总与 `results_display/leak_audit` 两张图；(3) 抽查 ≥3 个 (dataset, scheme, field) 与手工 JSON 核对（本步实际做 4 个）；(4) 不跑训练、不改 `src/` 其他模块与 `A_pipeline`。
 - 输入（路径 + 条数/hash）：
-  - `z_notes/H_series_spec.md` §2.1/§2.4/§2.5/§5（口径唯一来源；C1 更名 static_only 后 §5.2 措辞已澄清，本步审计对象不变）
+  - `z_notes/Test_series_spec.md` §2.1/§2.4/§2.5/§5（口径唯一来源；C1 更名 static_only 后 §5.2 措辞已澄清，本步审计对象不变）
   - `datasets.json`（35 队列 = 33 TCGA + CPTAC + MMRF，md5 `5918c06884bc`）
   - `A_pipeline/templates/{scheme}/fields.json`（10 个方案字段表，spec §2.4 名单：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN / HGCN_{KIRC,LIHC,ESCA,LUSC,LUAD,UCEC}）
   - `rawdata_stats/{dataset}/landmark_0/kept_fields.json`（35 个，判定 `not_in_bank`）
@@ -201,7 +201,7 @@
 
 **覆盖**：35/35 队列（含 MMRF）× 10/10 方案 = 350 个 (dataset, scheme) 组合；2520 条 (dataset, scheme, field) 记录，去重后 **22 个不同字段**；无缺文件、无异常退出。`n_event/event_rate` 在 350 行全部并上（无缺失）。
 
-**抽查（规格要求 3 组，本步做 4 组）**：独立重算脚本只读原始 clinic JSON，逐患者手写 mask 规则（t_hi = ≥t_lo 的最早随访日，否则回退 h2 = max(末次随访日, 末次疾病状态日, 复发日, 已定位事件日)；keep iff 状态非 unlocated/non_informative 且有限 t_hi ≤ 0）：
+**抽查（规格要求 3 组，本步做 4 组）**：独立重算脚本只读原始 clinic JSON，逐患者手写 mask 规则（t_hi = ≥t_lo 的最早随访日，否则回退 TH2 = max(末次随访日, 末次疾病状态日, 复发日, 已定位事件日)；keep iff 状态非 unlocated/non_informative 且有限 t_hi ≤ 0）：
 
 | dataset × scheme × field | 审计记录 none→t0 (rate) | 独立重算 none→t0 | 结论 |
 |---|---|---|---|
@@ -233,7 +233,7 @@
 - **偏差 2（口径：derived.* 特判不可照字面执行）**：spec §5.2-4 括号称"现有 `extract_derived_raw_values` 已支持 landmark 参数"——该函数**只适用 4 个纵向变化字段**（ECOG/Karnofsky/BMI/weight change，需 `is_derived_field` 为真且 `landmark` 传 extract_state dict），对论文级 `derived.radiation_therapy` / `derived.pharmaceutical_therapy` / `derived.years_smoked` 一律返回 `[]`。故按该条**主句**（"landmark 作用于其底层槽位"）实现：用 `src/common/fields.py::field_gdc_path` 映射到底层槽位后审计槽位本身——治疗两字段 → `diagnoses[].treatments[].treatment_or_therapy`（family `diagnoses_treatments`，会 mask），`derived.years_smoked` → `exposures[].exposure_duration_years`（无时点家族）。无时点底层按构造声明 `mask_applicable=false`、leak_rate 恒 0（JSON 的 `audit_mode` 区分 `derived_slot` 与 `longitudinal_derived`，可事后识别）。
 - **偏差 3（实现一致性发现，非错误）**：见"审计"节的负性治疗记录规则；使 derived 治疗字段 `leak_rate` 略偏高。未改现有实现。
 - **偏差 4（`not_in_bank` 粒度）**：按字段路径与 `kept_fields.json` **精确匹配**，不做等价字段归并；`demographic.age_at_index` 与 bank 的 `diagnoses[].age_at_diagnosis` 语义相同但路径不同，故被标 `not_in_bank`——这正是"无依据"问题的原始形态，保留原样以便其他步骤引用。
-- **偏差 5（MMRF）**：已按 §5.1 纳入审计（H1a 为描述性审计，不依赖 D2）；其 H3 用途仍待 D2 确认。MMRF 的 10 行已进汇总表（`n_event=191`）。
+- **偏差 5（MMRF）**：已按 §5.1 纳入审计（Test_1a 为描述性审计，不依赖 D2）；其 Test_3 用途仍待 D2 确认。MMRF 的 10 行已进汇总表（`n_event=191`）。
 
 ### 决策点
 
@@ -241,11 +241,11 @@
 
 ### 状态
 
-完成。H1a 全部产物就绪；结论可直接用于 H3b 主图的"泄露背景"与 H1b 的字段完整性讨论。
+完成。Test_1a 全部产物就绪；结论可直接用于 Test_3b 主图的"泄露背景"与 Test_1b 的字段完整性讨论。
 
 ### 提交
 
-`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/H_series_execution_log.md` → "S2: H1a 泄露审计模块与全数据集审计结果"（其中 `results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；`results/**`、`results_display/**` 的 png/csv 产物不入库；未 push）。提交 hash：`git log -1 --format=%h`（见仓库历史）。
+`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/Test_series_execution_log.md` → "S2: Test_1a 泄露审计模块与全数据集审计结果"（其中 `results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；`results/**`、`results_display/**` 的 png/csv 产物不入库；未 push）。提交 hash：`git log -1 --format=%h`（见仓库历史）。
 
 ---
 
@@ -255,7 +255,7 @@
 - 目标：按 D0（方案 B，用户确认）删除 E 系列结果文件与陈旧中间产物。
 - 输入：D0 确认（方案 B）。
 - 命令与参数：`rm -rf results/E2_selection results/univariate results/greedy results/linear_probe results_display/univariate results_display/greedy results_display/linear_probe "results_display/E1_Fig2_Single-field c-index" outputs/*/greedy outputs/*/univariate Clinic_Analyzer/results Clinic_Analyzer/configs/E2_selection Clinic_Analyzer/configs/greedy Clinic_Analyzer/configs/univariate`
-- 产物：无（纯删除）。保留目录核对：results/{A_manual,H0_dataset_availability,leak_audit,README.md}、results_display/{FigA_Other_Paper_Works,leak_audit,README.md,scripts}、outputs/TCGA-BRCA/{A_manual,field_bank,longitudinal,schemes}、Clinic_Analyzer/configs/{A_manual,queue,running,done,failed,...}。
+- 产物：无（纯删除）。保留目录核对：results/{A_manual,Test_0_dataset_availability,leak_audit,README.md}、results_display/{FigA_Other_Paper_Works,leak_audit,README.md,scripts}、outputs/TCGA-BRCA/{A_manual,field_bank,longitudinal,schemes}、Clinic_Analyzer/configs/{A_manual,queue,running,done,failed,...}。
 - 审计：删除前后 `df -h`：可用 1.1T → 1.3T（释放 ~200GB）；删除与保留清单与 D0 结论逐项一致。
 - 偏差与原因：无。
 - 决策点：D0 已确认并执行完毕。
@@ -266,9 +266,9 @@
 ## 流程纠正 P1：范围越界与提前执行
 
 - 时间 / 执行者：2026-09-29 / Claude（主会话，用户纠正）
-- 事实与原因：① S1/S2 把 MMRF（及 CPTAC）纳入 H0 manifest 与 H1a 审计，并把"MMRF 是否纳入"作为决策点抛给用户——外部数据集从未出现在用户实验清单中，属**擅自扩大范围**；② 用户说"照搬现值 + R7 升级为降级"本意是**先展开说明情况**，主会话却直接派 agent 执行 D1 落地——**未确认即执行**。
-- 纠正动作：D1 落地 agent 已终止；其未提交改动已回退（`git checkout` 两个 H0 文件）；manifest/profile 已用 S1 版脚本重生成恢复（md5 `55762283a740` 与 S1 记录一致）。
-- 新口径（已写入 spec §2.4、§3）：本阶段数据集 = **仅 33 TCGA**；CPTAC / MMRF 等 TCGA 外数据集暂不纳入（H4c 阶段再议）；**未在用户实验清单中明确的事项，执行前必须先向用户报告并获确认**。
+- 事实与原因：① S1/S2 把 MMRF（及 CPTAC）纳入 Test_0 manifest 与 Test_1a 审计，并把"MMRF 是否纳入"作为决策点抛给用户——外部数据集从未出现在用户实验清单中，属**擅自扩大范围**；② 用户说"照搬现值 + R7 升级为降级"本意是**先展开说明情况**，主会话却直接派 agent 执行 D1 落地——**未确认即执行**。
+- 纠正动作：D1 落地 agent 已终止；其未提交改动已回退（`git checkout` 两个 Test_0 文件）；manifest/profile 已用 S1 版脚本重生成恢复（md5 `55762283a740` 与 S1 记录一致）。
+- 新口径（已写入 spec §2.4、§3）：本阶段数据集 = **仅 33 TCGA**；CPTAC / MMRF 等 TCGA 外数据集暂不纳入（Test_4c 阶段再议）；**未在用户实验清单中明确的事项，执行前必须先向用户报告并获确认**。
 - 决策点：D1 仍待确认（用户听完展开说明后决定）；D2 数据集范围部分已确认（33 TCGA）。
 - 状态：完成。
 
@@ -279,7 +279,7 @@
 - 时间 / 执行者：2026-09-29 ~ 09-30 / Claude（S3 执行 agent）
 - 目标：(1) 给 A_pipeline 加 `--landmark_time {0,365,730,none}`，按 spec §2.5 / §6.1 实现经典 landmark 三要件；(2) 覆盖 `pipeline / json2prompt / encode / baseline / cindex`，默认 `none` 保持零行为变化；(3) BRCA × MULTISURV 冒烟自检（臂 A vs 旧 `results/A_manual/TCGA-BRCA[gdc]/cindex.csv`），为 D3 提供事实依据。
 - 输入（文件路径）：
-  - `z_notes/H_series_spec.md`（§2.5 三要件、§6.1 实现点、§6.3 自检）、`A_pipeline/README.md`
+  - `z_notes/Test_series_spec.md`（§2.5 三要件、§6.1 实现点、§6.3 自检）、`A_pipeline/README.md`
   - 复用：`src/discovery/landmark.py::patient_landmark`（经 `A_pipeline/src/__init__.py` 的 sys.path 接入）、`src/time_stats.py::extract_patient_time_record`（槽位 `t_hi`）
   - 标签/划分：`Clinic_Analyzer/data/datasets_csv/metadata/tcga_brca.csv`（1051 行）、`Clinic_Analyzer/data/splits/5foldcv/tcga_brca/splits_*.csv`
 - 命令与参数（示例，完整链路）：
@@ -314,7 +314,7 @@
 
 ### `mlp_clinic_mean` 首次 diff ≠ 0 的归因（两个诊断 run，非正式产物）
 
-产物：`results/A_manual_landmark/runs/tcga_brca__MULTISURV__landmark_none__det1/`、`.../__landmark_none__oldlabel/`（日志 `/tmp/h1b_smoke/{det1,oldlabel}.log`）
+产物：`results/A_manual_landmark/runs/tcga_brca__MULTISURV__landmark_none__det1/`、`.../__landmark_none__oldlabel/`（日志 `/tmp/Test_1b_smoke/{det1,oldlabel}.log`）
 
 | 探针 | 设置 | 结果 |
 |---|---|---|
@@ -323,18 +323,18 @@
 
 - **主因：label 源差异**。旧 A_manual 共 625 个 run，其中 355 个（9 个 study：brca/coad/kich/kirc/kirp/lihc/prad/read/stad）的 `LABEL_FILE` 指向 `SurvPGC_github_init/datasets_csv/metadata/{study}.csv`，另 270 个（24 study）指向 `Clinic_Analyzer/...`；`Clinic_Analyzer/configs/defaults.conf:29` 的现行口径是**优先 Clinic_Analyzer**（该目录覆盖全部 35 队列，SurvPGC 仅 13 个），故新链路对所有 study 统一用 Clinic_Analyzer。两副本对共同 1051 例的 `survival_months`/`censorship` **逐位相同**，差异只在行序与 `slide_id` 命名；`_get_split_from_df` 按 label 行序构造数据集、`RandomSampler` 按固定 seed 打乱索引 → 同 seed 下批组成不同 → NN 权重不同（`clinic_cox` 闭式求解、对样本顺序不敏感，故仍逐位一致）。量化：换回旧 label 源后，臂 A 值 `0.6530101` → `0.6571748`（**+0.0041648**）。
 - **次因：跨环境 FP 差异**。`oldlabel` 与 2026-09-06 旧 run 的全部 60 个 epoch 的 `val_loss` 都只在第 8–10 位有效数字上不同（fold0 epoch0：`0.4097603142031985` vs `0.40976031603936053`，随训练放大到 ~1e-4）；`val_cindex` 是排序统计量，第 0–3 折 60/60 个 epoch 完全一致，第 4 折 8/12 个 epoch 出现翻转 → 3 周前与现在的环境不保证 NN 逐位复现，残余 **−0.0005926**。
-- 判据结论：`clinic_cox` 用"逐位 diff = 0"硬判据（✓）；NN 模态用等价判据"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（4/5 折逐位 ✓）"。**旧表在 9 个 SurvPGC 时代 study 上的 NN 数值不可由新链路默认口径逐位复现**，属 label 源升级的既有事实，与 landmark 实现无关；H1b 两臂同源同环境，Δc 不受影响。
+- 判据结论：`clinic_cox` 用"逐位 diff = 0"硬判据（✓）；NN 模态用等价判据"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（4/5 折逐位 ✓）"。**旧表在 9 个 SurvPGC 时代 study 上的 NN 数值不可由新链路默认口径逐位复现**，属 label 源升级的既有事实，与 landmark 实现无关；Test_1b 两臂同源同环境，Δc 不受影响。
 
 ### 偏差与原因
 
-- **偏差 1（python 版本影响汇总列末位）**：`val_c_index_std` 由汇总脚本计算，CPython ≥3.12 的 `sum()` 用 Neumaier 补偿求和、3.9 用朴素求和 → 同一批 `val_result_fold*.csv` 在 3.13/3.9 下末位 ULP 不同（`...01734` vs `...17339`）。处理：删掉自己刚写的 summary，用**默认 python 3.13.12** 重新汇总 → 与旧表逐位一致。**规则**：H1b 全程用同一 python 版本汇总。
+- **偏差 1（python 版本影响汇总列末位）**：`val_c_index_std` 由汇总脚本计算，CPython ≥3.12 的 `sum()` 用 Neumaier 补偿求和、3.9 用朴素求和 → 同一批 `val_result_fold*.csv` 在 3.13/3.9 下末位 ULP 不同（`...01734` vs `...17339`）。处理：删掉自己刚写的 summary，用**默认 python 3.13.12** 重新汇总 → 与旧表逐位一致。**规则**：Test_1b 全程用同一 python 版本汇总。
 - **偏差 2（误覆盖旧 prompts.csv，功能等价修复）**：09-29 23:33 单 JSON / 整目录两种用法混用时，曾把 `outputs/TCGA-BRCA/A_manual/MULTISURV/prompts.csv` 覆盖为按新链路生成的版本；事后用该文件重跑 `encode`，产出的 1098 个 `.pt` 与旧 `embeddings/pt` 逐位一致（max_abs_diff = 0.0），即**内容功能等价**，仅该文件 mtime 变化；`embeddings/`、`results/A_manual/` 均未被触碰。
-- **偏差 3（治疗字段语义，供 H1b 解读）**：A_pipeline 的 `_therapy_flag`（`A_pipeline/src/extract.py:47`）只把 `treatment_type == "pharmaceutical therapy, nos" / "radiation therapy, nos"` 计入 yes/no，其余落 unknown，故 mask 后 BRCA 治疗两列变化 173/127 例；H1a 审计把整个 treatment 槽位（含全部治疗条目）计入（1094→26，leak 0.976）。两者口径不同，比较 `leak_rate` 与 `Δc` 时需注意。
+- **偏差 3（治疗字段语义，供 Test_1b 解读）**：A_pipeline 的 `_therapy_flag`（`A_pipeline/src/extract.py:47`）只把 `treatment_type == "pharmaceutical therapy, nos" / "radiation therapy, nos"` 计入 yes/no，其余落 unknown，故 mask 后 BRCA 治疗两列变化 173/127 例；Test_1a 审计把整个 treatment 槽位（含全部治疗条目）计入（1094→26，leak 0.976）。两者口径不同，比较 `leak_rate` 与 `Δc` 时需注意。
 - **偏差 4（工作区遗留改动随提交带入，非本步内容）**：`A_pipeline/src/cli.py` 的 cindex 参数 `--modality` → `--analyzer` 及 `A_pipeline/src/hgcn_clinic.py` 的共享词表改动是**本步之前**的工作区遗留 diff，我的 landmark 改动与其相邻，本步提交（按指令 `git add A_pipeline/src A_pipeline/tests`）会一并带入，特此标注。
 
 ### 决策点
 
-- **D3 更新为：待确认（自检通过，附条件）**，推荐 **放量（S4）**，三条硬条件：① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12）；② H1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不必回退旧源）；③ 一致性判据按模态区分（clinic_cox 逐位 diff=0；NN 用"同环境重跑逐位一致 + 换回旧源可复现"）。另：单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，**必须按 §4.2 规则 6 用 mask 后的有效事件数聚合**后再判定，不可由单点下结论。
+- **D3 更新为：待确认（自检通过，附条件）**，推荐 **放量（S4）**，三条硬条件：① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12）；② Test_1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不必回退旧源）；③ 一致性判据按模态区分（clinic_cox 逐位 diff=0；NN 用"同环境重跑逐位一致 + 换回旧源可复现"）。另：单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，**必须按 §4.2 规则 6 用 mask 后的有效事件数聚合**后再判定，不可由单点下结论。
 - 其余决策点（D0/D1/D2/D4/D5）状态不变。
 
 ### 状态
@@ -343,7 +343,7 @@
 
 ### 提交
 
-`git add A_pipeline/src A_pipeline/tests z_notes/H_series_execution_log.md` → "S3: A_pipeline --landmark_time 扩展与冒烟自检"（未 push；未用 `git add -A`）。
+`git add A_pipeline/src A_pipeline/tests z_notes/Test_series_execution_log.md` → "S3: A_pipeline --landmark_time 扩展与冒烟自检"（未 push；未用 `git add -A`）。
 
 ---
 
@@ -352,7 +352,7 @@
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户决议）
 - 目标：落实用户两项决议并登记未解决问题。
 - 内容：
-  1. **D1（U1）**："0.05 有意义差异"无推导出处，不作门槛依据。D1 改由**用户给出效应量先验**（H1b/H2 的 Δc 至少要分辨到什么量级）反推每折事件数门槛；先验未给出前 manifest tier 保持 provisional、训练选集不做硬门槛（spec §12 U1）。
+  1. **D1（U1）**："0.05 有意义差异"无推导出处，不作门槛依据。D1 改由**用户给出效应量先验**（Test_1b/Test_2 的 Δc 至少要分辨到什么量级）反推每折事件数门槛；先验未给出前 manifest tier 保持 provisional、训练选集不做硬门槛（spec §12 U1）。
   2. **绑定**：HGCN_* 六方案各绑定对应癌种（KIRC/LIHC/ESCA/LUSC/LUAD/UCEC），禁止塞进其他数据集（spec §2.4）；泛癌种四方案（MULTISURV/SURVPGC/MMSURV/INTEGRATIVE_DNN）暂按全部 33 TCGA，记未解决问题 U2（spec §12）。
   3. 同步更新 spec §5.1 审计范围：33 TCGA × §2.4 绑定；CPTAC/MMRF 描述性记录保留磁盘但不进汇总。
 - 待办（**未执行**，待用户确认）：S2 审计按新绑定重跑（HGCN_* 仅各自癌种 + 泛癌种 × 33 TCGA，剔除 CPTAC/MMRF 记录与无绑定组合）；A_manual 旧结果中无绑定的行不进任何表。
@@ -364,26 +364,26 @@
 ## 口径记录 R2：用户数据协议（n_event 判据，部分）
 
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户指令）
-- 目标：记录用户给出的 H 系列数据协议片段。
+- 目标：记录用户给出的 Test_ 系列数据协议片段。
 - 内容（用户 2026-09-30 粘贴）：
 
   | 判据 | 作用 | 规则 |
   |---|---|---|
   | n_event | 评估方差下限 | 主图 ≥100；30–70 补充材料；<30 排除 |
 
-  适用于当前 H 系列全部 TCGA 使用，泛癌种（通用字段）工作同样适用。
+  适用于当前 Test_ 系列全部 TCGA 使用，泛癌种（通用字段）工作同样适用。
 - 对 33 TCGA 的映射（按现有 event_summary）：≥100 → **15 个**（PAAD(100)、COAD(102)、LGG(126)、LIHC(132)、LAML(133)、BRCA(152)、STAD(175)、KIRC(177)、BLCA(182)、LUAD(188)、LUSC(220)、SKCM(223)、HNSC(224)、OV(349)、GBM(492)）；70–100 → **5 个**（CESC(72)、MESO(74)、ESCA(77)、UCEC(91)、SARC(99)）——**协议未覆盖此区间，待用户补**；30–70 → 4 个（UVM(33)、ACC(34)、UCS(35)、KIRP(44)）；<30 → 9 个（READ、CHOL、THCA、KICH、PRAD、DLBC、THYM、TGCT、PCPG）。
 - 待补（已写入 spec §12 U1）：70–100 区间的处理规则；协议表是否还有其余判据行（event_rate / EPV / 退化折 / landmark 有效事件重套等）。
-- 状态：完成（仅记录；H0 脚本未改，等协议补全后统一落地）。
+- 状态：完成（仅记录；Test_0 脚本未改，等协议补全后统一落地）。
 
 ---
 
-## S2b H1a 审计按新绑定重跑
+## S2b Test_1a 审计按新绑定重跑
 
 - 时间 / 执行者：2026-09-30 / Claude（S2b 执行 agent）
 - 目标：(1) 把 `src/leak/` 的范围从「35 队列 × 10 方案全交叉」改为 **spec §2.4 绑定**——HGCN_* 六方案只跑各自癌种、泛癌种四方案 × 33 TCGA、CPTAC/MMRF 完全剔除（用户决议见本日志 R1）；(2) 删除旧产物（含 212 个越界/错误组合）并按新范围重算；(3) 抽查 2 组以上与手工 JSON 重算核对；(4) 重生成汇总与两张图；(5) 补绑定回归测试。全程无训练。
 - 输入（路径 + 条数/hash）：
-  - `z_notes/H_series_spec.md` §2.4（方案×数据集绑定）、§5.1（审计范围）、§12 U2
+  - `z_notes/Test_series_spec.md` §2.4（方案×数据集绑定）、§5.1（审计范围）、§12 U2
   - `datasets.json`（35 队列 = 33 TCGA + CPTAC + MMRF，md5 `5918c06884bc`）
   - `A_pipeline/templates/{scheme}/fields.json`（10 方案字段表；**其 `datasets` 键是旧的全绑定，本步不读**）
   - 旧产物快照：`results/leak_audit/leak_audit_summary.csv`（350 行，md5 `cc7ece230a05`）→ 备份 `/tmp/leak_audit_summary_S2_old.csv`；旧 `results_display/leak_audit/leak_audit_{scheme,field}_mean.csv` → `/tmp/old_*.csv`
@@ -422,7 +422,7 @@
 | HGCN 跨癌种文件 | ✓ 0（逐文件核对 `HGCN_DATASET_BY_SCHEME[scheme] == dataset`） |
 | 每数据集方案集合 | ✓ 27 个队列 4 方案、6 个癌种队列 5 方案（= 4 泛癌种 + 本癌种 HGCN） |
 | 汇总表 | ✓ 138 行 + 表头；无 CPTAC/MMRF 行 |
-| 34 数据集集口径 | 注册表 TCGA 行集合与 `results/H0_dataset_availability/manifest.csv` 的 TCGA 行**完全一致**（33/33） |
+| 34 数据集集口径 | 注册表 TCGA 行集合与 `results/Test_0_dataset_availability/manifest.csv` 的 TCGA 行**完全一致**（33/33） |
 | 数值口径未变 | ✓ **共享的 138 个组合，逐组合 `leaky_ratio`/`n_leaky`/`mean_leak_rate` 与旧表 100% 相同**（旧运行里这些组合的数值原样保留，差异只来自范围） |
 
 ### 3. 抽查（独立重算，只读原始 clinic JSON，不 import `src/leak`）
@@ -441,7 +441,7 @@
 
 **独立重算脚本在 S2 版基础上修了两处（只影响重算脚本，审计实现未改）**——两处都是本次才暴露的实现细节：
 
-1. **治疗的定点规则**：`time_stats._collect_entity_slots` 对两类记录给定点区间 `(0, 0)`（因此 t0 恒通过）——① 既往原发诊断 + 患者 `prior_malignancy=yes` 下的治疗；② `timepoint_category = Prior to Diagnosis` 且父诊断 `prior_treatment=yes`。**普通治疗没有 `t_lo==0` 的捷径**（`start=0` 的记录 t_hi 仍走 h1b/h2，如 TCGA-66-2759 `Radiation, External Beam` start=end=0、随访 762 天 → t0 不通过）。S2 版脚本把 `t_lo==0` 一律当通过，LUSC 上因此偏 39 人（多算通过）。
+1. **治疗的定点规则**：`time_stats._collect_entity_slots` 对两类记录给定点区间 `(0, 0)`（因此 t0 恒通过）——① 既往原发诊断 + 患者 `prior_malignancy=yes` 下的治疗；② `timepoint_category = Prior to Diagnosis` 且父诊断 `prior_treatment=yes`。**普通治疗没有 `t_lo==0` 的捷径**（`start=0` 的记录 t_hi 仍走 TH1b/TH2，如 TCGA-66-2759 `Radiation, External Beam` start=end=0、随访 762 天 → t0 不通过）。S2 版脚本把 `t_lo==0` 一律当通过，LUSC 上因此偏 39 人（多算通过）。
 2. **`diagnoses[]` 叶子字段的主诊断规则**：`field_bank._valid_raw_values` 只在**主诊断带该键时**取主诊断的值，否则回落到任意诊断的取值。TCGA-ZP-A9D1（主诊断缺 `ajcc_pathologic_stage`、既往原发诊断是 `Stage I`）即此型；S2 版脚本只查主诊断，TCGA_LIHC 上偏 1 人。
 
 两条规则补进重算脚本后 5/5 完全一致；审计侧数字**一次都没有改**（本步未修改任何提取/mask 实现）。S2 记录的「负性治疗记录不建槽位」规则依旧成立（`treatment_or_therapy=no` 的记录 mask 臂看不到、无 mask 臂仍计入）。
@@ -488,7 +488,7 @@
 
 ### 偏差与原因
 
-- **偏差 1（数据集名单来源：注册表而非 H0 manifest）**：spec §2.4 同时写了「数据集 = datasets.json 中的 33 个 TCGA」与「选集一律读 H0 manifest，禁止硬编码名单」。本步取**注册表 + TCGA 前缀 + 显式剔除集**：manifest 的 tier 仍随 D1 未锁定且含 CPTAC/MMRF 两行，若读 manifest 会把外部数据集重新带回来。已核对两者 TCGA 行集合**完全一致（33/33）**；本实现也没有硬编码 33 个名字（用前缀规则 + 排除集）。
+- **偏差 1（数据集名单来源：注册表而非 Test_0 manifest）**：spec §2.4 同时写了「数据集 = datasets.json 中的 33 个 TCGA」与「选集一律读 Test_0 manifest，禁止硬编码名单」。本步取**注册表 + TCGA 前缀 + 显式剔除集**：manifest 的 tier 仍随 D1 未锁定且含 CPTAC/MMRF 两行，若读 manifest 会把外部数据集重新带回来。已核对两者 TCGA 行集合**完全一致（33/33）**；本实现也没有硬编码 33 个名字（用前缀规则 + 排除集）。
 - **偏差 2（`HGCN_LIHC` 用下划线注册名）**：绑定表写 `TCGA_LIHC`（`datasets.json` 注册名，S1 偏差 5），而非连字符形式；测试对该下划线名做了显式断言。
 - **偏差 3（未登记方案的默认）**：非 §2.4 登记、也非 HGCN 的方案（如测试用 `FAKE`）按泛癌种处理，但 payload 的 `scheme_binding` 标 `pan_cancer_default`，便于事后识别；如后续要禁止，可加 `--binding` 的第三个取值。
 - **偏差 4（重算脚本两处规则修正）**：见抽查节。**只改抽查脚本，审计实现与产物不变**；S2 的结论在此两处上不受影响（当时抽查的组合恰好不触发）。
@@ -500,11 +500,11 @@
 
 ### 状态
 
-完成。H1a 产物已按新绑定（138 组合）重算、重绘并通过抽查与绑定回归测试；旧 350 组合产物已删除。后续 H3b 的「泄露背景」应引用本步的新汇总表（注意 HGCN 为单队列值）。
+完成。Test_1a 产物已按新绑定（138 组合）重算、重绘并通过抽查与绑定回归测试；旧 350 组合产物已删除。后续 Test_3b 的「泄露背景」应引用本步的新汇总表（注意 HGCN 为单队列值）。
 
 ### 提交
 
-`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/H_series_execution_log.md` → "S2b: 审计按新绑定重跑(HGCN仅本癌种,剔除CPTAC/MMRF)"（`results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；png/csv 产物不入库；未 push）。
+`git add src/leak scripts/run_leak_audit.py tests/test_leak_audit.py results_display/leak_audit z_notes/Test_series_execution_log.md` → "S2b: 审计按新绑定重跑(HGCN仅本癌种,剔除CPTAC/MMRF)"（`results_display/leak_audit/scripts/audit_leak.py` 在 .gitignore 内，用 `git add -f` 单加；png/csv 产物不入库；未 push）。
 
 ---
 
@@ -517,7 +517,7 @@
   2. **33 TCGA 计数校正**：README 的 17/22/12 按 35 数据集（含 MMRF/CPTAC）计算；33 TCGA 口径下：≥100 → **15**；≥70 → **20**；≥150–200（多字段实验）→ **10**（GBM/OV/HNSC/SKCM/LUSC/LUAD/BLCA/KIRC/STAD/BRCA）。
   3. **n_event 判据完整 4 档**（已写入 spec §12 U1）：≥100 主图干净集；70–100 主图带 CI 不排名；30–70 补充材料 bootstrap CI；<30 不收录、单列"低事件组"定性讨论。
 - 待补：用户标注协议还有 B/C… 节（多字段实验/EPV、landmark 有效事件重套、event_rate 降级、退化折），粘贴被截断，等用户补发。
-- 状态：完成（仅记录；H0 脚本仍不改，等协议补全后统一落地）。
+- 状态：完成（仅记录；Test_0 脚本仍不改，等协议补全后统一落地）。
 
 ---
 
@@ -546,12 +546,12 @@
 
 ---
 
-## S4 H1b 批跑放量
+## S4 Test_1b 批跑放量
 
 - 时间 / 执行者：2026-09-30 / Claude（S4 执行 agent，接替中断的前任）
 - 目标：138 组合 × 2 臂（A=landmark_none 新链路报告值对照、B=landmark_0 三要件全开）× 2 分析器（clinic_cox + mlp_clinic_flatten，text 编码）= 552 conf，按数据协议 A 分波投放；臂 A 结果落 `results/A_manual_landmark/`，绝不触碰 `results/A_manual/`。
 - 输入：
-  - `z_notes/H_series_spec.md`（§2.2/§2.4/§2.5/§6/§12）、本日志 S3/R4/R6、`results/H0_dataset_availability/manifest.csv`（35 行，n_event 列）
+  - `z_notes/Test_series_spec.md`（§2.2/§2.4/§2.5/§6/§12）、本日志 S3/R4/R6、`results/Test_0_dataset_availability/manifest.csv`（35 行，n_event 列）
   - `results/A_manual/{33 数据集}/cindex.csv`（旧表）、`outputs/{dataset}/A_manual/{scheme}/`（臂 A embeddings 复用源）、`Clinic_Analyzer/data/datasets_csv/metadata/`（统一 label 源，33 TCGA 齐全）
 
 ### 前置核对（R6 指定四点）
@@ -567,13 +567,13 @@
 ### 网格与优先级（138 组合，按 A 判据，训练不过滤）
 
 - 波 1（≥100 的 15 + 70–100 的 5 = 20 数据集，86 组合）：**A1 160 + A1H 12 + B1 160 + B1H 12 = 344 conf 已全部投放**；
-- 波 2（30–70：UVM/ACC/UCS/KIRP，16 组合，64 conf）与波 3（<30：9 数据集，36 组合，144 conf）：编码已全部完成，conf 由 watch 进程在波 1 队列排空后自动按序投放（或手动 `bash scripts/s4_h1b_queue.sh enqueue A2/B2/A3/B3`）。
+- 波 2（30–70：UVM/ACC/UCS/KIRP，16 组合，64 conf）与波 3（<30：9 数据集，36 组合，144 conf）：编码已全部完成，conf 由 watch 进程在波 1 队列排空后自动按序投放（或手动 `bash scripts/s4_Test_1b_queue.sh enqueue A2/B2/A3/B3`）。
 
 ### 投放/完成计数（收尾时点）
 
 - 编码：193 个 pipeline 任务（臂 A 56 + 臂 B 137，波 1→3 排序）**192 完成、0 真实失败**（1 条为清单表头误入，已修脚本）。
 - conf：投放 344/552（波 1 全量）；done 135/552，failed 0；drainer（GPU 5，8 workers）与 watch 进程仍在后台运行。
-- 新代码（本步提交）：`scripts/s4_enqueue.py`（enqueue/summarize/status/emit-encodes，读 manifest 分波、不硬编码名单，无 drain）、`scripts/s4_h1b_queue.sh`（encode/drain/watch/status 编排）、`scripts/s4_validate_firstwave.py`（diff-cox / prompts 审计 / 同环境重跑比对）。
+- 新代码（本步提交）：`scripts/s4_enqueue.py`（enqueue/summarize/status/emit-encodes，读 manifest 分波、不硬编码名单，无 drain）、`scripts/s4_Test_1b_queue.sh`（encode/drain/watch/status 编排）、`scripts/s4_validate_firstwave.py`（diff-cox / prompts 审计 / 同环境重跑比对）。
 
 ### 首波校验（三条硬条件，收尾时点快照）
 
@@ -594,8 +594,8 @@
 
 - 实测吞吐：8 workers / GPU 5，42 min 完成 132 run（64 mlp + 71 cox，mlp 有效并行 ≈5.5×）。**预计总墙钟 ≈ 4–5 小时**（波 1 剩余 ~1.5h + 波 2/3 ~1.5h），即 2026-09-30 午后可全部完成。
 - 续跑（自动化）：watch 进程（PID 见 S4_watch.log）在队列排空时按 A1→B1→A2→B2→A3→B3 投放下一波、drainer 退出时自动重启、每 5 min 汇总表行、552 全 done 自动退出。
-- 手动续跑（watch 失效时）：`bash scripts/s4_h1b_queue.sh status` 看进度 → `bash scripts/s4_h1b_queue.sh enqueue <下一波 slice>` → `bash scripts/s4_h1b_queue.sh drain` 重启 drainer → 完成后 `python3 scripts/s4_enqueue.py --slice <slice> --summarize` 汇总。failed conf 重跑 enqueue 即自动重入队。全部命令要求 base python 3.13.12。
-- 监控：`A_pipeline/S4_drain.log`（训练）、`A_pipeline/S4_watch.log`（投放节奏）、`A_pipeline/S4_summary.log`、`bash scripts/s4_h1b_queue.sh status`；首波校验重跑 `python3 scripts/s4_validate_firstwave.py --diff-cox`。
+- 手动续跑（watch 失效时）：`bash scripts/s4_Test_1b_queue.sh status` 看进度 → `bash scripts/s4_Test_1b_queue.sh enqueue <下一波 slice>` → `bash scripts/s4_Test_1b_queue.sh drain` 重启 drainer → 完成后 `python3 scripts/s4_enqueue.py --slice <slice> --summarize` 汇总。failed conf 重跑 enqueue 即自动重入队。全部命令要求 base python 3.13.12。
+- 监控：`A_pipeline/S4_drain.log`（训练）、`A_pipeline/S4_watch.log`（投放节奏）、`A_pipeline/S4_summary.log`、`bash scripts/s4_Test_1b_queue.sh status`；首波校验重跑 `python3 scripts/s4_validate_firstwave.py --diff-cox`。
 
 ### 偏差与原因
 
@@ -616,7 +616,7 @@
 
 ### 提交
 
-`git add scripts/s4_enqueue.py scripts/s4_h1b_queue.sh scripts/s4_validate_firstwave.py z_notes/H_series_execution_log.md` → "S4: H1b 批跑放量(138组合×2臂×2分析器)"（未 push；未用 git add -A）。
+`git add scripts/s4_enqueue.py scripts/s4_Test_1b_queue.sh scripts/s4_validate_firstwave.py z_notes/Test_series_execution_log.md` → "S4: Test_1b 批跑放量(138组合×2臂×2分析器)"（未 push；未用 git add -A）。
 
 ---
 
@@ -643,7 +643,7 @@
 
 ---
 
-## S4 H1b 批跑完成
+## S4 Test_1b 批跑完成
 
 - 时间 / 执行者：2026-09-30 08:06 / watch 自动（Claude 主会话记录）
 - 目标：记录批跑完成。
@@ -658,15 +658,15 @@
 ## 口径记录 R7：D4 确认
 
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户确认）
-- 内容：H2 贪婪搜索使用**阈值早停**，增长阈值 **0.005**——即沿用 E2 规格第 9 节 sig_stop（gain(k) < 0.005 且 paired Wilcoxon p >= 0.05 连续 3 步停止，推荐 k_sig = k-3 前缀；另报历史 best）。
+- 内容：Test_2 贪婪搜索使用**阈值早停**，增长阈值 **0.005**——即沿用 E2 规格第 9 节 sig_stop（gain(k) < 0.005 且 paired Wilcoxon p >= 0.05 连续 3 步停止，推荐 k_sig = k-3 前缀；另报历史 best）。
 - 决策点：D4 已确认。
 - 状态：完成。
 
 ---
 
-## H1b Δc 报表
+## Test_1b Δc 报表
 
-- 时间 / 执行者：2026-09-30 / Claude（H1b 报表执行 agent）
+- 时间 / 执行者：2026-09-30 / Claude（Test_1b 报表执行 agent）
 - 目标：按 spec §6.4 产出「报告值 vs 去泄露值」Δc 对照报表（纯汇总，不跑训练）：每 (dataset, scheme, analyzer) 报告 c(臂A none)、c(臂B landmark_0)、Δc = c(A) − c(B)（Δc>0 = 去泄露后下降 = 高估证据）；数据集分层按协议 A（n_event 四档）；汇总统计只报效应量、方向一致率与 CI，不做 0.05 显著性宣称。
 - 输入：
   - `results/A_manual_landmark/{33 TCGA}[gdc]/cindex.csv` + `run_config.json`（S4 两臂产物，556 行 = 552 网格 + 4 条 BRCA S3 冒烟行）
@@ -675,7 +675,7 @@
   - `results/A_manual_landmark/labels/{study}__landmark_0.json`（33 个，审计用排除清单）
   - 结果分层核对：≥100 → 15 个、70–100 → 5 个（CESC/MESO/ESCA/UCEC/SARC）、30–70 → 4 个（UVM/ACC/UCS/KIRP）、<30 → 9 个，与 spec §12 U1 一致。
 - 命令与参数：
-  - `python3 results_display/scripts/h1b_delta_report.py --audit`（python 3.13.12，与 S4 汇总同版本）
+  - `python3 results_display/scripts/Test_1b_delta_report.py --audit`（python 3.13.12，与 S4 汇总同版本）
   - 可复跑：同命令连跑两次，stdout 与全部产物文件（26 个）md5 逐字节一致（diff=0）。
 - 表结构说明（S4 产物 → 报表）：
   - S4 表：`dataset` 列（如 `TCGA-BRCA[gdc]`，LIHC 为 `TCGA_LIHC[gdc]` 下划线）；`scheme` 列 = `{scheme}__landmark_{none|0}`，**臂标记 = 后缀**（none=臂A 报告值对照，0=臂B 去泄露值）；`modality` 列 = 分析器（本报表只取 `clinic_cox` 与 `mlp_clinic_flatten`，即 S4 网格的 2 个分析器）；BRCA 表内 `landmark_365`/`noshift`/`mlp_clinic_mean` 为 S3 冒烟行，按「臂 ∈ {none,0} × 分析器 ∈ {cox,flatten}」过滤后恰好 552 行、每 (dataset, scheme, analyzer) 恰好 2 臂、HGCN 仅出现在绑定癌种表（20 行表），网格结构零异常。
@@ -693,10 +693,10 @@
   - **low 档（9 数据集，<30，仅定性）**：多对精确 0（同上结构效应）；MULTISURV flatten mean +0.0500（CI (+0.0106, +0.1014)，7/9>0）为全表最大正向均值，但属最低事件档、仅定性讨论。
   - **HGCN 绑定癌种单点（n=1，不可与 15 数据集均值直接比）**：UCEC cox −0.0523 / flatten +0.0415；ESCA cox −0.0120 / flatten +0.0127；LUAD flatten −0.0621；LIHC flatten −0.0397；KIRC cox +0.0059 / flatten +0.0113；LUSC cox +0.0039 / flatten −0.0040。
   - 汇总口径：paired Wilcoxon 以数据集为样本、5 折均值为配对值（summary 表 `wilcoxon_stat/p` 只作数值参考，不做显著性结论）；方向一致率 = Δc>0 比例；CI = bootstrap（B=10000，seed=0，数据集级重采样）+ 行级折内配对 t(4) CI。
-- 产物（`results_display/H1b_delta/`，gitignore 内不入库；全部 26 个文件）：
-  - `h1b_delta_main.csv`（172 行 = 128 main + 44 main_ci，tier 列标注 CI 要求）、`h1b_delta_supp.csv`（32 行）、`h1b_delta_low.csv`（72 行）、`h1b_delta_summary.csv`（44 行 = 方案 × 分析器 × 档组汇总）
-  - `h1b_delta_forest_{scheme}_{analyzer}.png` × 20（每方案×分析器森林图，行=数据集、误差棒=折内配对 95% CI、按协议 A 分档标注、Δc 符号色编码）+ `h1b_delta_overview_{analyzer}.png` × 2（跨方案均值条形 + bootstrap CI + 方向一致率直标）
-  - 脚本：`results_display/scripts/h1b_delta_report.py`（入库；`--audit` 固定种子抽查、同输入重跑 diff=0）
+- 产物（`results_display/Test_1b_delta/`，gitignore 内不入库；全部 26 个文件）：
+  - `Test_1b_delta_main.csv`（172 行 = 128 main + 44 main_ci，tier 列标注 CI 要求）、`Test_1b_delta_supp.csv`（32 行）、`Test_1b_delta_low.csv`（72 行）、`Test_1b_delta_summary.csv`（44 行 = 方案 × 分析器 × 档组汇总）
+  - `Test_1b_delta_forest_{scheme}_{analyzer}.png` × 20（每方案×分析器森林图，行=数据集、误差棒=折内配对 95% CI、按协议 A 分档标注、Δc 符号色编码）+ `Test_1b_delta_overview_{analyzer}.png` × 2（跨方案均值条形 + bootstrap CI + 方向一致率直标）
+  - 脚本：`results_display/scripts/Test_1b_delta_report.py`（入库；`--audit` 固定种子抽查、同输入重跑 diff=0）
 - 审计（抽查 3 组，固定种子 20260930，ALL PASS）：
   | 抽查组 | Δc 手算（折文件独立算术） | 与表一致 |
   |---|---|---|
@@ -710,21 +710,21 @@
   3. 图内文字全部用英文（matplotlib 默认字体无 CJK 字形）；图配色用参考调色板红/蓝发散对（light 表面，validate_palette.js 全项通过）。
 - 决策点：无新增，未改动决策点状态表。
 - 状态：完成。
-- 提交：`git add results_display/scripts/h1b_delta_report.py z_notes/H_series_execution_log.md` → "H1b: Δc 对照报表(报告值vs去泄露值)"（png/csv 产物在 gitignore 内不入库；未 push；未用 git add -A）。
+- 提交：`git add results_display/scripts/Test_1b_delta_report.py z_notes/Test_series_execution_log.md` → "Test_1b: Δc 对照报表(报告值vs去泄露值)"（png/csv 产物在 gitignore 内不入库；未 push；未用 git add -A）。
 
 ---
 
-## 口径记录 R8：新增 H1c 实验
+## 口径记录 R8：新增 Test_1c 实验
 
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户指令）
-- 内容：新增 **H1c 单字段泄露对照**——per-field univariate 的 c(field, mask off) vs c(field, landmark_0)，与 H1a 的 leak_rate 做交叉表，串联 H1a 与 H1b（解释"为何存在泄露却没有转化为整组合高估"），并预判哪些字段的泄露理论上能动 Δc（spec §5bis）。
+- 内容：新增 **Test_1c 单字段泄露对照**——per-field univariate 的 c(field, mask off) vs c(field, landmark_0)，与 Test_1a 的 leak_rate 做交叉表，串联 Test_1a 与 Test_1b（解释"为何存在泄露却没有转化为整组合高估"），并预判哪些字段的泄露理论上能动 Δc（spec §5bis）。
 - 执行安排：S5（field bank lm0 重生成 + univariate 补跑）完成后执行；实现 = 新增 field bank 变体 `raw`（lm0 字段集 + mask 关闭）+ 两臂同患者集（gt≤0 排除,复用 S4 派生 label 机制）。
 - 决策点：无。
 - 状态：完成（注册；执行待 S5 结束）。
 
 ---
 
-## 口径纠错 R9：H1a leak_rate 定义（用户指令）
+## 口径纠错 R9：Test_1a leak_rate 定义（用户指令）
 
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户粘贴评审意见）
 - 事实：审计的 leak_rate = 1 − n_valid_t0/n_valid_none（src/leak/audit.py:293）衡量的是"字段在 t0 时点完全缺失的患者比例"，不是"模型输入里混入了未来信息的患者比例"；且审计用的是 Field Bank 提取逻辑，不是论文管线（A_pipeline）实际喂给模型的值。
@@ -734,9 +734,9 @@
 
 ---
 
-## 实验命题总表（语义口径，2026-09-30 用户要求补写）
+## 实验命题总表（语义口径，2026-09-30 补写；2026-10-02 按两条论证链重组）
 
-每个实验 = 实验内容 + 它要论证的命题（括号内是对该术语的解释）+ 状态 + 产物位置。
+每个实验 = 实验内容 + 它要论证的命题（括号内是对该术语的解释）+ 状态 + 产物位置。**组织原则：一个 Test = 一个实验（对应一个命题），一个实验可以对应多张表；表本身不是实验**（Test_4 三档表即汇总产物，不占实验命题）。
 
 ### 关键定义（全系列共用）
 
@@ -749,23 +749,67 @@
 
 | 实验 | 实验内容 | 论证的命题 | 状态 | 产物位置 |
 |---|---|---|---|---|
-| **H0** 可用数据集评估 | 按事件数/删失对 33 TCGA 分层（协议 A 四档） | 哪些数据集在统计上支撑 H1–H3 的定量结论（n_event 是评估方差下限；低事件集只能定性讨论） | ✅ 完成，分层规则执行中 | `results/H0_dataset_availability/`、`scripts/run_h0_availability.py` |
-| **H1a** 泄露审计 | 对每个论文方案的字段组合，**不进行时间处理**，追溯每个患者实际进入模型的值来自哪个时间槽 | 当前论文方案在无时点约束下，模型输入里混入了多少预测时点之后才产生的信息（泄露：字段实际进入模型的值来自 t_hi > 0 的槽位） | ⚠️ 完成一版，但指标口径有误（t0 完全缺失比例 ≠ 混入未来信息比例），纠错已由用户接手 | `src/leak/`、`results/leak_audit/`（旧口径数字作废） |
-| **H1b** 去泄露对照 | 同一字段集两臂：臂A 含泄露 vs 臂B landmark_0，唯一差异 = mask，Δc = A−B | 泄露信息确实抬高了临床模态的预后表现（高估：因使用了预测时点之后的信息，含泄露的 c-index 被人为抬高、超过规范时间处理后的真实能力） | ✅ 完成（552 confs，33 TCGA×两臂×Cox/MLP），Δc 报表已出：无数据集级系统性高估，MULTISURV×Cox 方向一致率最高 10/15 | `results/A_manual_landmark/`、`results_display/H1b_delta/` |
-| **H1c** 单字段泄露对照 | per-field c(mask off) vs c(t0)，与 H1a 的 leak_rate 交叉，串联 H1a/H1b | 泄露在哪些字段上携带能被模型利用的信息（信息量：该字段的未来值本身对生存有预测力，它的泄露才会转化为组合层面的 Δc）——解释"为何有泄露却未必转化为整组合 Δc"，并预判哪些字段的泄露能动摇组合结论 | 📋 已注册未执行；其 leak_rate 列等你接手的新审计 | spec §5bis |
-| **H2** 贪婪搜索对照 | A2 前向贪婪 + sig_stop 0.005 在 landmark_0 池找最优组合，vs 各工作去泄露组合（三臂 Δc、遗漏字段清单） | 各工作的字段组合在去泄露池上是**次优**的（低估：无依据的字段选择漏掉了本可带来额外预测力的有效字段，其组合 c-index 低于可达值） | 🔧 代码已就绪（方案生成器冒烟通过），搜索冒烟已中止 | `scripts/h2_custom_scheme.py`、`scripts/h2_compare.py` |
-| **H3a** 三档表 | 报告值 / 去泄露值 / 可达值 | 两种偏差合起来，临床模态的预后能力有三个可读值（报告值 = 含泄露的文献口径值；去泄露值 = 规范时间处理后的值；可达值 = 去泄露池上搜索最优的值）；档间差 = 高估与低估的量化 | ⏸ 前两档数据已齐（H1b），可达值待 H2 | 未生成 |
-| **H4** 不变性 | 编码轴/模型轴/数据轴重复 H1b 与 H2 | 以上结论不随编码、模型、数据改变——偏差来自数据本身，不是某条管线的产物 | 📋 仅占位（你定调为后期，H1–H3 完成后再说） | spec §12 未解决问题 |
+| **Test_0** 可用数据集评估 | 按事件数/删失对 33 TCGA 分层（协议 A 四档） | 哪些数据集在统计上支撑定量结论（n_event 是评估方差下限；低事件集只能定性讨论）——两链共同的准入前提 | ✅ 完成，分层规则执行中 | `results/Test_0_dataset_availability/`、`scripts/run_Test_0_availability.py` |
+| **Test_1a** 单字段泄露对照（时间轴链动机） | per-field c(mask off) vs c(t0)，与 Test_2a 的 leak_rate 交叉 | TCGA clinical 记录自带时间，同一字段在有无 t0 口径下 c-index 会实质变化——对 clinic 生存分析，按协议做字段时间处理是**应该的**（之前的工作都没做）；兼作 Test_2b"为何泄露未转为组合高估"的机制解释 | 🔧 执行中（t0 臂 = S5 已完成；off 臂待 `raw` 变体） | `results_display/Test_1a_field_level/` |
+| **Test_1b** 各数据集 Cindex 情况（字段轴链动机） | 单字段 c-index：各数据集分布 + 跨数据集字段分布 + top-k 重叠度 | 字段能力随数据集而异，每个数据集理论上有各自最优字段组合——针对数据集选字段是**应该的** | 🔧 执行中（数据源 S5 已齐） | `results_display/Test_1b_dataset_cindex/`（原 E1 Fig2 升级） |
+| **Test_2a** 泄露审计（时间轴链主体） | 对每个论文方案，**不进行时间处理**，追溯每个患者实际进入模型的值来自哪个时间槽 | 论文方案在无时点约束下，模型输入里混入了多少预测时点之后才产生的信息（泄露：值来自 t_hi > 0 的槽位） | ⚠️ 完成一版，但指标口径有误（t0 完全缺失比例 ≠ 混入未来信息比例），纠错已由用户接手 | `src/leak/`、`results/leak_audit/`（旧口径数字作废） |
+| **Test_2b** 去泄露对照（时间轴链主体） | 同一字段集两臂：臂A 含泄露 vs 臂B landmark_0，唯一差异 = mask，Δc = A−B | 泄露信息确实抬高了临床模态的预后表现（高估：含泄露的 c-index 被人为抬高、超过规范时间处理后的真实能力） | ✅ 完成（552 confs，33 TCGA×两臂×Cox/MLP），Δc 报表已出：无数据集级系统性高估，MULTISURV×Cox 方向一致率最高 10/15 | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |
+| **Test_3** 贪婪搜索对照（字段轴链主体） | A2 前向贪婪 + sig_stop 0.005 在 landmark_0 池找最优组合，vs 各工作去泄露组合（三臂 Δc、遗漏字段清单） | 各工作的字段组合在去泄露池上是**次优**的（低估：无依据的字段选择漏掉了本可带来额外预测力的有效字段）——**收回** Test_1b 的"各数据集有各自最优组合" | 🔧 代码已就绪（方案生成器冒烟通过），搜索冒烟已中止 | `scripts/Test_3_custom_scheme.py`、`scripts/Test_3_compare.py` |
+| **Test_4 三档汇总表**（非实验） | 报告值 / 去泄露值 / 可达值 | 两链收口：报告值−去泄露值 = 时间轴链收口（高估量）；去泄露值−可达值 = 字段轴链收口（低估量） | ⏸ 前两档数据已齐（Test_2b），可达值待 Test_3 | 未生成 |
+| **Test_5** 不变性 | 编码轴/模型轴/数据轴重复 Test_2b 与 Test_3 | 以上结论不随编码、模型、数据改变——偏差来自数据本身，不是某条管线的产物 | 📋 仅占位（后期，Test_1–Test_3 完成后再说） | spec §12 未解决问题 |
 
 
-| **基础建设** | 经典 landmark 三要件（A_pipeline 扩展）、方案×数据集绑定、数据协议 A、执行日志/规格/逐步提交 | 不是单一命题，而是使上述命题成立的前提：① 评估管线的 landmark 必须符合经典三要件（风险集/时间平移/T 前协变量），否则"去泄露值"无定义；② 每个工作的字段组合只在其设计癌种上绑定评估，否则"该工作"的口径失真；③ 定量结论只在统计能力足够的数据集上成立（协议 A） | ✅ 全部落地 | `A_pipeline/src/landmark*.py`、`z_notes/H_series_spec.md`、执行日志 |
+| **基础建设** | 经典 landmark 三要件（A_pipeline 扩展）、方案×数据集绑定、数据协议 A、执行日志/规格/逐步提交 | 不是单一命题，而是使上述命题成立的前提：① 评估管线的 landmark 必须符合经典三要件（风险集/时间平移/T 前协变量），否则"去泄露值"无定义；② 每个工作的字段组合只在其设计癌种上绑定评估，否则"该工作"的口径失真；③ 定量结论只在统计能力足够的数据集上成立（协议 A） | ✅ 全部落地 | `A_pipeline/src/landmark*.py`、`z_notes/Test_series_spec.md`、执行日志 |
 
 
 ---
 
-## 口径记录 R10：H3b 取消
+## 口径记录 R10：Test_3b 取消
 
 - 时间 / 执行者：2026-09-30 / Claude（主会话，用户指令）
-- 内容：H3b（单字段排序 Spearman 对照）不用做，用户已自行删除；命题总表与 spec 中相关条目已移除（历史日志条目保留不动）。
+- 内容：Test_3b（单字段排序 Spearman 对照）不用做，用户已自行删除；命题总表与 spec 中相关条目已移除（历史日志条目保留不动）。
 - 决策点：无。
+- 状态：完成。
+
+---
+
+## 口径记录 R11：实验编号重组（2026-10-02，用户指令）
+
+- 时间 / 执行者：2026-10-02 / Claude（主会话）
+- 目标：按用户决议重组实验编号与组织思路。spec §1/§3/§5bis/§5ter/§8、本日志命题总表已同步改写；`z_notes/experiment_list/experiment_list.md` 为速查清单。
+
+### 新组织（两条论证链 + 动机层）
+
+| 新编号 | 内容 | 原编号 | 命题落点 |
+|---|---|---|---|
+| **Test_1a** | 单字段泄露对照（时间轴链动机） | Test_1c | 时间口径会实质改变单字段评估值，规范时间处理应该做 |
+| **Test_1b** | 各数据集 Cindex 情况（字段轴链动机） | E1（9f64feb） | 字段能力随数据集而异，各数据集有各自最优组合，选字段应该做 |
+| **Test_2a** | 泄露审计（时间轴链主体） | Test_1a | 高估证据（定量泄露占比） |
+| **Test_2b** | 去泄露对照（时间轴链主体） | Test_1b | 高估证据（Δc，552 confs 已完成） |
+| **Test_3** | 贪婪搜索对照（字段轴链主体） | Test_2 | 低估证据（可达值），收回 Test_1b 的不均衡 |
+| **Test_4** | 三档汇总表（**非实验**） | Test_3a | 两链收口：报告−去泄露 = 时间轴；去泄露−可达 = 字段轴 |
+| **Test_5** | 不变性（占位） | Test_4 | 后期 |
+
+- 组织原则（用户 2026-10-02）：**一个 Test = 一个实验（对应一个命题），一个实验可以对应多张表；表本身不是实验**。原 Test_3a 只是表，占实验编号是原组织错误。
+- Test_1b 新增两个量化指标（用户同意）：① 同一字段跨数据集 c-index 分布；② 各数据集 top-k 字段重叠度（k ∈ {5,10,20}，决策点 S5c）。
+- 现状核对（本步）：S5 univariate 补跑 **33/33 done、failed 0**（`results/univariate/prompt/landmark_0/`，mlp_clinic_flatten × seed 0）；Field Bank 模板 **33/33 填齐**（bank_rows = kept+1）。
+- 编号顺序 ≠ 执行顺序：Test_1a 的 leak_rate 交叉列依赖 Test_2a 新口径审计（用户接手）出数，先报 c(off)/c(t0)/Δc_field。
+- 归档纪律（用户指令）：**每完成一步，存档（本日志追加）+ 上传（git commit 并 push origin）**。
+- 历史条目保留不动：旧编号（Test_1a/1b/1c/2/3a/3b/4 及 H 系列）仅存在于本日志历史条目与旧提交中，R10 的"Test_3b 取消"指旧编号的"单字段排序对照"。
+- 决策点：无新增。
+- 状态：完成（spec/日志/实验清单/脚本改名随本次提交）。
+
+---
+
+## R12 重组落地：规格/日志/脚本改名与归档（2026-10-02）
+
+- 时间 / 执行者：2026-10-02 / Claude（主会话）
+- 内容：spec 全文改名与两链叙事；命题总表重写；脚本与产物目录改名：
+  - `results_display/scripts/E1_Fig2_Single-field c-index.py` → `Test_1b_dataset_cindex.py`
+  - `results_display/scripts/Test_1b_delta_report.py` → `Test_2b_delta_report.py`（产物目录 `Test_1b_delta/` → `Test_2b_delta/`）
+  - `scripts/Test_2_custom_scheme.py` → `Test_3_custom_scheme.py`、`scripts/Test_2_compare.py` → `Test_3_compare.py`
+  - `A_pipeline/templates/Test_2_MULTISURV_TCGA-ACC/` → `Test_3_MULTISURV_TCGA-ACC/`
+  - `scripts/s4_Test_1b_queue.sh` → `s4_Test_2b_queue.sh`
+  - 移除 `z_notes/H_series_spec.md`、`z_notes/H_series_execution_log.md`（Test_ 系列文档为准）
+  - 新增 `z_notes/experiment_list/experiment_list.md`（速查清单）
 - 状态：完成。

@@ -1,4 +1,4 @@
-"""S4 H1b: enqueue-only / summarize / status dispatcher for the A_manual cindex queue.
+"""S4 Test_2b: enqueue-only / summarize / status dispatcher for the A_manual cindex queue.
 
 Reuses the exact CLI code path (expand_source_jobs -> iter_cindex_jobs ->
 enqueue_cindex_jobs / summarize_dataset, same functions as `A_pipeline/run.py
@@ -6,7 +6,7 @@ cindex`) but skips drain_queue, so grid slices can be staged by priority
 (数据协议 A: >=100 与 70-100 先跑 -> 30-70 -> <30) without spawning extra
 claim workers. 实际训练由独立的 drainer 进程按 conf+run.sh claim 机制执行。
 
-Tier 分配在运行时读 H0 manifest 的 n_event + 协议 A 阈值（spec §12 U1），
+Tier 分配在运行时读 Test_0 manifest 的 n_event + 协议 A 阈值（spec §12 U1），
 不硬编码数据集名单；方案 x 数据集绑定按 spec §2.4（HGCN_* 仅本癌种）。
 
 用法（统一 python 3.13.12，硬条件 D3-1）:
@@ -54,7 +54,7 @@ from src.paths import (  # noqa: E402
     DEFAULT_TEMPLATE_DIR,
 )
 
-MANIFEST = PROJECT_ROOT / "results" / "H0_dataset_availability" / "manifest.csv"
+MANIFEST = PROJECT_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 OUTPUTS = PROJECT_ROOT / "outputs"
 
 PAN_CANCER_SCHEMES = ["MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN"]
@@ -72,7 +72,7 @@ ARMS = {"A": "none", "B": "0"}
 
 
 def load_waves() -> dict[str, list[str]]:
-    """wave name -> dataset list, from H0 manifest n_event + 协议 A 阈值."""
+    """wave name -> dataset list, from Test_0 manifest n_event + 协议 A 阈值."""
     waves: dict[str, list[str]] = {"1": [], "2": [], "3": []}
     with MANIFEST.open(newline="") as f:
         for row in csv.DictReader(f):
@@ -166,7 +166,7 @@ def cmd_enqueue(slice_name: str, results_root: Path) -> None:
     queued = enqueue_cindex_jobs(jobs, queue_root=None)
     print(f"[S4] queue={queued['root']} created={len(queued['created'])} "
           f"existing={len(queued['existing'])} retried={len(queued.get('retried', []))}")
-    print(f"[S4] 下一步: 由 drainer 进程 claim 并训练（见 scripts/s4_h1b_queue.sh）")
+    print(f"[S4] 下一步: 由 drainer 进程 claim 并训练（见 scripts/s4_Test_2b_queue.sh）")
 
 
 def cmd_summarize(slice_name: str, results_root: Path) -> None:

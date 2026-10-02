@@ -1,5 +1,5 @@
 #!/bin/bash
-# S4 H1b 批跑投放 / 监控 / 续跑入口（138 组合 x 2 臂 x 2 分析器 = 552 confs）
+# S4 Test_2b 批跑投放 / 监控 / 续跑入口（138 组合 x 2 臂 x 2 分析器 = 552 confs）
 #
 # 分工：
 #   scripts/s4_enqueue.py   enqueue/summarize/status（不训练，python 3.13.12）
@@ -7,11 +7,11 @@
 #   encode 队列             本脚本 encode 模式（conch 环境，GPU 7 = A_pipeline DEFAULT_GPU）
 #
 # 用法（在 projects/ 根目录）：
-#   bash scripts/s4_h1b_queue.sh encode              # 后台生成缺失的 embeddings（波1优先）
-#   bash scripts/s4_h1b_queue.sh enqueue A1          # 投放波1 臂A 泛癌种 conf
-#   bash scripts/s4_h1b_queue.sh drain               # 启动训练 drainer（GPU 5, 8 workers, 后台）
-#   bash scripts/s4_h1b_queue.sh status              # 队列桶 + 编码队列进度
-#   bash scripts/s4_h1b_queue.sh validate            # 首波校验（clinic_cox 逐位 diff + 字段表审计）
+#   bash scripts/s4_Test_2b_queue.sh encode              # 后台生成缺失的 embeddings（波1优先）
+#   bash scripts/s4_Test_2b_queue.sh enqueue A1          # 投放波1 臂A 泛癌种 conf
+#   bash scripts/s4_Test_2b_queue.sh drain               # 启动训练 drainer（GPU 5, 8 workers, 后台）
+#   bash scripts/s4_Test_2b_queue.sh status              # 队列桶 + 编码队列进度
+#   bash scripts/s4_Test_2b_queue.sh validate            # 首波校验（clinic_cox 逐位 diff + 字段表审计）
 #
 # 续跑：失败 conf 会在重跑 enqueue 时自动从 failed/ 重入队；drainer 退出后重跑 drain；
 #       编码任务按产物存在性跳过（臂 A 已存在目录绝不重生成）。
@@ -162,13 +162,13 @@ cmd_watch() {
 
 case "${1:-}" in
     encode) cmd_encode ;;
-    enqueue) cmd_enqueue "${2:?usage: s4_h1b_queue.sh enqueue <A1|A1H|B1|B1H|A2|B2|A3|B3>}" ;;
+    enqueue) cmd_enqueue "${2:?usage: s4_Test_2b_queue.sh enqueue <A1|A1H|B1|B1H|A2|B2|A3|B3>}" ;;
     drain) cmd_drain ;;
     watch) cmd_watch ;;
     status) cmd_status ;;
     validate) cmd_validate ;;
     *)
-        echo "usage: bash scripts/s4_h1b_queue.sh {encode|enqueue <slice>|drain|watch|status|validate}"
+        echo "usage: bash scripts/s4_Test_2b_queue.sh {encode|enqueue <slice>|drain|watch|status|validate}"
         exit 2
         ;;
 esac

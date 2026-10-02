@@ -1,4 +1,4 @@
-"""S4 H1b 首波校验（只读，统一 python 3.13.12）。
+"""S4 Test_2b 首波校验（只读，统一 python 3.13.12）。
 
 1. --diff-cox    臂 A clinic_cox vs 旧 results/A_manual 表逐位 diff=0（硬条件 D3-3）
                  （只比较旧表有行的组合；无旧行可比的组合列出，不作数值判断）
