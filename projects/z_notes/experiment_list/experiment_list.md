@@ -34,17 +34,17 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 
 ## 实验清单总表
 
-| 实验 | 内容 | 状态 |
-|---|---|---|
-| **Test_0** 可用数据集评估 | 按 n_event 把 33 TCGA 分四档(协议 A);两链准入前提 | ✅ 完成 |
-| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 🔧 t0 臂已齐(S5),off 臂待跑 |
-| **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 🔧 数据源已齐(S5),分析待做 |
-| **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | ⚠️ 旧口径作废,纠错由用户接手 |
-| **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | ✅ 完成 552 confs + Δc 报表 |
-| **Test_3** 贪婪搜索对照(字段轴链主体) | landmark_0 池上前向贪婪(sig_stop 0.005)最优组合 vs 各工作组合 → 低估证据 | 🔧 代码就绪,搜索冒烟中止 |
-| **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | ⏸ 前两档已齐,可达值待 Test_3 |
-| **Test_5** 不变性 | 编码/模型/数据轴重复 Test_2b 与 Test_3 | 📋 占位,后期 |
-| ~~旧 Test_3b / H3b~~ | 单字段排序对照 | ❌ 已取消 |
+| 实验 | 内容 | 数据集 | 产物 |
+|---|---|---|---|
+| **Test_0** 可用数据集评估 | 按 n_event 把 33 TCGA 分四档(协议 A);两链准入前提 | 33 TCGA | `results/Test_0_dataset_availability/manifest.csv` |
+| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 33 TCGA × landmark_0 kept 字段 | `results/univariate_raw/`、`results_display/Test_1a_field_level/` |
+| **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 33 TCGA | `results_display/Test_1b_dataset_cindex/` |
+| **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/leak_audit/` |
+| **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |
+| **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(sig_stop 0.005)最优组合 vs 各工作组合 → 低估证据,三臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
+| **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
+| **Test_5** 不变性 | 编码/模型/数据轴重复 Test_2b 与 Test_3 | 待定 | 待定 |
+| ~~旧 Test_3b / H3b~~ | 单字段排序对照 | — | ❌ 已取消 |
 
 ## 各实验协议
 
