@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-fold validation event counts for Test_2b arm_A (A_manual) runs, joined with dataset event tables."""
+"""Per-fold validation event counts for Test_2b arm_A runs, joined with dataset event tables."""
 import glob
 import re
 import sys

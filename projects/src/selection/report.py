@@ -333,7 +333,7 @@ def _plot_landmarks(aggregates, display_root):
 
 
 def generate_report(results_root=test_results_dir("Test_3_search") / "prompt",
-                    display_root="results_display/E2_selection/prompt",
+                    display_root="results_display/E2_selection/prompt",  # 遗留 E 系列展示,按命名公约保留不迁
                     anchor_root=test_results_dir("Test_3_search") / "anchor" / "prompt"):
     results_root = Path(results_root)
     seed_dirs = sorted(path.parent for path in results_root.glob("**/seed_*/result.json"))
@@ -364,7 +364,7 @@ def generate_report(results_root=test_results_dir("Test_3_search") / "prompt",
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Aggregate E2 CV results and draw E2 figures")
     parser.add_argument("--results-root", default=str(test_results_dir("Test_3_search") / "prompt"))
-    parser.add_argument("--display-root", default="results_display/E2_selection/prompt")
+    parser.add_argument("--display-root", default="results_display/E2_selection/prompt")  # 遗留 E 系列展示,按命名公约保留不迁
     parser.add_argument("--anchor-root", default=str(test_results_dir("Test_3_search") / "anchor" / "prompt"))
     args = parser.parse_args(argv)
     print(json.dumps(generate_report(args.results_root, args.display_root, args.anchor_root), ensure_ascii=False, allow_nan=True))

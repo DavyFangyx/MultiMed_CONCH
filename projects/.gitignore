@@ -35,6 +35,11 @@ Clinic_Analyzer/configs/Test_*/**
 !results_display/README.md
 !results_display/scripts/
 !results_display/scripts/**
+!results_display/Test_*/
+!results_display/Test_*/scripts/
+!results_display/Test_*/scripts/**
+results_display/scripts/__pycache__/
+results_display/Test_*/scripts/__pycache__/
 !rawdata_stats/README.md
 !rawdata_stats/TIME_CRITERIA.md
 # Generated Field Bank tables, filled per dataset

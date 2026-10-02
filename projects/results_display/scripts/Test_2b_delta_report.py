@@ -51,7 +51,7 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from common.paths import test_results_dir
+from common.paths import remap_legacy_result_path, test_results_dir
 
 RESULTS_LM = test_results_dir("Test_2b/arm_B")
 EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -160,6 +160,7 @@ def build_rows() -> list[dict]:
     """
     events = load_event_summary()
     out = []
+    n_skipped_test3 = 0
     for d in sorted(os.listdir(RESULTS_LM)):
         dataset_dir = RESULTS_LM / d
         if not d.endswith("[gdc]") or not dataset_dir.is_dir():
@@ -174,6 +175,11 @@ def build_rows() -> list[dict]:
 
         schemes = sorted({s.split("__")[0] for s in df["scheme"]})
         for scheme in schemes:
+            if scheme.startswith("Test_3_"):
+                # Test_3 臂 B'/C 行只有单臂(S6 summarize 合并进 arm_B 表),无臂 A 配对;
+                # 其 Δc 由 Test_3_compare.py 负责,本脚本只管 Test_2b 双臂。
+                n_skipped_test3 += 1
+                continue
             for analyzer in ANALYZERS:
                 a = df[
                     (df["scheme"] == f"{scheme}__{ARM_A}") & (df["modality"] == analyzer)
@@ -193,8 +199,8 @@ def build_rows() -> list[dict]:
                     raise SystemExit(
                         f"[error] run_config 缺行: {dataset} {scheme} {analyzer}"
                     )
-                ca_f, ca_std, fa, _ = fold_values(cfg_a["results_dir"])
-                cb_f, cb_std, fb, _ = fold_values(cfg_b["results_dir"])
+                ca_f, ca_std, fa, _ = fold_values(remap_legacy_result_path(cfg_a["results_dir"]))
+                cb_f, cb_std, fb, _ = fold_values(remap_legacy_result_path(cfg_b["results_dir"]))
                 ca_t = float(cfg_a["val_c_index_mean"])
                 cb_t = float(cfg_b["val_c_index_mean"])
                 stale = abs(ca_f - ca_t) > 1e-12 or abs(cb_f - cb_t) > 1e-12
@@ -228,6 +234,8 @@ def build_rows() -> list[dict]:
                         "n_folds": n_folds,
                     }
                 )
+    if n_skipped_test3:
+        print(f"[Test_2b_delta] 跳过 Test_3 单臂行 {n_skipped_test3} 条（无臂 A 配对，Δc 由 Test_3_compare 负责）")
     return out
 
 
@@ -537,8 +545,8 @@ def audit(rows: list[dict]) -> None:
         _, cfg = read_table(RESULTS_LM / dataset)
         a = df[(df["scheme"] == f"{scheme}__{ARM_A}") & (df["modality"] == analyzer)]
         b = df[(df["scheme"] == f"{scheme}__{ARM_B}") & (df["modality"] == analyzer)]
-        ca_f, _, _, _ = fold_values(cfg[frozenset((a.iloc[0]["scheme"], analyzer))]["results_dir"])
-        cb_f, _, _, _ = fold_values(cfg[frozenset((b.iloc[0]["scheme"], analyzer))]["results_dir"])
+        ca_f, _, _, _ = fold_values(remap_legacy_result_path(cfg[frozenset((a.iloc[0]["scheme"], analyzer))]["results_dir"]))
+        cb_f, _, _, _ = fold_values(remap_legacy_result_path(cfg[frozenset((b.iloc[0]["scheme"], analyzer))]["results_dir"]))
         manual = ca_f - cb_f
         ok1 = abs(manual - r["delta"]) < 1e-12
         # 2) stale 标记自洽：|折文件均值 − S4 表冻结值| > 1e-12 的行必须被标记
@@ -549,7 +557,7 @@ def audit(rows: list[dict]) -> None:
         # 3) SEED 一致：两臂 run 的 config.snapshot SEED 行相同
         seeds = set()
         for row in (a.iloc[0], b.iloc[0]):
-            snap = Path(row["results_dir"]) / "config.snapshot"
+            snap = Path(remap_legacy_result_path(row["results_dir"])) / "config.snapshot"
             for line in snap.read_text().splitlines():
                 if line.strip().startswith("SEED="):
                     seeds.add(line.strip())
@@ -561,10 +569,10 @@ def audit(rows: list[dict]) -> None:
         ok4 = True
         for fold in range(5):
             fa = pd.read_csv(
-                Path(a.iloc[0]["results_dir"]) / f"splits_{fold}.csv"
+                Path(remap_legacy_result_path(a.iloc[0]["results_dir"])) / f"splits_{fold}.csv"
             )
             fb = pd.read_csv(
-                Path(b.iloc[0]["results_dir"]) / f"splits_{fold}.csv"
+                Path(remap_legacy_result_path(b.iloc[0]["results_dir"])) / f"splits_{fold}.csv"
             )
             ids_a = set(fa["train"].dropna()) | set(fa["val"].dropna()) | set(fa["test"].dropna())
             ids_b = set(fb["train"].dropna()) | set(fb["val"].dropna()) | set(fb["test"].dropna())

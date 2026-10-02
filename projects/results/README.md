@@ -17,6 +17,4 @@ results/
   _archive/                              # 遗留目录归档(greedy、Test_2_selection 等)
 ```
 
-> 物理迁移进行中:旧名(`univariate`、`univariate_raw`、`leak_audit`、`A_manual`、`A_manual_landmark`、`E2_selection`)在迁移完成前仍存在,新旧对照见 `z_notes/experiment_list/naming_convention.md`。
-
 各 Test 产物明细(行数、验收口径)见 `z_notes/Test_series_spec.md` 与 `z_notes/experiment_list/experiment_list.md`。

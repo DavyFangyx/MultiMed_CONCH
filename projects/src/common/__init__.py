@@ -72,6 +72,7 @@ from .paths import (
     config_family_bucket_dir,
     test_results_dir,
     test_display_dir,
+    remap_legacy_result_path,
 )
 from .types import infer_type, to_numeric
 
@@ -114,6 +115,7 @@ __all__ = [
     "config_family_bucket_dir",
     "test_results_dir",
     "test_display_dir",
+    "remap_legacy_result_path",
     "extract_path_values",
     "DERIVED_FIELD_SOURCE_PATH",
     "DERIVED_FIELD_TYPES",

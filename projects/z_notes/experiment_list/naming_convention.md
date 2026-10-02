@@ -36,11 +36,10 @@
 | 1 | 公约文档 + README | 完成(commit c08bf04) |
 | 2 | 代码路径登记(`src/common/paths.py`)+ 新旧兼容 | 完成(commit 60148c6) |
 | 3 | configs 家族物理迁移 | 完成(本步):univariate→Test_1a_t0、univariate_raw→Test_1a_off、E2_selection→Test_3_search(9 个 stale running 恢复回 queue)、A_manual 拆分→Test_2b_arms(553)+Test_3_arms(64);空遗留 queue/running/done/failed、z_exp_gen 已删 |
-| 4 | results / results_display 物理迁移 | 待做 |
+| 4 | results / results_display 物理迁移 | 完成:univariate→Test_1a/arm_t0、univariate_raw→Test_1a/arm_off、A_manual→Test_2b/arm_A、A_manual_landmark→Test_2b/arm_B、leak_audit→Test_2a_leak_audit、E2_selection→Test_3_search、greedy/Test_2_selection→_archive、display leak_audit→Test_2a_leak_audit、Clinic_Analyzer/results_display 遗留→results_display/_archive |
 
-## 过渡规则
+## 过渡规则(迁移已完成,规则留档)
 
-- 物理迁移完成前,代码中的**读**路径一律经 `src/common/paths.py` 解析(新名优先、旧名回退),保证迁移前后都能跑。
-- **写**路径的默认值切换必须与对应物理 mv 同一步:configs 队列根随步骤 3 切,results 写路径随步骤 4 切。
-- 迁移期间旧名字符串只允许出现在 `paths.py` 的 LEGACY 常量与本文档对照表中。
+- 物理迁移已完成;`src/common/paths.py` 的 resolve 函数保留新名优先、旧名回退的 LEGACY 兼容(防止陈旧脚本/外部调用读旧名),正常路径不再依赖回退。
+- 旧名字符串只允许出现在 `paths.py` 的 LEGACY 常量与本文档对照表中。
 - `z_notes/Test_series_execution_log.md` 只追加,不修改历史条目。

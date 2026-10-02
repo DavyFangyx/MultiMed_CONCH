@@ -101,6 +101,28 @@ def test_results_dir(name: str) -> Path:
 def test_display_dir(name: str) -> Path:
     """results_display/ 下 Test 编号目录。"""
     return _resolve_dir(RESULTS_DISPLAY_ROOT, name, TEST_DISPLAY_LEGACY)
+
+
+# 历史数据文件(run_config.json 等)里写死的旧 results 绝对路径 → 新名。
+# 顺序敏感: A_manual_landmark 必须先于 A_manual、univariate_raw 先于 univariate。
+LEGACY_TO_TEST_RESULTS = {
+    "results/A_manual_landmark": "results/Test_2b/arm_B",
+    "results/A_manual": "results/Test_2b/arm_A",
+    "results/univariate_raw": "results/Test_1a/arm_off",
+    "results/univariate": "results/Test_1a/arm_t0",
+    "results/leak_audit": "results/Test_2a_leak_audit",
+    "results/E2_selection": "results/Test_3_search",
+}
+
+
+def remap_legacy_result_path(raw) -> str:
+    """把数据里写死的旧 results 路径字面量翻成新名(display 脚本读历史 run_config 用)。"""
+    text = str(raw)
+    for legacy, new in LEGACY_TO_TEST_RESULTS.items():
+        text = text.replace(legacy, new)
+    return text
+
+
 DEFAULT_GDC_CASES_MAPPING = (
     PROJECT_ROOT / "ClinicDatasets" / "gdc_clinical" / "field_tables" / "gdc_cases_mapping.csv"
 )

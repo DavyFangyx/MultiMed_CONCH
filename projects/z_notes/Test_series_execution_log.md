@@ -1080,3 +1080,5 @@ python3 scripts/Test_3_compare.py --all
 - 公约与对照表：`z_notes/experiment_list/naming_convention.md`（唯一权威）；实验清单 `experiment_list.md`、三处 README 已按新名更新。
 - 执行方式：分步进行，每步一次本地提交（不 push）：① 基线归档（1ca3f45）；② 公约文档 + README（本步）；③ 代码路径登记与新旧兼容；④ configs 家族物理迁移（drain-gated）；⑤ results/results_display 物理迁移与收尾。
 - 状态：进行中（截至本条目完成第 ①② 步）。
+
+**补记（2026-10-02 深夜，M1 完成）**：迁移四步全部完成并逐步提交——① 基线 `1ca3f45`；② 公约文档+README `c08bf04`；③ 代码路径登记+兼容 `60148c6`；④ configs 物理迁移 `b698cb7`（E2_selection 的 9 个 stale running conf 恢复回 queue）；⑤ results/results_display 物理迁移（本步）。迁移后 resolve 全命中新名；tests/ 186 passed+6 skipped、A_pipeline 44 passed。规格文档产物路径已同步新名；执行日志历史条目未改。

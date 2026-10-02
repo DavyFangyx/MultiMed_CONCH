@@ -2,7 +2,7 @@
 
 本文档是 Test_ 系列实验的**唯一口径来源与步骤注册表**。所有执行 agent 必须先读本文档，再读 `z_notes/Test_series_execution_log.md`（执行日志）。若本文档与仓库现状冲突，以本文档明确写出的规则为准，并在执行日志记录冲突与处理方式。
 
-相关文档：项目口径见 `project_overview.md`；可复用机制见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`（E2 的评估器/缓存/搜索规格仍有效，但 E2 的算法竞赛目标作废）。
+相关文档：项目口径见 `project_overview.md`；三处目录命名公约（configs/results/results_display 以 Test 编号为主键）见 `z_notes/experiment_list/naming_convention.md`；可复用机制见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`（E2 的评估器/缓存/搜索规格仍有效，但 E2 的算法竞赛目标作废）。
 
 ---
 
@@ -48,8 +48,8 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 
 | 档 | 含义 | 来源 |
 |---|---|---|
-| 报告值 | 含泄露（文献口径） | 现有 `results/A_manual/{dataset}[gdc]/cindex.csv`（S0 不删除） |
-| 去泄露值 | 同字段集 + landmark_0 mask | Test_2b 臂 B（`results/A_manual_landmark/`） |
+| 报告值 | 含泄露（文献口径） | 现有 `results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv`（S0 不删除） |
+| 去泄露值 | 同字段集 + landmark_0 mask | Test_2b 臂 B（`results/Test_2b/arm_B/`） |
 | 可达值 | 去泄露池上的贪婪搜索最优 | Test_3 臂 C |
 
 ### 2.4 工作与数据集
@@ -78,11 +78,11 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 |---|---|---|---|
 | S0 | 枚举并删除 E 系列结果文件 | 删除清单 | **D0** 删除范围 |
 | S1 | **Test_0** 可用数据集评估 | `results/Test_0_dataset_availability/manifest.csv` | **D1** 门槛规则数值；**D2** landmark 有效事件口径 + MMRF 是否纳入 |
-| S2 | Test_2a 泄露审计（无训练） | `results/leak_audit/` | 口径已锁定，轻确认 |
+| S2 | Test_2a 泄露审计（无训练） | `results/Test_2a_leak_audit/` | 口径已锁定，轻确认 |
 | S3 | A_pipeline `--landmark_time` 扩展 + 冒烟自检 | 自检报告 | **D3** 自检通过后放量 |
-| S4 | Test_2b 批跑（选集 = manifest 主集+扩展集） | `results/A_manual_landmark/` | 异常 → 回推 Test_0 |
-| S5 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑（t0 臂，Test_1a/1b 数据源） | `outputs/*/field_bank/`、`results/univariate/` | 模板人工填写进度 |
-| S5b | **Test_1a** 对照臂（mask off，`raw` 变体）+ Δc_field 表 | `results/univariate_raw/`、`results_display/Test_1a_field_level/` | 依赖 Test_2a 审计出 leak_rate 列 |
+| S4 | Test_2b 批跑（选集 = manifest 主集+扩展集） | `results/Test_2b/arm_B` | 异常 → 回推 Test_0 |
+| S5 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑（t0 臂，Test_1a/1b 数据源） | `outputs/*/field_bank/`、`results/Test_1a/arm_t0/` | 模板人工填写进度 |
+| S5b | **Test_1a** 对照臂（mask off，`raw` 变体）+ Δc_field 表 | `results/Test_1a/arm_off/`、`results_display/Test_1a_field_level/` | 依赖 Test_2a 审计出 leak_rate 列 |
 | S5c | **Test_1b** 各数据集 Cindex 分布 + 跨数据集字段分布 + top-k 重叠度 | `results_display/Test_1b_dataset_cindex/` | top-k 的 k 取值 |
 | S6 | Test_3 贪婪批跑（主集）+ 三臂对照 | Δc、遗漏字段清单 | **D4** 最优组合口径（sig_stop vs best） |
 | S7 | Test_4 三档汇总表（收口，非独立实验） | `results_display/Test_4_three_tiers/` | — |
@@ -152,7 +152,7 @@ results/Test_0_dataset_availability/
 ### 5.3 产物
 
 ```text
-results/leak_audit/
+results/Test_2a_leak_audit/
   {dataset}/{scheme}.json          # 逐字段: field, family, n_valid_none, n_valid_t0, leak_rate, not_in_bank
   leak_audit_summary.csv           # (dataset, scheme) 级聚合 + n_event 并列
 results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字段泄露率热图
@@ -174,7 +174,7 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 ## 5ter. Test_1b 各数据集 Cindex 情况（字段轴链动机）
 
 - **动机**（用户指令 2026-10-02）：字段在各个数据集中的预测能力各不相同 → 每个数据集在理论上存在属于自己的最优字段组合 → 针对数据集做合适的字段选择是应该的。Test_1b 用单字段 c-index 量化这种不均衡，作为 Test_3（选字段）的存在理由。
-- **数据源**：S5 univariate 补跑结果 `results/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv`（33/33 已完成；5 折 × seed 0，同 Test_1a t0 臂）。**不新增训练**。
+- **数据源**：S5 univariate 补跑结果 `results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv`（33/33 已完成；5 折 × seed 0，同 Test_1a t0 臂）。**不新增训练**。
 - **分析（三个量化指标）**：
   1. **各数据集单字段 c-index 分布**（原 E1 Fig2 升级版）：per-dataset 单字段 c-index 条形/分布图，按协议 A 四档分层标注；
   2. **同一字段跨数据集 c-index 分布**：量化字段能力随数据集的变异（对公共字段）；
@@ -188,7 +188,7 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 
 - `A_pipeline/src/extract.py` 支持 `--landmark_time {0,365,730,none}`（默认 `none`，**行为与现有完全一致**）：按经典 landmark 三要件（§2.5）实现——① 协变量 mask：timed family 槽位只保留 `t_hi <= T` 的取值，其余按现有缺失规则处理（复用 `projects/src/discovery/landmark.py` 的患者级时间记录与 mask，A_pipeline 内通过 sys.path 接入 projects 的 `src`）；② 风险集：`ground_truth_time <= T` 的患者从训练/评估集排除；③ 时间原点：label 时间改为 `gt − T`，并做一次 c-index 平移不变性自检（365 上验证重 base 与不重 base 数值一致）。
 - `pipeline` / `json2prompt` / `encode` / `baseline` 命令透传该参数；产物落 `outputs/{dataset}/A_manual/{scheme}/landmark_{T}/`（`none` 时维持现有目录不变）。
-- cindex 结果落 `results/A_manual_landmark/{dataset}/cindex.csv`，**不覆盖** `results/A_manual/`；走现有 A_manual 队列调度（`A_pipeline/run.py cindex`）。
+- cindex 结果落 `results/Test_2b/arm_B/{dataset}/cindex.csv`，**不覆盖** `results/Test_2b/arm_A/`；走现有 Test_3_arms 队列调度（`A_pipeline/run.py cindex`）。
 
 ### 6.2 两臂定义
 
@@ -199,7 +199,7 @@ results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字
 
 ### 6.3 自检（S3 的放量前提，决策点 D3）
 
-BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRCA[gdc]/cindex.csv` 数值**必须完全一致**（diff=0）。不一致不允许放量，排查原因后重跑。
+BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCGA-BRCA[gdc]/cindex.csv` 数值**必须完全一致**（diff=0）。不一致不允许放量，排查原因后重跑。
 
 ### 6.4 范围
 
@@ -265,7 +265,7 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/A_manual/TCGA-BRC
 
 ## 11. 禁止事项
 
-- 不删除、不覆盖 `results/A_manual/`、`outputs/*/A_manual/`、`outputs/*/field_bank/`、`rawdata_stats/`。
+- 不删除、不覆盖 `results/Test_2b/arm_A/`、`outputs/*/A_manual/`、`outputs/*/field_bank/`、`rawdata_stats/`。
 - 不修改现有 5 折 split；不伪造独立测试集；不把 val 称为 test。
 - 不修改 E 组代码（`src/selection` 的 SEAS/A3–A6/ANCHOR 等）——其去留由用户与执行方协商，本系列只读复用 A2_greedy/evaluator/cache/queue。
 - 不在代码或配置中硬编码数据集分层名单（一律读 Test_0 manifest）。

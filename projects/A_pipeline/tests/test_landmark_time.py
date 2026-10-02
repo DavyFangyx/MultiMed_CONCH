@@ -13,7 +13,7 @@ Covers the three classical landmark requirements of z_notes/Test_series_spec.md
    self-check.
 
 Plus the routing: landmark arms write to their own output / results / queue /
-conf paths and never touch the legacy `A_manual` ones.
+conf paths and never touch the reported-value arm (`Test_2b/arm_A`).
 
 No real CONCH encoding and no real Clinic_Analyzer run happen here.
 """
@@ -399,7 +399,7 @@ def test_conf_text_landmark_routing(tmp_path):
         split_dir=tmp_path / "splits",
         results_base=tmp_path / "results",
     )
-    assert "EXP_GROUP='A_manual/runs'" in legacy
+    assert f"EXP_GROUP='{ARM_A}/runs'" in legacy
     assert "RUN_NAME='tcga_brca__MULTISURV'" in legacy
     assert "LABEL_FILE_PATH" not in legacy
 
@@ -414,7 +414,7 @@ def test_conf_text_landmark_routing(tmp_path):
         exp_group=analyzer_exp_group("landmark_0"),
         label_file=tmp_path / "labels" / "tcga_brca__landmark_0.csv",
     )
-    assert "EXP_GROUP='A_manual_landmark/runs'" in landmark
+    assert f"EXP_GROUP='{ARM_B}/runs'" in landmark
     assert "RUN_NAME='tcga_brca__MULTISURV__landmark_0'" in landmark
     assert f"LABEL_FILE_PATH='{tmp_path / 'labels' / 'tcga_brca__landmark_0.csv'}'" in landmark
     # split dir untouched by the landmark arm
@@ -475,8 +475,8 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     assert legacy_jobs[0]["clinic_dir"] == legacy_dir
     assert legacy_jobs[0]["label_file"] is None
     assert legacy_jobs[0]["row_scheme"] == "D0"
-    assert legacy_jobs[0]["exp_group"] == "A_manual/runs"
-    assert "A_manual/runs/tcga_read__D0/clinic_cox" in str(legacy_jobs[0]["out_dir"])
+    assert legacy_jobs[0]["exp_group"] == f"{ARM_A}/runs"
+    assert f"{ARM_A}/runs/tcga_read__D0/clinic_cox" in str(legacy_jobs[0]["out_dir"])
     assert calls == []  # landmark off -> no label surgery at all
 
     jobs = iter_cindex_jobs(
@@ -497,9 +497,9 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     assert job["label_file"] == label_file
     assert job["row_scheme"] == "D0__landmark_0"
     assert job["run_name"] == "tcga_read__D0__landmark_0"
-    assert job["exp_group"] == "A_manual_landmark/runs"
+    assert job["exp_group"] == f"{ARM_B}/runs"
     assert job["conf_name"] == "tcga_read__D0__landmark_0__clinic_cox.conf"
-    assert "A_manual_landmark/runs/tcga_read__D0__landmark_0/clinic_cox" in str(job["out_dir"])
+    assert f"{ARM_B}/runs/tcga_read__D0__landmark_0/clinic_cox" in str(job["out_dir"])
 
     # landmark_none: legacy embedding dir, but the cindex table is the landmark one
     none_jobs = iter_cindex_jobs(
@@ -550,7 +550,7 @@ def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
 
 def test_summarize_dataset_writes_landmark_table(tmp_path):
     results_root = tmp_path / "results"
-    out_dir = results_root / "A_manual_landmark" / "runs" / "tcga_read__L0__landmark_0" / "clinic_cox"
+    out_dir = results_root / ARM_B / "runs" / "tcga_read__L0__landmark_0" / "clinic_cox"
     out_dir.mkdir(parents=True)
     pd.DataFrame(
         {
@@ -577,8 +577,8 @@ def test_summarize_dataset_writes_landmark_table(tmp_path):
         landmark_tag="landmark_0",
     )
     assert [row["scheme"] for row in rows] == ["L0__landmark_0"]
-    assert (results_root / "A_manual_landmark" / "TCGA-READ" / "cindex.csv").is_file()
-    assert not (results_root / "A_manual").exists()
+    assert (results_root / ARM_B / "TCGA-READ" / "cindex.csv").is_file()
+    assert not (results_root / ARM_A).exists()
 
 
 # --------------------------------------------------------------------------
@@ -657,7 +657,7 @@ def test_landmark_label_path_is_under_own_subtree(tmp_path):
         label_file=_write_label_csv(tmp_path / "metadata" / "tcga_xx.csv"),
         results_root=tmp_path / "results",
     )
-    assert out_file == tmp_path / "results" / "A_manual_landmark" / "labels" / "tcga_xx__landmark_0.csv"
+    assert out_file == tmp_path / "results" / ARM_B / "labels" / "tcga_xx__landmark_0.csv"
 
 
 # --------------------------------------------------------------------------
