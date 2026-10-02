@@ -140,6 +140,38 @@ def test_compare_raises_when_arm_missing(tmp_path, monkeypatch):
         CMP.compare(dataset, work)
 
 
+def test_batch_writes_table_missed_and_figure(tmp_path, monkeypatch):
+    dataset, work = "TCGA-XX", "MULTISURV"
+    monkeypatch.setattr(CMP, "RESULTS", tmp_path / "results")
+    monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
+    monkeypatch.setattr(CMP, "OUT_ROOT", tmp_path / "out")
+    monkeypatch.setattr(CMP, "DISPLAY_ROOT", tmp_path / "display")
+    monkeypatch.setattr(C, "PAN_CANCER_WORKS", (work,))
+    monkeypatch.setattr(C, "HGCN_BINDING", {})
+    monkeypatch.setattr(C, "main_datasets", lambda *a, **k: [dataset])
+    _write_table(CMP.RESULTS / "A_manual_landmark" / f"{dataset}[gdc]" / "cindex.csv",
+                 _arm_table_rows(dataset, {
+                     work: {"mlp_clinic_flatten": (0.50, 0.01)},
+                     C.bp_scheme_name(work, dataset): {"mlp_clinic_flatten": (0.60, 0.01)},
+                     C.c_scheme_name(dataset): {"mlp_clinic_flatten": (0.66, 0.01)},
+                 }))
+    _write_fields(CMP.A_TEMPLATES / work, ["a", "b"])
+    _write_fields(CMP.A_TEMPLATES / C.c_scheme_name(dataset), ["a", "c"])
+
+    result = CMP.batch([dataset])
+
+    assert result["done"] == 1 and result["pending"] == []
+    table = pd.read_csv(result["table"])
+    assert table.iloc[0]["delta_C_minus_Bp"] == pytest.approx(0.06)
+    assert table.iloc[0]["delta_C_minus_B"] == pytest.approx(0.16)
+    missed = pd.read_csv(result["missed"])
+    assert missed["field"].tolist() == ["c"]
+    # 展示层镜像 + Δc 图（spec §7.3）；matplotlib 缺失时 figure 为 None 不算失败
+    assert (CMP.DISPLAY_ROOT / "three_arm.csv").exists()
+    if result["figure"] is not None:
+        assert Path(result["figure"]).exists()
+
+
 def test_pipeline_one_patches_are_in_memory_only():
     """子进程验证：方案白名单追加 + DEFAULT_GPU 改写，且 schemes.json 不被改写。"""
     schemes_json = ROOT / "A_pipeline" / "templates" / "schemes.json"

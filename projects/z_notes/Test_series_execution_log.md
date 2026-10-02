@@ -1053,3 +1053,5 @@ python3 scripts/Test_3_compare.py --all
 - 提交：本步代码/脚本/测试/文档入库（results/、results_display/ 按纪律不提交）。
 
 **补记（20:10）**：为避免人工守候搜索结果，新增 `scripts/Test_3_arm_c_chain.sh`（后台轮询：某数据集 `result.json` 落盘即自动 `generate --arm ksig` → `encode` → `enqueue`，15/15 就绪后自动 drain + summarize + `compare --all`），已以 nohup 挂起（日志 `results/Test_3_greedy_vs_works/logs/arm_c_chain.log`）。臂 best 附录（历史最优 `best_subset`）未自动跑，需要时：`python3 scripts/Test_3_arms.py generate/encode/enqueue/drain --arm best`。
+
+**补记 2（20:30）**：`Test_3_compare.py` 补齐 spec §7.3 的展示层图：`--all` 在有三臂行时输出 `results_display/Test_3_greedy_vs_works/three_arm_delta.png`（左：每数据集均值 Δc 头条 C−B′ 与交叉 C−B；右：Δc vs 遗漏字段数散点）；英文标签（沿既有 matplotlib 约定，默认字体无 CJK 字形）。新增测试 `test_batch_writes_table_missed_and_figure`（表/遗漏清单/镜像/图路径全链路，空表不画图）。

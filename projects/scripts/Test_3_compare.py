@@ -171,8 +171,46 @@ def batch(datasets: list[str]) -> dict:
         (OUT_ROOT / "three_arm.csv").read_text(encoding="utf-8"), encoding="utf-8")
     (DISPLAY_ROOT / "missed_fields.csv").write_text(
         (OUT_ROOT / "missed_fields.csv").read_text(encoding="utf-8"), encoding="utf-8")
+    figure = _plot_delta(pd.DataFrame(table_rows), DISPLAY_ROOT) if table_rows else None
     return {"pairs": len(pairs), "done": len(table_rows), "pending": pending,
-            "table": OUT_ROOT / "three_arm.csv", "missed": OUT_ROOT / "missed_fields.csv"}
+            "table": OUT_ROOT / "three_arm.csv", "missed": OUT_ROOT / "missed_fields.csv",
+            "figure": figure}
+
+
+def _plot_delta(df: pd.DataFrame, display_root: Path) -> Path | None:
+    """Δc 图（spec §7.3）：左 = 每数据集均值 Δc（头条 C−B′ + 交叉 C−B），右 = Δc vs 遗漏字段数。"""
+    if df.empty:
+        return None
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:  # pragma: no cover - 无 matplotlib 时不阻塞总表
+        return None
+    display_root.mkdir(parents=True, exist_ok=True)
+    per_dataset = df.groupby("dataset")[["delta_C_minus_Bp", "delta_C_minus_B"]].mean()
+    per_dataset = per_dataset.sort_values("delta_C_minus_Bp")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 0.45 * len(per_dataset) + 2.4))
+    y = range(len(per_dataset))
+    axes[0].barh([i + 0.18 for i in y], per_dataset["delta_C_minus_Bp"], height=0.36,
+                 color="#c0504d", label="Δc = C − B' (headline)")
+    axes[0].barh([i - 0.18 for i in y], per_dataset["delta_C_minus_B"], height=0.36,
+                 color="#4f81bd", label="Δc = C − B (cross-check)")
+    axes[0].axvline(0.0, color="black", linewidth=0.8)
+    axes[0].set_yticks(list(y), per_dataset.index, fontsize=7)
+    axes[0].set_xlabel("mean Δc over works")
+    axes[0].legend(fontsize=7)
+    axes[0].set_title("Test_3 three-arm Δc (mean over works per dataset)", fontsize=9)
+    axes[1].scatter(df["n_missed"], df["delta_C_minus_Bp"], s=14, color="#c0504d")
+    axes[1].axhline(0.0, color="black", linewidth=0.8)
+    axes[1].set_xlabel("missed fields |C \\ work|")
+    axes[1].set_ylabel("Δc = C - B'")
+    axes[1].set_title("missed fields vs field-axis gain", fontsize=9)
+    fig.tight_layout()
+    out = display_root / "three_arm_delta.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
 
 
 def _summary(table_path: Path) -> None:
