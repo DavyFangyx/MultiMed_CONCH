@@ -1051,3 +1051,5 @@ python3 scripts/Test_3_compare.py --all
 - 三臂 B'：64/64 方案生成+编码完成；enqueue created=60 existing=4；drain 进行中（cindex 队列 done 567，本批完成 14/64，2 running 48 queued，零 failed）。
 - 续跑命令：`bash scripts/Test_3_queue.sh search_status`；LAML 搜索出 result.json 后 `python3 scripts/Test_3_arms.py generate --arm ksig && ... encode/enqueue/drain --arm ksig`（方案名 `Test_3_greedy_{ds}`）；全部完成后 `python3 scripts/Test_3_arms.py summarize --arm bp && python3 scripts/Test_3_compare.py --all`。
 - 提交：本步代码/脚本/测试/文档入库（results/、results_display/ 按纪律不提交）。
+
+**补记（20:10）**：为避免人工守候搜索结果，新增 `scripts/Test_3_arm_c_chain.sh`（后台轮询：某数据集 `result.json` 落盘即自动 `generate --arm ksig` → `encode` → `enqueue`，15/15 就绪后自动 drain + summarize + `compare --all`），已以 nohup 挂起（日志 `results/Test_3_greedy_vs_works/logs/arm_c_chain.log`）。臂 best 附录（历史最优 `best_subset`）未自动跑，需要时：`python3 scripts/Test_3_arms.py generate/encode/enqueue/drain --arm best`。
