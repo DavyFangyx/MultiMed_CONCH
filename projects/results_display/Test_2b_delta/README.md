@@ -8,7 +8,7 @@
 
 | 文件 | 角色 | 它想表达的含义 |
 |---|---|---|
-| `Main_overview_clinic_cox.png` | 头条图 | 跨方案均值 Δc 条形 + bootstrap CI + 方向一致率直标(Cox)——整体有没有系统性高估 |
+| `Main_overview_clinic_cox.png` | 头条图 | 逐方案两档值对比:**橙 = 论文字段报告值,蓝 = landmark 处理后去泄露值**,bootstrap CI;不用 Δc,直接看两档差距(Cox) |
 | `Main_overview_mlp_clinic_flatten.png` | 头条图 | 同上(MLP) |
 | `Main_delta_summary.csv` | 头条表 | 方案 × 分析器 × 档组汇总(效应量、方向一致率、bootstrap CI;wilcoxon 仅数值参考) |
 | `Appx_forest_{方案}_{分析器}.png` ×20 | 附录图 | 每方案一张森林图:行 = 数据集,误差棒 = 折内配对 95% CI;Δc>0 = 该数据集上被泄露抬高 |

@@ -78,6 +78,8 @@ SURFACE = "#fcfcfb"
 COL_POS = "#e34948"  # Δc > 0（高估证据）
 COL_NEG = "#2a78d6"  # Δc < 0
 COL_HGCN = "#eb6834"  # overview 图中 HGCN 单点标记
+COL_REPORT = "#eb6834"  # 论文字段报告值（橙）
+COL_DELEAKED = "#2a78d6"  # landmark 处理后去泄露值（蓝）
 
 BOOTSTRAP_SEED = 0
 BOOTSTRAP_N = 10_000
@@ -469,6 +471,7 @@ def forest_figure(rows: list[dict], scheme: str, analyzer: str, out_dir: Path) -
 
 
 def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
+    """头条总览：不用 Δc，直接画两档值——橙 = 论文字段报告值，蓝 = landmark 处理后去泄露值。"""
     df = pd.DataFrame(rows)
     g = df[df["analyzer"] == analyzer]
     schemes = sorted(g["scheme"].unique())
@@ -477,6 +480,7 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
     ax.set_facecolor(SURFACE)
 
     x = np.arange(len(schemes))
+    width = 0.30
     rng = np.random.default_rng(BOOTSTRAP_SEED)
     shown_labels: set[str] = set()
     for xi, scheme in zip(x, schemes):
@@ -484,22 +488,24 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
         main15 = sub[sub["tier"] == "main"]
         if len(main15) == 0:  # HGCN 方案只绑定单一癌种，且其癌种不在 main 档时用单点
             main15 = sub
-        delta = main15["delta"].to_numpy(dtype=float)
-        mean_d = float(delta.mean())
-        lo, hi = bootstrap_mean_ci(delta, rng)
-        color = COL_POS if mean_d > 0 else COL_NEG
+        crep = main15["c_report"].to_numpy(dtype=float)
+        cdel = main15["c_deleaked"].to_numpy(dtype=float)
+        m_rep, m_del = float(crep.mean()), float(cdel.mean())
+        lo_r, hi_r = bootstrap_mean_ci(crep, rng)
+        lo_d, hi_d = bootstrap_mean_ci(cdel, rng)
         if scheme.startswith(HGCN_PREFIX):
-            # n=1 单点：钻石标记 + 显式标注，避免与 15 数据集均值误比
+            # n=1 单点：两枚钻石分别标两档值，避免与多数据集均值误比
             label = None
             if "hgcn" not in shown_labels:
                 label = "HGCN (n=1, bound cancer)"
                 shown_labels.add("hgcn")
             ax.scatter(
-                [xi], [mean_d], marker="D", s=56, color=COL_HGCN, zorder=3, label=label
+                [xi - width / 2], [m_rep], marker="D", s=56, color=COL_REPORT, zorder=3, label=label
             )
+            ax.scatter([xi + width / 2], [m_del], marker="D", s=56, color=COL_DELEAKED, zorder=3)
             ax.annotate(
-                f"n={len(main15)}\n{mean_d:+.3f}",
-                xy=(xi, mean_d),
+                f"n={len(main15)}\n{m_rep:.3f} / {m_del:.3f}",
+                xy=(xi, max(m_rep, m_del)),
                 xytext=(0, 6),
                 textcoords="offset points",
                 ha="center",
@@ -507,34 +513,33 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
                 color=MUTED,
             )
         else:
-            sign_key = "pos" if mean_d > 0 else "neg"
-            label = None
-            if sign_key not in shown_labels:
-                label = "Δc > 0" if mean_d > 0 else "Δc < 0"
-                shown_labels.add(sign_key)
+            label_r = None
+            if "rep" not in shown_labels:
+                label_r = "Report (paper fields)"
+                shown_labels.add("rep")
+            label_d = None
+            if "del" not in shown_labels:
+                label_d = "Deleaked (landmark_0)"
+                shown_labels.add("del")
             ax.bar(
-                xi, mean_d, width=0.62, color=color, zorder=2,
-                yerr=[[mean_d - lo], [hi - mean_d]], capsize=3,
+                xi - width / 2, m_rep, width, color=COL_REPORT, zorder=2,
+                yerr=[[m_rep - lo_r], [hi_r - m_rep]], capsize=3,
                 error_kw={"ecolor": MUTED, "elinewidth": 1.5},
-                label=label,
+                label=label_r,
             )
-            dc = float((delta > 0).mean())
-            ax.annotate(
-                f"Δc>0: {dc:.0%} ({int(round(dc*len(delta)))}/{len(delta)})\n{mean_d:+.3f}",
-                xy=(xi, 0),
-                xytext=(0, -14),
-                textcoords="offset points",
-                ha="center",
-                fontsize=7.0,
-                color=MUTED,
+            ax.bar(
+                xi + width / 2, m_del, width, color=COL_DELEAKED, zorder=2,
+                yerr=[[m_del - lo_d], [hi_d - m_del]], capsize=3,
+                error_kw={"ecolor": MUTED, "elinewidth": 1.5},
+                label=label_d,
             )
 
-    ax.axhline(0.0, color=BASELINE, linewidth=1.2, zorder=1)
+    ax.axhline(0.5, color=BASELINE, linewidth=1.2, zorder=1)
     ax.set_xticks(x)
     ax.set_xticklabels(schemes, rotation=28, ha="right", fontsize=8, color=INK)
-    ax.set_ylabel("mean Δc across datasets (main, n_event≥100)")
+    ax.set_ylabel("mean c-index across datasets (main, n_event≥100)")
     ax.set_title(
-        f"{analyzer}: per-scheme mean Δc (report vs deleaked) with bootstrap CI",
+        f"{analyzer}: per-scheme c-index, report (orange) vs deleaked (blue), bootstrap CI",
         fontsize=10.5,
         color=INK,
     )
