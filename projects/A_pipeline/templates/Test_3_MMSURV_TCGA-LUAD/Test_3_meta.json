@@ -1,0 +1,11 @@
+{
+  "dataset": "TCGA-LUAD",
+  "name": "Test_3_MMSURV_TCGA-LUAD",
+  "landmark_tag": "landmark_0",
+  "n_fields": 5,
+  "bank_template_fields": 4,
+  "fallback_fields": [
+    "demographic.age_at_index"
+  ],
+  "source": "work=MMSURV bank模板(landmark_0)"
+}

@@ -1,0 +1,2 @@
+diagnoses_ajcc_pathologic_t_template,diagnoses_ajcc_pathologic_n_template,diagnoses_ajcc_pathologic_m_template,demographic_age_at_index_template,demographic_sex_at_birth_template
+Pathologic T stage is {}.,Pathologic N stage is {}.,Pathologic M stage is {}.,The patient is {} years old at index.,Sex at birth is {}.

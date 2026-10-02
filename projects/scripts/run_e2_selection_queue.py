@@ -16,6 +16,7 @@ for item in (ROOT, ROOT / "src"):
         sys.path.insert(0, str(item))
 
 from common.datasets import load_dataset_configs, resolve_dataset_names
+from greedy.clinic import parse_modalities
 from selection.queue import DEFAULT_ROOT, claim, enqueue, move
 
 
@@ -29,6 +30,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--splits")
     p.add_argument("--out")
     p.add_argument("--max_epochs", type=int)
+    p.add_argument("--inner_analyzer", default="mlp_clinic_flatten",
+                   help="E2 内层 Clinic Analyzer，逗号分隔；每个 analyzer 独立成 conf 与结果目录")
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--univariate_csv")
     p.add_argument("--univariate_config")
@@ -52,13 +55,16 @@ def _landmarks(raw: str) -> list[str]:
     return values
 
 
+LEGACY_ARG_KEYS = {"inner_modality": "inner_analyzer"}
+
+
 def _command(job: dict) -> list[str]:
     args = job["args"]
     command = [sys.executable, str(ROOT / "scripts/run_e2_selection.py")]
     for key, value in args.items():
         if value is None:
             continue
-        command.extend([f"--{key}", str(value)])
+        command.extend([f"--{LEGACY_ARG_KEYS.get(key, key)}", str(value)])
     return command
 
 
@@ -74,12 +80,17 @@ def main(argv=None) -> int:
     if args.workers < 1:
         parser().error("--workers 必须是正整数")
     datasets = resolve_dataset_names(args.dataset, load_dataset_configs(ROOT / "datasets.json"))
+    if not datasets:
+        parser().error("--dataset 解析结果为空（shell 变量未定义时会展开成空串）；请检查 --dataset 取值")
     landmarks = _landmarks(args.landmark_time)
+    analyzers = parse_modalities(args.inner_analyzer)
     queued = []
     for algorithm in _algorithms(args.algo):
-        algorithm_args = copy.copy(args)
-        algorithm_args.algo = algorithm
-        queued.append(enqueue(algorithm_args, datasets, landmarks))
+        for analyzer in analyzers:
+            algorithm_args = copy.copy(args)
+            algorithm_args.algo = algorithm
+            algorithm_args.inner_analyzer = analyzer
+            queued.append(enqueue(algorithm_args, datasets, landmarks))
     root = Path(queued[0]["root"])
     print(json.dumps({"queue_root": str(root),
                       "job_keys": [item["job_key"] for item in queued],

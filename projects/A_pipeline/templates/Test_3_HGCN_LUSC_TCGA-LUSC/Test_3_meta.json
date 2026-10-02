@@ -1,0 +1,15 @@
+{
+  "dataset": "TCGA-LUSC",
+  "name": "Test_3_HGCN_LUSC_TCGA-LUSC",
+  "landmark_tag": "landmark_0",
+  "n_fields": 9,
+  "bank_template_fields": 4,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "derived.years_smoked",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "source": "work=HGCN_LUSC bank模板(landmark_0)"
+}

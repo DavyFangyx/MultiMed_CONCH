@@ -26,8 +26,8 @@ SEARCHERS = {s.name: s for s in (RandomSearcher, GreedySearcher, BeamSearcher,
                                   SEASNoEISearcher, ExhaustiveSearcher)}
 
 
-def _univariate_paths(dataset, landmark_tag, seed, csv_path=None, config_path=None):
-    root = Path("results/univariate/prompt") / landmark_tag / dataset
+def _univariate_paths(dataset, landmark_tag, seed, modality, csv_path=None, config_path=None):
+    root = Path("results/univariate/prompt") / landmark_tag / dataset / modality
     if int(seed) != 0:
         root = root / f"seed_{seed}"
     return Path(csv_path) if csv_path else root / "field_cindex.csv", Path(config_path) if config_path else root / "run_config.json"
@@ -41,14 +41,16 @@ def _parse_folds(value):
     return folds
 
 
-def load_univariate_prior(dataset, landmark_tag, seed, fields, split_dir, *, csv_path=None, config_path=None):
-    table, config = _univariate_paths(dataset, landmark_tag, seed, csv_path, config_path)
+def load_univariate_prior(dataset, landmark_tag, seed, fields, split_dir, *,
+                          csv_path=None, config_path=None, expected_modality="mlp_clinic_flatten"):
+    table, config = _univariate_paths(dataset, landmark_tag, seed, expected_modality, csv_path, config_path)
     if not table.exists() or not config.exists():
         raise FileNotFoundError(
             f"missing seed {seed} univariate prior ({table}); run the existing univariate evaluator first"
         )
     rows = load_univariate_rows(
-        table, expected_fields=fields, run_config_path=config, expected_seed=seed
+        table, expected_fields=fields, run_config_path=config, expected_seed=seed,
+        expected_modality=expected_modality,
     )
     run_config = json.loads(config.read_text(encoding="utf-8"))
     configured_split = run_config.get("split_dir")
@@ -108,6 +110,8 @@ def main(argv=None):
     parser.add_argument("--splits", default=None)
     parser.add_argument("--out", default=None)
     parser.add_argument("--max_epochs", type=int, default=None)
+    parser.add_argument("--inner_analyzer", default=MODALITY,
+                        help="E2 内层 Clinic Analyzer，逗号分隔；每个 analyzer 独立成结果目录。例如 mlp_clinic_flatten 或 clinic_cox")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--univariate_csv", default=None)
     parser.add_argument("--univariate_config", default=None)
@@ -120,10 +124,13 @@ def main(argv=None):
     from common.paths import (DEFAULT_CKPT, DEFAULT_GDC_CLINICAL_DICTIONARY,
                               dataset_field_bank_dir, dataset_field_bank_template_dir)
     from greedy.clinic_evaluator import DEFAULT_CONCH_PYTHON, ClinicSubsetEvaluator
+    from greedy.clinic import ensure_modalities_allowed, parse_modalities
     from greedy.data import load_field_bank, default_analyzer_split_dir
     from common.paths import require_landmark_tag
 
     tag = require_landmark_tag("landmark_none" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}")
+    modalities = parse_modalities(args.inner_analyzer)
+    ensure_modalities_allowed(args.dataset, modalities)
     bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(args.dataset, "prompt", tag)
     loaded = load_field_bank(bank_dir, encoding="prompt")
     fields = tuple(loaded["fields"])
@@ -140,100 +147,111 @@ def main(argv=None):
                    or args.algo == "ANCHOR" or args.anchor_p is not None)
     prior_by_seed = {}
     if needs_prior:
-        for seed in seeds:
-            prior_by_seed[seed] = load_univariate_prior(
-                args.dataset, tag, seed, fields, split_dir,
-                csv_path=args.univariate_csv, config_path=args.univariate_config,
-            )
+        for modality in modalities:
+            for seed in seeds:
+                prior_by_seed[(modality, seed)] = load_univariate_prior(
+                    args.dataset, tag, seed, fields, split_dir,
+                    csv_path=args.univariate_csv, config_path=args.univariate_config,
+                    expected_modality=modality,
+                )
     if args.algo == "ANCHOR" and args.anchor_p is None:
         parser.error("ANCHOR requires --anchor_p in [8, 15], chosen by the timing plan")
     if args.anchor_p is not None:
         if not 8 <= args.anchor_p <= 15:
             parser.error("ANCHOR requires --anchor_p in [8, 15], chosen by the timing plan")
-        fields = anchor_fields(fields, prior_by_seed[0][0], args.anchor_p)
-    field_indices = tuple(full_fields.index(field) for field in fields)
-    if args.out:
-        base = Path(args.out)
-    elif args.algo == "ANCHOR_TIMING":
-        base = Path("results/E2_selection/timing") / args.dataset / tag
-    elif args.anchor_p is not None and args.algo != "ANCHOR":
-        base = Path("results/E2_selection/anchor/prompt") / tag / args.dataset / args.algo
+        fields_by_modality = {
+            modality: anchor_fields(fields, prior_by_seed[(modality, 0)][0], args.anchor_p)
+            for modality in modalities
+        }
     else:
-        base = Path("results/E2_selection/prompt") / tag / args.dataset / args.algo
+        fields_by_modality = {modality: fields for modality in modalities}
+    if args.out:
+        base_root = Path(args.out)
+    elif args.algo == "ANCHOR_TIMING":
+        base_root = Path("results/E2_selection/timing") / args.dataset / tag
+    elif args.anchor_p is not None and args.algo != "ANCHOR":
+        base_root = Path("results/E2_selection/anchor/prompt") / tag / args.dataset / args.algo
+    else:
+        base_root = Path("results/E2_selection/prompt") / tag / args.dataset / args.algo
     index_path = bank_dir / "field_index.json"
     index_hash = hashlib.sha256(index_path.read_bytes()).hexdigest() if index_path.exists() else ""
     split_hashes = tuple(hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(split_dir.glob("splits_*.csv")))
     cache = SQLiteCache(Path("results/E2_selection") / "cache.sqlite")
-    semantic = None
-    if args.algo in {"SEAS", "SEAS-no-ei"}:
-        if args.semantic_embeddings:
-            semantic = np.load(args.semantic_embeddings)
-        else:
-            semantic_root = (Path("results/E2_selection/anchor/prompt") if args.anchor_p is not None
-                             else Path("results/E2_selection/prompt"))
-            semantic = load_or_encode_field_semantics(
-                fields,
-                template_csv=dataset_field_bank_template_dir(args.dataset, tag) / "FIELD_BANK.csv",
-                dictionary_csv=DEFAULT_GDC_CLINICAL_DICTIONARY,
-                checkpoint=args.conch_ckpt or DEFAULT_CKPT,
-                cache_path=semantic_root / tag / args.dataset / "field_semantics.npy",
-                batch_size=args.semantic_batch_size,
-                python_executable=args.conch_python or DEFAULT_CONCH_PYTHON,
-            )
-    elif args.algo in {"SEAS-no-sem", "SEAS-no-int"}:
-        semantic = np.zeros((len(fields), 1), dtype=float)
-    for seed in seeds:
-        out = base / f"seed_{seed}"
-        inner = ClinicSubsetEvaluator(args.dataset, list(full_fields), None, field_bank_dir=bank_dir,
-                                      work_dir=out / "clinic", modality=MODALITY, seed=seed,
-                                      max_epochs=args.max_epochs, split_dir=split_dir,
-                                      landmark_tag=tag, conch_python=args.conch_python)
-        if args.algo == "ANCHOR_TIMING":
-            timing_evaluator = Evaluator(
-                inner, fields, seed=0, budget=budget_for(len(fields)), cache=cache,
-                field_index_hash=index_hash, split_hashes=split_hashes,
-                train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs}, sort_keys=True).encode()).hexdigest(),
-                dataset=args.dataset, landmark_tag=tag, modality=MODALITY,
-                run_id=f"timing-{args.dataset}-{tag}", algorithm=args.algo,
-                jsonl_path=out / "evaluations.jsonl", field_indices=field_indices,
-            )
-            payload = timing_probe(timing_evaluator, fields, np.random.default_rng(0), n_uncached=20)
-            payload.update({"dataset": args.dataset, "landmark_tag": tag})
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "timing.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-            print(json.dumps(payload))
-            if not payload["complete"]:
-                raise RuntimeError(
-                    f"ANCHOR_TIMING collected {payload['measured_uncached']}/"
-                    f"{payload['requested_uncached']} successful uncached evaluations; "
-                    f"see {out / 'evaluations.jsonl'}"
+    for modality in modalities:
+        base = base_root / modality
+        fields = fields_by_modality[modality]
+        field_indices = tuple(full_fields.index(field) for field in fields)
+        semantic = None
+        if args.algo in {"SEAS", "SEAS-no-ei"}:
+            if args.semantic_embeddings:
+                semantic = np.load(args.semantic_embeddings)
+            else:
+                semantic_root = (Path("results/E2_selection/anchor/prompt") if args.anchor_p is not None
+                                 else Path("results/E2_selection/prompt"))
+                cache_name = f"field_semantics__{modality}.npy" if args.anchor_p is not None else "field_semantics.npy"
+                semantic = load_or_encode_field_semantics(
+                    fields,
+                    template_csv=dataset_field_bank_template_dir(args.dataset, tag) / "FIELD_BANK.csv",
+                    dictionary_csv=DEFAULT_GDC_CLINICAL_DICTIONARY,
+                    checkpoint=args.conch_ckpt or DEFAULT_CKPT,
+                    cache_path=semantic_root / tag / args.dataset / cache_name,
+                    batch_size=args.semantic_batch_size,
+                    python_executable=args.conch_python or DEFAULT_CONCH_PYTHON,
                 )
+        elif args.algo in {"SEAS-no-sem", "SEAS-no-int"}:
+            semantic = np.zeros((len(fields), 1), dtype=float)
+        for seed in seeds:
+            out = base / f"seed_{seed}"
+            inner = ClinicSubsetEvaluator(args.dataset, list(full_fields), None, field_bank_dir=bank_dir,
+                                          work_dir=out / "clinic", modality=modality, seed=seed,
+                                          max_epochs=args.max_epochs, split_dir=split_dir,
+                                          landmark_tag=tag, conch_python=args.conch_python)
+            if args.algo == "ANCHOR_TIMING":
+                timing_evaluator = Evaluator(
+                    inner, fields, seed=0, budget=budget_for(len(fields)), cache=cache,
+                    field_index_hash=index_hash, split_hashes=split_hashes,
+                    train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs, "modality": modality}, sort_keys=True).encode()).hexdigest(),
+                    dataset=args.dataset, landmark_tag=tag, modality=modality,
+                    run_id=f"timing-{args.dataset}-{tag}", algorithm=args.algo,
+                    jsonl_path=out / "evaluations.jsonl", field_indices=field_indices,
+                )
+                payload = timing_probe(timing_evaluator, fields, np.random.default_rng(0), n_uncached=20)
+                payload.update({"dataset": args.dataset, "landmark_tag": tag, "modality": modality})
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "timing.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+                print(json.dumps(payload))
+                if not payload["complete"]:
+                    raise RuntimeError(
+                        f"ANCHOR_TIMING collected {payload['measured_uncached']}/"
+                        f"{payload['requested_uncached']} successful uncached evaluations; "
+                        f"see {out / 'evaluations.jsonl'}"
+                    )
+                continue
+            prior = prior_by_seed.get((modality, seed))
+            if prior and args.anchor_p is not None:
+                by_field = {str(row["field"]): row for row in prior[0]}
+                scores = tuple(float(by_field[field]["c_index_mean"]) for field in fields)
+                folds = tuple(_parse_folds(by_field[field]["per_fold"]) for field in fields)
+            else:
+                scores, folds = (prior[1], prior[2]) if prior else (None, None)
+            run_budget = 2 ** len(fields) - 1 if args.algo == "ANCHOR" else budget_for(len(fields))
+            result = run_one(algo=args.algo, seed=seed, fields=fields, inner=inner,
+                             output=out, budget=run_budget, cache=cache,
+                             field_index_hash=index_hash, split_hashes=split_hashes,
+                             train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs}, sort_keys=True).encode()).hexdigest(),
+                             dataset=args.dataset, landmark_tag=tag, encoding="prompt", modality=modality,
+                             univariate_scores=scores, univariate_folds=folds,
+                             semantic_embeddings=semantic, field_indices=field_indices)
+            (out / "run_config.json").write_text(json.dumps({"dataset": args.dataset, "landmark_tag": tag,
+                "encoding": "prompt", "modality": modality, "seed": seed, "val_equals_test": True,
+                "fields": list(fields), "split_dir": str(split_dir.resolve()),
+                "restricted_anchor": args.anchor_p is not None,
+                "p_anchor": args.anchor_p}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps(result.__dict__, ensure_ascii=False, default=list))
+        if args.algo == "ANCHOR_TIMING":
             continue
-        prior = prior_by_seed.get(seed)
-        if prior and args.anchor_p is not None:
-            by_field = {str(row["field"]): row for row in prior[0]}
-            scores = tuple(float(by_field[field]["c_index_mean"]) for field in fields)
-            folds = tuple(_parse_folds(by_field[field]["per_fold"]) for field in fields)
-        else:
-            scores, folds = (prior[1], prior[2]) if prior else (None, None)
-        run_budget = 2 ** len(fields) - 1 if args.algo == "ANCHOR" else budget_for(len(fields))
-        result = run_one(algo=args.algo, seed=seed, fields=fields, inner=inner,
-                         output=out, budget=run_budget, cache=cache,
-                         field_index_hash=index_hash, split_hashes=split_hashes,
-                         train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs}, sort_keys=True).encode()).hexdigest(),
-                         dataset=args.dataset, landmark_tag=tag, encoding="prompt", modality=MODALITY,
-                         univariate_scores=scores, univariate_folds=folds,
-                         semantic_embeddings=semantic, field_indices=field_indices)
-        (out / "run_config.json").write_text(json.dumps({"dataset": args.dataset, "landmark_tag": tag,
-            "encoding": "prompt", "modality": MODALITY, "seed": seed, "val_equals_test": True,
-            "fields": list(fields), "split_dir": str(split_dir.resolve()),
-            "restricted_anchor": args.anchor_p is not None,
-            "p_anchor": args.anchor_p}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(result.__dict__, ensure_ascii=False, default=list))
-    if args.algo == "ANCHOR_TIMING":
-        return
-    from .report import write_algorithm_aggregate
-    write_algorithm_aggregate(base)
+        from .report import write_algorithm_aggregate
+        write_algorithm_aggregate(base)
 
 
 if __name__ == "__main__":

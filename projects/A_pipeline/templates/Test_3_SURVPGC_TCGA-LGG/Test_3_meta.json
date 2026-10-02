@@ -1,0 +1,13 @@
+{
+  "dataset": "TCGA-LGG",
+  "name": "Test_3_SURVPGC_TCGA-LGG",
+  "landmark_tag": "landmark_0",
+  "n_fields": 6,
+  "bank_template_fields": 3,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition"
+  ],
+  "source": "work=SURVPGC bank模板(landmark_0)"
+}

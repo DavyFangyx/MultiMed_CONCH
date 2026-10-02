@@ -1,0 +1,12 @@
+{
+  "dataset": "TCGA-COAD",
+  "name": "Test_3_SURVPGC_TCGA-COAD",
+  "landmark_tag": "landmark_0",
+  "n_fields": 6,
+  "bank_template_fields": 4,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "diagnoses[].ajcc_pathologic_stage"
+  ],
+  "source": "work=SURVPGC bank模板(landmark_0)"
+}

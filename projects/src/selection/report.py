@@ -60,6 +60,7 @@ def seed_record(seed_dir) -> dict:
         "dataset": config["dataset"],
         "landmark_tag": config["landmark_tag"],
         "algorithm": result["algorithm"],
+        "modality": config["modality"],
         "seed": int(result["seed"]),
         "recommended_subset": list(result.get("recommended_subset") or ()),
         "recommended_k": int(recommended["k"]),
@@ -97,6 +98,7 @@ def aggregate_seed_records(records) -> dict:
         "dataset": rows[0]["dataset"],
         "landmark_tag": rows[0]["landmark_tag"],
         "algorithm": rows[0]["algorithm"],
+        "modality": rows[0]["modality"],
         "n_seeds": len(rows),
         "seeds": [int(row["seed"]) for row in rows],
         "cv_c_mean": float(np.mean(means)),
@@ -185,15 +187,15 @@ def anytime_curve(evaluations, budget):
 def evaluate_h1(seed_rows) -> dict:
     grouped = defaultdict(lambda: defaultdict(list))
     for row in seed_rows:
-        grouped[(row["dataset"], row["landmark_tag"])][row["algorithm"]].append(row)
+        grouped[(row["dataset"], row["landmark_tag"], row["modality"])][row["algorithm"]].append(row)
     instances = []
-    for (dataset, landmark), algorithms in sorted(grouped.items()):
+    for (dataset, landmark, modality), algorithms in sorted(grouped.items()):
         greedy_name = next((name for name in algorithms if name.startswith("A2_")), None)
         full_name = next((name for name in algorithms if name.startswith("A0_full")), None)
         if not greedy_name or not full_name:
             continue
         comparison = paired_algorithm_comparison(algorithms[greedy_name], algorithms[full_name])
-        instances.append({"dataset": dataset, "landmark_tag": landmark, **comparison,
+        instances.append({"dataset": dataset, "landmark_tag": landmark, "modality": modality, **comparison,
                           "meets_delta": comparison["mean_difference"] >= DELTA})
     successes = sum(row["meets_delta"] for row in instances)
     return {"instances": instances, "n_instances": len(instances), "n_meets_delta": successes,
@@ -204,10 +206,10 @@ def evaluate_h1(seed_rows) -> dict:
 def evaluate_h2(seed_rows) -> dict:
     aggregate = defaultdict(list)
     for row in seed_rows:
-        aggregate[(row["dataset"], row["landmark_tag"], row["algorithm"])].append(float(row["cv_c_mean"]))
+        aggregate[(row["dataset"], row["landmark_tag"], row["algorithm"], row["modality"])].append(float(row["cv_c_mean"]))
     by_instance = defaultdict(dict)
-    for (dataset, landmark, algorithm), values in aggregate.items():
-        by_instance[(dataset, landmark)][algorithm] = float(np.mean(values))
+    for (dataset, landmark, algorithm, modality), values in aggregate.items():
+        by_instance[(dataset, landmark, modality)][algorithm] = float(np.mean(values))
     baseline_sets = [
         {name for name in algorithms if name.startswith(BASELINES)}
         for algorithms in by_instance.values()
@@ -243,10 +245,10 @@ def _plot_anytime(seed_rows, display_root):
     import matplotlib.pyplot as plt
     grouped = defaultdict(list)
     for row in seed_rows:
-        grouped[(row["dataset"], row["landmark_tag"])].append(row)
+        grouped[(row["dataset"], row["landmark_tag"], row["modality"])].append(row)
     out = Path(display_root) / "anytime"
     out.mkdir(parents=True, exist_ok=True)
-    for (dataset, landmark), rows in grouped.items():
+    for (dataset, landmark, modality), rows in grouped.items():
         fig, ax = plt.subplots(figsize=(7, 4.5))
         references = {}
         for row in rows:
@@ -269,10 +271,10 @@ def _plot_anytime(seed_rows, display_root):
                                        label=f'k_sig={k_sig}, seed {row["seed"]}')
         for name, values in sorted(references.items()):
             ax.axhline(float(np.mean(values)), linestyle="--", label=name)
-        ax.set(xlabel="Logical evaluation", ylabel="Best CV c-index", title=f"{dataset} | {landmark}")
+        ax.set(xlabel="Logical evaluation", ylabel="Best CV c-index", title=f"{dataset} | {landmark} | {modality}")
         ax.legend(fontsize=7, ncol=2)
         fig.tight_layout()
-        fig.savefig(out / f"{dataset}__{landmark}.png", dpi=180)
+        fig.savefig(out / f"{dataset}__{landmark}__{modality}.png", dpi=180)
         plt.close(fig)
 
 
@@ -281,15 +283,15 @@ def _plot_anchor_gaps(seed_rows, display_root):
     by_instance = defaultdict(dict)
     for row in seed_rows:
         if row["seed"] == 0:
-            by_instance[(row["dataset"], row["landmark_tag"])][row["algorithm"]] = row
+            by_instance[(row["dataset"], row["landmark_tag"], row["modality"])][row["algorithm"]] = row
     gap_rows = []
-    for (dataset, landmark), algorithms in sorted(by_instance.items()):
+    for (dataset, landmark, modality), algorithms in sorted(by_instance.items()):
         anchor = algorithms.get("ANCHOR")
         if not anchor or not anchor["metadata"].get("restricted_exact", False):
             continue
         for name, row in sorted(algorithms.items()):
             if name != "ANCHOR" and set(row["fields"]) == set(anchor["fields"]):
-                gap_rows.append({"instance": f"{dataset}/{landmark}", "algorithm": name,
+                gap_rows.append({"instance": f"{dataset}/{landmark}/{modality}", "algorithm": name,
                                  "optimality_gap": optimality_gap(anchor["best_cv_c_mean"], row["best_cv_c_mean"])})
     _write_csv(Path(display_root) / "anchor_gap" / "optimality_gap.csv", gap_rows)
     if gap_rows:
@@ -309,11 +311,11 @@ def _plot_landmarks(aggregates, display_root):
     import matplotlib.pyplot as plt
     grouped = defaultdict(list)
     for row in aggregates:
-        grouped[row["algorithm"]].append(row)
+        grouped[(row["algorithm"], row["modality"])].append(row)
     out = Path(display_root) / "landmark"
     out.mkdir(parents=True, exist_ok=True)
     order = ("landmark_0", "landmark_365", "landmark_730", "landmark_none")
-    for algorithm, rows in grouped.items():
+    for (algorithm, modality), rows in grouped.items():
         values = defaultdict(list)
         for row in rows:
             values[row["landmark_tag"]].append(row["cv_c_mean"])
@@ -322,9 +324,9 @@ def _plot_landmarks(aggregates, display_root):
         means = [float(np.mean(values[tag])) if values[tag] else math.nan for tag in order]
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.plot(order, means, marker="o")
-        ax.set(ylabel="Mean CV c-index", title=algorithm)
+        ax.set(ylabel="Mean CV c-index", title=f"{algorithm} | {modality}")
         fig.tight_layout()
-        fig.savefig(out / f"{algorithm}.png", dpi=180)
+        fig.savefig(out / f"{algorithm}__{modality}.png", dpi=180)
         plt.close(fig)
 
 
@@ -339,7 +341,7 @@ def generate_report(results_root="results/E2_selection/prompt", display_root="re
     primary_rows = [row for row in seed_rows if not row["restricted_anchor"]]
     grouped = defaultdict(list)
     for row in primary_rows:
-        grouped[(row["dataset"], row["landmark_tag"], row["algorithm"])].append(row)
+        grouped[(row["dataset"], row["landmark_tag"], row["algorithm"], row["modality"])].append(row)
     aggregates = [aggregate_seed_records(rows) for _, rows in sorted(grouped.items())]
     main_rows = [{key: value for key, value in row.items() if key != "seed_results"} for row in aggregates]
     display_root = Path(display_root)

@@ -1,0 +1,14 @@
+{
+  "description": "Test_3 对照方案 Test_3_INTEGRATIVE_DNN_TCGA-LAML (来源: work=INTEGRATIVE_DNN bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_INTEGRATIVE_DNN_TCGA-LAML",
+  "source": "gdc",
+  "fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].ajcc_pathologic_stage"
+  ],
+  "datasets": [
+    "TCGA-LAML"
+  ]
+}

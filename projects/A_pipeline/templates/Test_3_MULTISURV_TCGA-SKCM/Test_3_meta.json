@@ -1,0 +1,18 @@
+{
+  "dataset": "TCGA-SKCM",
+  "name": "Test_3_MULTISURV_TCGA-SKCM",
+  "landmark_tag": "landmark_0",
+  "n_fields": 10,
+  "bank_template_fields": 2,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "demographic.race",
+    "project.project_id",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].synchronous_malignancy",
+    "derived.pharmaceutical_therapy",
+    "derived.radiation_therapy"
+  ],
+  "source": "work=MULTISURV bank模板(landmark_0)"
+}

@@ -1,0 +1,15 @@
+{
+  "dataset": "TCGA-OV",
+  "name": "Test_3_MMSURV_TCGA-OV",
+  "landmark_tag": "landmark_0",
+  "n_fields": 5,
+  "bank_template_fields": 0,
+  "fallback_fields": [
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth"
+  ],
+  "source": "work=MMSURV bank模板(landmark_0)"
+}

@@ -1,0 +1,15 @@
+{
+  "dataset": "TCGA-BLCA",
+  "name": "Test_3_MULTISURV_TCGA-BLCA",
+  "landmark_tag": "landmark_0",
+  "n_fields": 10,
+  "bank_template_fields": 5,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "project.project_id",
+    "diagnoses[].ajcc_pathologic_stage",
+    "derived.pharmaceutical_therapy",
+    "derived.radiation_therapy"
+  ],
+  "source": "work=MULTISURV bank模板(landmark_0)"
+}

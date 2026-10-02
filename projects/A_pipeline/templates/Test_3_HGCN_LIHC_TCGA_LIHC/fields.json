@@ -1,0 +1,17 @@
+{
+  "description": "Test_3 对照方案 Test_3_HGCN_LIHC_TCGA_LIHC (来源: work=HGCN_LIHC bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_HGCN_LIHC_TCGA_LIHC",
+  "source": "gdc",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "follow_ups[].other_clinical_attributes[].bmi",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA_LIHC"
+  ]
+}

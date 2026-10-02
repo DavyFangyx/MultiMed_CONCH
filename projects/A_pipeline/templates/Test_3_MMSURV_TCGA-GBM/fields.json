@@ -1,0 +1,16 @@
+{
+  "description": "Test_3 对照方案 Test_3_MMSURV_TCGA-GBM (来源: work=MMSURV bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_MMSURV_TCGA-GBM",
+  "source": "gdc",
+  "fields": [
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_m",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth"
+  ],
+  "datasets": [
+    "TCGA-GBM"
+  ]
+}

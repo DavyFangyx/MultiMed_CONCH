@@ -1,0 +1,12 @@
+{
+  "dataset": "TCGA-LAML",
+  "name": "Test_3_INTEGRATIVE_DNN_TCGA-LAML",
+  "landmark_tag": "landmark_0",
+  "n_fields": 3,
+  "bank_template_fields": 1,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "diagnoses[].ajcc_pathologic_stage"
+  ],
+  "source": "work=INTEGRATIVE_DNN bank模板(landmark_0)"
+}

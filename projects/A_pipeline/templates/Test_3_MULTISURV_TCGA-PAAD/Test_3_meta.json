@@ -1,0 +1,16 @@
+{
+  "dataset": "TCGA-PAAD",
+  "name": "Test_3_MULTISURV_TCGA-PAAD",
+  "landmark_tag": "landmark_0",
+  "n_fields": 10,
+  "bank_template_fields": 4,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "project.project_id",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].synchronous_malignancy",
+    "derived.pharmaceutical_therapy",
+    "derived.radiation_therapy"
+  ],
+  "source": "work=MULTISURV bank模板(landmark_0)"
+}

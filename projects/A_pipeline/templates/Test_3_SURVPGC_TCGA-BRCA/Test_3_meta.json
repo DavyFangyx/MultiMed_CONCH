@@ -1,0 +1,13 @@
+{
+  "dataset": "TCGA-BRCA",
+  "name": "Test_3_SURVPGC_TCGA-BRCA",
+  "landmark_tag": "landmark_0",
+  "n_fields": 6,
+  "bank_template_fields": 3,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].ajcc_pathologic_stage"
+  ],
+  "source": "work=SURVPGC bank模板(landmark_0)"
+}

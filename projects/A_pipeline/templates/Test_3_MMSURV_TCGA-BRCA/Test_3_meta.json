@@ -1,0 +1,12 @@
+{
+  "dataset": "TCGA-BRCA",
+  "name": "Test_3_MMSURV_TCGA-BRCA",
+  "landmark_tag": "landmark_0",
+  "n_fields": 5,
+  "bank_template_fields": 3,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "demographic.sex_at_birth"
+  ],
+  "source": "work=MMSURV bank模板(landmark_0)"
+}

@@ -1,0 +1,14 @@
+{
+  "dataset": "TCGA-LUAD",
+  "name": "Test_3_HGCN_LUAD_TCGA-LUAD",
+  "landmark_tag": "landmark_0",
+  "n_fields": 8,
+  "bank_template_fields": 4,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "source": "work=HGCN_LUAD bank模板(landmark_0)"
+}

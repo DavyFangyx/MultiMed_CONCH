@@ -1,0 +1,13 @@
+{
+  "dataset": "TCGA_LIHC",
+  "name": "Test_3_HGCN_LIHC_TCGA_LIHC",
+  "landmark_tag": "landmark_0",
+  "n_fields": 6,
+  "bank_template_fields": 3,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "source": "work=HGCN_LIHC bank模板(landmark_0)"
+}

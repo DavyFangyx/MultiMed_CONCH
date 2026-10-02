@@ -1,0 +1,17 @@
+{
+  "description": "Test_3 对照方案 Test_3_SURVPGC_TCGA_LIHC (来源: work=SURVPGC bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_SURVPGC_TCGA_LIHC",
+  "source": "gdc",
+  "fields": [
+    "diagnoses[].primary_diagnosis",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].ajcc_pathologic_stage",
+    "diagnoses[].ajcc_staging_system_edition",
+    "demographic.race"
+  ],
+  "datasets": [
+    "TCGA_LIHC"
+  ]
+}

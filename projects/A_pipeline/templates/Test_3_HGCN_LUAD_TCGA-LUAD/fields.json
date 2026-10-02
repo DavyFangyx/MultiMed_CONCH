@@ -1,0 +1,19 @@
+{
+  "description": "Test_3 对照方案 Test_3_HGCN_LUAD_TCGA-LUAD (来源: work=HGCN_LUAD bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_HGCN_LUAD_TCGA-LUAD",
+  "source": "gdc",
+  "fields": [
+    "demographic.race",
+    "demographic.age_at_index",
+    "demographic.sex_at_birth",
+    "diagnoses[].morphology",
+    "diagnoses[].prior_malignancy",
+    "diagnoses[].site_of_resection_or_biopsy",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "datasets": [
+    "TCGA-LUAD"
+  ]
+}

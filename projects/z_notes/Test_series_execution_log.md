@@ -978,3 +978,76 @@ python3 results_display/scripts/Test_1b_dataset_cindex.py --audit    # 追加 3 
 failed），3 个 drainer（GPU 7/2/6）+ watch 后台运行（自愈：drainer 死后拉起 / failed 重试 ≤3 / running 回收 /
 全 done 自动 report）。Δc_field 表与 `results_display/Test_1a_field_level/` 已按现有 3 数据集出数，
 其余 12 个数据集完成后重跑同一脚本即补齐（脚本幂等、diff=0）。
+
+---
+
+## S6: Test_3 字段轴链落地（贪婪 vs 工作组合三臂，2026-10-02）
+
+- 时间 / 执行者：2026-10-02 / Claude（S6 执行 agent）
+- 目标（spec §7）：① 接管前任遗留的 E2 基础设施改动并补齐 sig_stop 早停测试；② 校验 landmark_0 搜索池；③ R13 主集（n_event ≥ 100，15 个）A2_greedy × mlp_clinic_flatten × seed 0 × 5 折搜索（D4 早停 + 历史最优）；④ 三臂对照——臂 B（工作组合 × scheme 模板，复用 Test_2b）、臂 B'（工作组合 × bank 模板）、臂 C（贪婪最优 × bank 模板），头条 Δc = C − B'，交叉核对 C − B；⑤ 遗漏字段清单（C \ 工作组合，附 bank 语义）+ 跨四工作组合的覆盖率表。
+
+### 输入
+
+- `z_notes/Test_series_spec.md`（§2.4 绑定 / §7 Test_3 / §9 Git / §10 日志 / §11 禁令）、`z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`、experiment_list Test_3 行、本日志 R7（D4 确认）/R13。
+- 搜索池：`outputs/{ds}/field_bank/prompt/landmark_0/`（prompt bank + CONCH 嵌入）——**先核验再放量**：15/15 主集齐备（field_index.json + 每患者 pt；行数=患者数），本次未新增生成（0 个缺失）。
+- 数据集名单：`results/Test_0_dataset_availability/manifest.csv` 与 `rawdata_stats/_shared/event_summary.csv` 双源交叉核对（`Test_3_common.load_n_event`，不一致即抛错），主集 = n_event ≥ 100 的 15 个，**不硬编码**；`TCGA_LIHC` 为下划线命名（按 "TCGA" 前缀匹配，严格 "TCGA-" 会漏成 14）。
+
+### 遗留设施接管（采纳的他人未提交修改，全部纳入本次提交）
+
+- `scripts/run_e2_selection_queue.py`：新增 `--inner_analyzer`（逗号分隔，每个 analyzer 独立 conf/结果目录）+ `LEGACY_ARG_KEYS={"inner_modality"→"inner_analyzer"}` 兼容映射 + 空 dataset 守卫。
+- `src/selection/runner.py`：多 analyzer 循环（输出目录 `.../{modality}/seed_0`），prior/anchor 按 (modality, seed) 取，timing train_args_hash 并入 modality。
+- `src/selection/report.py`：modality 升为分组维度（聚合/H1/H2/anytime/anchor-gap 图与 CSV 名称均含 modality）。
+- `tests/test_e2_queue.py`：新增 legacy 键映射与「job_key 随 inner_analyzer 分家」两测试。
+- 未改动 E 组算法本体（`stopping.py` 的 SigStop(delta=0.005, patience=3) 与 A2_greedy 均为既提交版本，只读复用；本步新增 `tests/test_e2_greedy_sigstop.py` 锁定 D4 口径：三连无改进（gain<0.005 且 Wilcoxon p≥0.05）触发、混合情形复位、stop 时 `recommended_subset`=k_sig 点、`best_subset`=历史最优、缓存复用零物理训练）。
+
+### 命令与参数（本步产物全部在 `results/Test_3_greedy_vs_works/`）
+
+```bash
+# 搜索：15 主集 × A2_greedy × landmark_0 × mlp_clinic_flatten × seed 0（9 槽并发，避开 GPU 7=S5b）
+python3 scripts/Test_3_search_queue.py enqueue --gpus 1,0,3,4,5,6,4,5,3
+nohup python3 scripts/Test_3_search_queue.py watch --gpus 1,0,3,4,5,6,4,5,3 --interval 60 &
+# 三臂 B'：generate → encode（conch env，GPU 1）→ enqueue → drain（GPU 1，workers 2）
+python3 scripts/Test_3_arms.py generate --arm bp
+python3 scripts/Test_3_arms.py encode   --arm bp --gpu 1 --parallel 3
+python3 scripts/Test_3_arms.py enqueue  --arm bp
+python3 scripts/Test_3_arms.py drain    --gpu 1 --workers 2
+python3 scripts/Test_3_arms.py summarize --arm bp
+# 三臂总表（臂 C 待搜索 result.json 落盘后 generate --arm ksig 再补齐）
+python3 scripts/Test_3_compare.py --all
+# 总入口：bash scripts/Test_3_queue.sh {search_watch|arms_encode_bg|arms_drain|compare|all_status}
+```
+
+- A_pipeline 两处缺口（`expand_cindex_jobs` 静态方案白名单拒自定义方案；`encode.run_encode` 硬设 `CUDA_VISIBLE_DEVICES=DEFAULT_GPU="7"`）**不改其源文件**（他人工作树有未提交修改），由 `scripts/Test_3_pipeline_one.py` 进程内补：运行时把 Test_3 方案追加进 `config.PAPER_SCHEMES`（与 cindex 共享同一 list 对象）并改写 paths/encode 的 `DEFAULT_GPU`；磁盘文件零改动（测试断言 schemes.json 字节不变）。
+- 方案登记：64 个 Test_3_* 自定义方案写入 `A_pipeline/templates/{name}/`（fields.json/template.csv/Test_3_meta.json）并登记 `schemes.json` `_schemes`（幂等）；模板取自 `templates/field_bank/{ds}/landmark_0/FIELD_BANK.csv` 的 template 列，字段无 bank 句子时回退工作方案自身句子并记入 meta 的 `fallback_fields`（控制变量：字段集与工作组合**逐字段一致**，只换模板）。
+- 表目录坑（记录）：`scripts/s4_enqueue.py` 的表键是 `{dataset}[gdc]`，summarize 必须传 `dataset_name=f"{dataset}[gdc]"`，否则 Test_3 行会另建无后缀表与臂 B 行分家。
+
+### 产物
+
+- `results/Test_3_greedy_vs_works/search/{ds}/mlp_clinic_flatten/seed_0/{evaluations.jsonl,result.json}`（进行中）。
+- `results/Test_3_greedy_vs_works/three_arm.csv`、`missed_fields.csv`、`compare/{ds}__{work}.json`、`search_summary.csv`（搜索完成后由 report 写）；展示副本 `results_display/Test_3_greedy_vs_works/`（不提交）。
+- 新增代码：`scripts/Test_3_{common,search_queue,custom_scheme,compare,arms,pipeline_one}.py`、`scripts/Test_3_queue.sh`；测试：`tests/test_test3_{common,search_queue,arms_chain}.py`、`tests/test_e2_greedy_sigstop.py`。
+
+### 审计
+
+- 单测：新 4 个 E2/Test_3 测试文件 + 全量 `python3 -m pytest tests/`（base 3.13.12）= **185 passed, 6 skipped**，无回归。
+- 三臂链路冒烟（TCGA-LAML，MULTISURV 例）：B（Test_2b 表内行）0.5436 vs B'（bank 模板）**0.5997** vs C（待搜索）；compare 数学路径以 B' 冒充 C 验证 Δc 与遗漏字段链路通过；臂 C 缺行时按预期 `MissingArm` 记 pending 不中断。
+- 手算抽查 ≥2（5 折 val_cindex 均值/标准差 vs 表内行，1e-9 级一致）：TCGA-LAML MULTISURV B' = 0.599741142836（std ddof=1 = 0.074326）；TCGA-BLCA MULTISURV B' = 0.652529260943（std = 0.054227）。
+- 控制变量核对：抽查 (LAML/LIHC/BRCA) 的 B' fields.json 字段集与对应 work 方案**完全一致**，datasets 标签正确。
+- 遗留差异（不处理，仅记录）：`A_pipeline/templates/Test_3_MULTISURV_TCGA-ACC/`（R12 改名遗留、未登记 schemes.json、ACC 不在主集）保持原样不动。
+
+### 偏差与原因
+
+- **方案 C 位号取自 `recommended_subset`（sig_stop 参考点）**，历史最优 `best_subset` 另存 result.json 并在 report/status 中同报（D4 要求）——臂 C 用 recommended，附录可另行核对 best。
+- 三臂表目录初版误建为无后缀（`results/A_manual_landmark/TCGA-LAML/`），已删除并按 S4 约定改回 `{dataset}[gdc]`。
+- encode 的 GPU：任务要求避开 GPU 7（S5b 占用），编码与 cindex 训练均走 GPU 1（编码期显存 ~1.3 GB/进程）；搜索 drainer 槽位 `1,0,3,4,5,6` 有重复条目（每卡多槽）以在他人低载 GPU 上并发，绝不触碰他人进程。
+
+### 决策点
+
+- 无新增待决项。固化：① 搜索池 = landmark_0 prompt bank（与 Test_3b 取消后的口径一致）；② 臂 C 位号 = recommended_subset，best 附录；③ 遗漏字段按字段名集合差（C \ work），语义列取 bank 模板句子；④ A_pipeline 缺口走进程内补丁，源文件零改动。
+
+### 状态
+
+- 搜索：9/15 在跑（BLCA/BRCA/COAD/GBM/HNSC/KIRC/LAML/LGG/LUAD），6 个待槽（LUSC/OV/PAAD/SKCM/STAD/LIHC）；截至本条目 LAML 26 evals、KIRC 12、BLCA 11、COAD 10（池规模 21–39 字段/数据集）；watch 自愈进程已挂（`results/Test_3_greedy_vs_works/logs/watch.log`），全 done 自动写 `search_summary.csv` 并退出。
+- 三臂 B'：64/64 方案生成+编码完成；enqueue created=60 existing=4；drain 进行中（cindex 队列 done 567，本批完成 14/64，2 running 48 queued，零 failed）。
+- 续跑命令：`bash scripts/Test_3_queue.sh search_status`；LAML 搜索出 result.json 后 `python3 scripts/Test_3_arms.py generate --arm ksig && ... encode/enqueue/drain --arm ksig`（方案名 `Test_3_greedy_{ds}`）；全部完成后 `python3 scripts/Test_3_arms.py summarize --arm bp && python3 scripts/Test_3_compare.py --all`。
+- 提交：本步代码/脚本/测试/文档入库（results/、results_display/ 按纪律不提交）。

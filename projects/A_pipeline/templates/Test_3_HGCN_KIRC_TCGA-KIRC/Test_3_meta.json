@@ -1,0 +1,15 @@
+{
+  "dataset": "TCGA-KIRC",
+  "name": "Test_3_HGCN_KIRC_TCGA-KIRC",
+  "landmark_tag": "landmark_0",
+  "n_fields": 8,
+  "bank_template_fields": 3,
+  "fallback_fields": [
+    "demographic.age_at_index",
+    "exposures[].pack_years_smoked",
+    "derived.years_smoked",
+    "derived.radiation_therapy",
+    "derived.pharmaceutical_therapy"
+  ],
+  "source": "work=HGCN_KIRC bank模板(landmark_0)"
+}
