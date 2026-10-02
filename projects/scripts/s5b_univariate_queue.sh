@@ -16,7 +16,7 @@
 # 与 t0 臂的唯一差异（控制变量 = 取值 mask）：
 #   raw 臂: --landmark_time none --extraction_mask off --label_tag landmark_0
 #           --field_bank_root|--embeddings_root outputs/_raw  --results_dir results/univariate_raw
-#           --queue_root Clinic_Analyzer/configs/univariate_raw
+#           --queue_root Clinic_Analyzer/configs/Test_1a_off
 #
 # 用法（在 projects/ 根目录）：
 #   bash scripts/s5b_univariate_queue.sh bank        # 构建 raw field bank（前台；已存在的跳过）

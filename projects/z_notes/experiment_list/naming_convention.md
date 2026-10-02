@@ -33,10 +33,10 @@
 
 | 步 | 内容 | 状态 |
 |---|---|---|
-| 1 | 公约文档 + README | 本文档 |
-| 2 | 代码路径登记(`src/common/paths.py`)+ 新旧兼容 | 待做 |
-| 3 | configs 家族物理迁移(drain-gated) | 待做 |
-| 4 | results / results_display 物理迁移(drain-gated) | 待做 |
+| 1 | 公约文档 + README | 完成(commit c08bf04) |
+| 2 | 代码路径登记(`src/common/paths.py`)+ 新旧兼容 | 完成(commit 60148c6) |
+| 3 | configs 家族物理迁移 | 完成(本步):univariate→Test_1a_t0、univariate_raw→Test_1a_off、E2_selection→Test_3_search(9 个 stale running 恢复回 queue)、A_manual 拆分→Test_2b_arms(553)+Test_3_arms(64);空遗留 queue/running/done/failed、z_exp_gen 已删 |
+| 4 | results / results_display 物理迁移 | 待做 |
 
 ## 过渡规则
 

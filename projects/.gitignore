@@ -14,13 +14,7 @@ results/**
 results_display/**
 rawdata_stats/**
 Clinic_Analyzer/results/**
-Clinic_Analyzer/configs/queue/**
-Clinic_Analyzer/configs/done/**
-Clinic_Analyzer/configs/failed/**
-Clinic_Analyzer/configs/running/**
-Clinic_Analyzer/configs/greedy/**
-Clinic_Analyzer/configs/A_manual/**
-Clinic_Analyzer/configs/univariate/**
+Clinic_Analyzer/configs/Test_*/**
 
 # Intermediate and result data files
 *.csv

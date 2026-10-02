@@ -27,7 +27,7 @@ ENCODE_PARALLEL="${S4_ENCODE_PARALLEL:-2}"             # 编码并行数（GPU 7
 ENCODE_LIST="/tmp/s4_encode_queue.tsv"
 ENCODE_LOG="A_pipeline/S4_encode.log"
 DRAIN_LOG="A_pipeline/S4_drain.log"
-QUEUE_ROOT="Clinic_Analyzer/configs/A_manual"
+QUEUE_ROOT="Clinic_Analyzer/configs/Test_2b_arms"
 
 cmd_encode() {
     $PYTHON3 scripts/s4_enqueue.py --emit-encodes | grep -E '^[123]\|TCGA' > "$ENCODE_LIST"
@@ -100,7 +100,7 @@ cmd_validate() {
 # 手动续跑等价操作：s4_enqueue.py --slice <下一波> + 重跑 drain。
 cmd_watch() {
     nohup bash -c '
-        root="Clinic_Analyzer/configs/A_manual"
+        root="Clinic_Analyzer/configs/Test_2b_arms"
         waves="A1 A1H B1 B1H A2 B2 A3 B3"
         python3="$1"; gpu="$2"; workers="$3"
         last_sum=0
