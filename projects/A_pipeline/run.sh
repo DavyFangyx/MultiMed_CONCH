@@ -12,7 +12,7 @@
 #       --dataset all \
 #       --scheme manual \
 #       --encoding text \
-#       --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
+#       --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +24,7 @@ export PYTHONUNBUFFERED=1
 
 if [ "$#" -eq 0 ]; then
     echo "usage: bash A_pipeline/run.sh [cindex args...]"
-    echo "example: CUDA_VISIBLE_DEVICES=2 bash A_pipeline/run.sh --workers 16 --dataset all --scheme manual --encoding text --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten"
+    echo "example: CUDA_VISIBLE_DEVICES=2 bash A_pipeline/run.sh --workers 16 --dataset all --scheme manual --encoding text --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten"
     exit 2
 fi
 

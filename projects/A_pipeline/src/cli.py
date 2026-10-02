@@ -105,7 +105,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
         "--landmark_time",
         default=None,
         help=(
-            "H1b landmark 起点（天）：0/365/730/none。不传=旧行为（产物与 cindex 全部走现有目录）；"
+            "Test_1b landmark 起点（天）：0/365/730/none。不传=旧行为（产物与 cindex 全部走现有目录）；"
             "数字=经典 landmark 三要件：只保留 t_hi <= T 的 timed 槽位、排除 ground_truth_time <= T 的患者、"
             "label 时间改为 gt - T；产物落 outputs/{dataset}/A_manual/{scheme}/landmark_{T}/；"
             "cindex 传 0/365/730/none 时把该臂写入 results/A_manual_landmark/。"

@@ -37,7 +37,7 @@ E2 比较字段子集搜索方法在相同评估协议和逻辑预算下的表�
 - `src/greedy/clinic_evaluator.py`：物化子集并调用 Clinic Analyzer。
 - `src/greedy/embeddings.py`：按字段索引切分患者 Field Bank embedding。
 - `src/greedy/clinic.py`：读取每折 c-index 和复用已有训练结果。
-- `results/univariate/prompt/{landmark_tag}/{dataset}/field_cindex.csv`：单字段结果。
+- `results/univariate/prompt/{landmark_tag}/{dataset}/{analyzer}/field_cindex.csv`：单字段结果。
 
 现有 split 的 `val` 和 `test` 是同一批患者。E2 直接使用这 5 折搜索，因此统一术语如下：
 
@@ -49,7 +49,7 @@ E2 比较字段子集搜索方法在相同评估协议和逻辑预算下的表�
 现有单字段结果覆盖四个目标 landmark。每次读取前必须校验：
 
 - `run_config.json` 中 encoding 为 `prompt`。
-- modality 为 `mlp_clinic_flatten`。
+- modality 为 `--inner_analyzer` 指定的 analyzer。
 - split 目录与当前队列一致。
 - `field_cindex.csv` 的字段集合和当前 `field_index.json` 完全一致。
 - seed 一致；现有无 seed 子目录的结果视为 seed 0。
@@ -491,7 +491,7 @@ python scripts/run_e2_selection.py \
 默认输出：
 
 ```text
-results/E2_selection/prompt/{landmark_tag}/{dataset}/{algorithm}/
+results/E2_selection/prompt/{landmark_tag}/{dataset}/{algorithm}/{analyzer}/
   seed_{seed}/
     evaluations.jsonl
     result.json
@@ -506,7 +506,7 @@ results_display/E2_selection/prompt/
   landmark/
 ```
 
-单字段补跑仍写现有 `results/univariate/...` 体系，并增加 seed 子目录；不得覆盖 seed 0 的已有文件。
+单字段补跑仍写现有 `results/univariate/...` 体系（新增 `{analyzer}` 子目录），并增加 seed 子目录；不得覆盖已有文件。
 
 ## 14. 验收标准
 

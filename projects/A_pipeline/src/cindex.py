@@ -31,7 +31,7 @@ DEFAULT_ANALYZER_MODALITY = DEFAULT_INNER_MODALITY
 DEFAULT_RESULTS_ROOT = PROJECT_ROOT / "results"
 DEFAULT_EXP_GROUP = "A_manual"
 ANALYZER_EXP_GROUP = f"{DEFAULT_EXP_GROUP}/runs"
-# H1b: landmark arms live in their own subtree so results/A_manual is never touched.
+# Test_1b: landmark arms live in their own subtree so results/A_manual is never touched.
 DEFAULT_LANDMARK_EXP_GROUP = "A_manual_landmark"
 LANDMARK_ANALYZER_EXP_GROUP = f"{DEFAULT_LANDMARK_EXP_GROUP}/runs"
 DEFAULT_QUEUE_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs" / "A_manual"
@@ -129,7 +129,7 @@ def analyzer_exp_group(landmark_tag: str = "") -> str:
 def landmark_scheme_name(scheme: str, landmark_tag: str = "") -> str:
     """Row/run scheme label: the landmark arm is part of the scheme name.
 
-    Keeps both arms of H1b as separate rows of one table (the CSV row key is
+    Keeps both arms of Test_1b as separate rows of one table (the CSV row key is
     (scheme, encoding, modality)) and matches Clinic_Analyzer's own convention
     of folding the landmark tag into the scheme (e.g. prompt__landmark_0).
     """
@@ -257,7 +257,7 @@ def conf_text(
         f"SEED={int(seed)}",
     ]
     if label_file is not None:
-        # H1b risk set + time-origin shift: run.sh prefers LABEL_FILE_PATH over
+        # Test_1b risk set + time-origin shift: run.sh prefers LABEL_FILE_PATH over
         # the default metadata CSV; the split files stay untouched.
         lines.append(f"LABEL_FILE_PATH={_bash_quote(str(Path(label_file)))}")
     if max_epochs is not None:

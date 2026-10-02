@@ -4,7 +4,7 @@
 # results/A_manual/runs/{study}__{scheme}/{modality}/run.log
 #
 # Usage:
-#   CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log --workers 16 --dataset all --scheme manual --encoding text --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
+#   CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log --workers 16 --dataset all --scheme manual --encoding text --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then

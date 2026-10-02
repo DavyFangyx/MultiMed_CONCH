@@ -101,10 +101,9 @@ rawdata_stats/_shared/
   field_stats.csv
   {landmark_none|landmark_T}/kept_fields.json
   patient_time_stats_all.png
-rawdata_stats/TIME_CRITERIA.md
 ```
 
-Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_follow_up`。这个值是生存统计里的患者级 `last_time`（天），不再当作 Field Bank landmark 起点。`t_write` / `t_record` 两张实现表见 `rawdata_stats/TIME_CRITERIA.md`。R0 只删真正结局字段和日历/时间点泄漏（`year_of_diagnosis`、`year_of_follow_up`、`timepoint_category`）。`--landmark_time T` 时，diagnoses / follow_ups 整层留给 Field Bank 按外部起点 `T` 做取值 mask；`--landmark_time none` 时 R0 整层删除路径含 `diagnoses` / `follow_ups` 的字段。
+Dead 用 `demographic.days_to_death`；非死亡用 `diagnoses[].days_to_last_follow_up`。这个值是生存统计里的患者级 `last_time`（天），不再当作 Field Bank landmark 起点。时间口径（唯一时间轴、`t_record` 判据表、landmark 三要件）见 `z_notes/time_axis/time_axis.md`；`t_write`（GDC 入库时间审计）另册 `z_notes/time_axis/t_write.md`。R0 只删真正结局字段和日历/时间点泄漏（`year_of_diagnosis`、`year_of_follow_up`、`timepoint_category`）。`--landmark_time T` 时，diagnoses / follow_ups 整层留给 Field Bank 按外部起点 `T` 做取值 mask；`--landmark_time none` 时 R0 整层删除路径含 `diagnoses` / `follow_ups` 的字段。
 
 ---
 
@@ -140,8 +139,8 @@ CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU5.log \
     --workers 8 \
     --dataset all \
     --encoding prompt \
-    --inner_modality mlp_clinic_flatten \
-    --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
+    --inner_analyzer mlp_clinic_flatten \
+    --outer_analyzers mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
     --landmark_time 730 \
     --seed 0 \
@@ -218,15 +217,15 @@ CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_greedy.sh GreedyGPU5.log \
     --workers 8 \
     --dataset all \
     --encoding prompt \
-    --inner_modality mlp_clinic_flatten \
-    --outer_modalities mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
+    --inner_analyzer mlp_clinic_flatten \
+    --outer_analyzers mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten \
     --init_field '{demographic.ethnicity,demographic.sex_at_birth,demographic.gender,demographic.race}' \
     --landmark_time 730 \
     --seed 0 \
     --min_delta 0.01
 ```
 
-对 Field Bank 里筛完后的每个字段单独切 `[1, D]` embedding，用同一个 clinic 模型报 5-fold **val** c-index。这不是 greedy 的一步，也不改选字段。调度器和 greedy 一样按 `--dataset` 与 `--landmark_time` 生成 conf 快照，但队列在 `Clinic_Analyzer/configs/univariate/{queue,running,done,failed}`，不和 greedy 抢任务。一张卡一次只认领一个 (dataset, landmark)；`--workers` 只并行当前任务的字段。`bg_univariate.sh` 后台启动后打出一个 PID 和一个 log。
+对 Field Bank 里筛完后的每个字段单独切 `[1, D]` embedding，用同一个 clinic 模型报 5-fold **val** c-index。这不是 greedy 的一步，也不改选字段。调度器和 greedy 一样按 `--dataset` 与 `--landmark_time` 生成 conf 快照，但队列在 `Clinic_Analyzer/configs/univariate/{queue,running,done,failed}`，不和 greedy 抢任务。一张卡一次只认领一个 (dataset, landmark)；`--workers` 只并行当前任务的字段。`bg_univariate.sh` 后台启动后打出一个 PID 和一个 log。`--analyzer` 支持逗号分隔列表，每个 analyzer 独立生成 conf 与结果目录。
 
 换卡只改 `CUDA_VISIBLE_DEVICES` 和 log 名。
 
@@ -237,7 +236,7 @@ CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_univariate.sh UniGPU5.log \
     --workers 8 \
     --dataset all \
     --encoding prompt \
-    --modality mlp_clinic_flatten \
+    --analyzer mlp_clinic_flatten \
     --landmark_time none \
     --seed 0
 ```
@@ -247,12 +246,12 @@ CUDA_VISIBLE_DEVICES=5 bash Clinic_Analyzer/bg_univariate.sh UniGPU5.log \
 ```text
 outputs/{dataset}/univariate/{encoding}/{landmark_none|landmark_T}/
   jobs/{scheme}.json
-results/univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/
+results/univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/{analyzer}/
   field_cindex.csv
   run_config.json
 outputs/{dataset}/longitudinal/univariate/{encoding}/{landmark_none|landmark_T}/
   jobs/{scheme}.json
-results/longitudinal_univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/
+results/longitudinal_univariate/{encoding}/{landmark_none|landmark_T}/{dataset}/{analyzer}/
   field_cindex.csv
   run_config.json
 ```

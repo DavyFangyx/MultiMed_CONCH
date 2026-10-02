@@ -198,7 +198,7 @@ python projects/scripts/run_time_stats.py --dataset all
 ## 5. 生存时间与 t_write / t_record
 
 实现：`src/time_stats.py`。和字段筛选并行，读的是同一批去重后的 JSON。
-权威实现表：[`TIME_CRITERIA.md`](TIME_CRITERIA.md)。任务说明：`z_temp/time_write_record_spec.md`。
+权威实现表与时间口径：[`../z_notes/time_axis/time_axis.md`](../z_notes/time_axis/time_axis.md)（唯一时间轴、t_record 判据表、landmark 三要件；推导附录与 index_date 审计同目录）；t_write 入库时间审计另册 [`../z_notes/time_axis/t_write.md`](../z_notes/time_axis/t_write.md)。
 
 每个患者的 ground-truth 时间（两套目录各放一份）：
 
@@ -209,25 +209,7 @@ python projects/scripts/run_time_stats.py --dataset all
 只统计 6 个实体：`diagnoses[]`、`diagnoses[].treatments[]`、`diagnoses[].pathology_details[]`、`follow_ups[]`、`follow_ups[].molecular_tests[]`、`follow_ups[].other_clinical_attributes[]`。
 不统计 `case` / `demographic` / `exposures[]` / `family_histories[]`。槽位按 JSON DFS 遇到顺序编号。
 覆盖率按槽位：分母是该槽对象存在的患者数，单元格 `24/25`。
-
-### t_write 实现表
-
-判据一律是该对象自己的 `updated_datetime`（忽略 `created_datetime`）。缺或无法解析则该槽排除。
-归一化：`(updated - t0) / last_time_days`。`t0` 只取这 6 个实体里该患者最早一次 `updated_datetime`。
-
-| 实体 | 主判据 | 备选判据 | 兜底 | 产物列名 |
-| --- | --- | --- | --- | --- |
-| `diagnoses[]` | `updated_datetime` | — | 缺失则排除 | `diagnoses_updated{i}` |
-| `diagnoses[].treatments[]` | `updated_datetime` | — | 缺失则排除 | `diagnoses_treatments_updated{i}` |
-| `diagnoses[].pathology_details[]` | `updated_datetime` | — | 缺失则排除 | `diagnoses_pathology_details_updated{i}` |
-| `follow_ups[]` | `updated_datetime` | — | 缺失则排除 | `follow_ups_updated{i}` |
-| `follow_ups[].molecular_tests[]` | `updated_datetime` | — | 缺失则排除 | `follow_ups_molecular_tests_updated{i}` |
-| `follow_ups[].other_clinical_attributes[]` | `updated_datetime` | — | 缺失则排除 | `follow_ups_other_clinical_attributes_updated{i}` |
-
-### t_record 实现表
-
-`t_record` 是区间；CSV 写有限 `t_hi`，归一化 `t_hi / last_time_days`。landmark 只收 `point` / `bounded` 且 `t_hi <= T`。完整规则见 [`TIME_CRITERIA.md`](TIME_CRITERIA.md)。
-`diagnoses[].treatments[]` 中 `treatment_or_therapy=no` 不编号、不进覆盖率、也不进 landmark。需要 biospecimen 的分子检测记 `unlocated`。覆盖率按 `point` / `bounded` / `lo_only` / `unlocated` / `non_informative` 拆分。
+`t_record` 是区间 `(t_lo, t_hi]`；CSV 写有限 `t_hi`，归一化 `t_hi / last_time_days`；覆盖率按 `point` / `bounded` / `lo_only` / `unlocated` / `non_informative` 拆分。
 
 当前各数据集生存概况：
 

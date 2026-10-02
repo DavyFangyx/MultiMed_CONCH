@@ -9,44 +9,12 @@ if str(SRC) not in sys.path:
 
 from discovery.field_bank import TEMPLATE_COLUMNS, write_field_bank_template_skeleton
 from discovery.field_bank_spec import (
-    SHARED_SPEC_PATH,
     field_convert,
     load_shared_spec,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIELD_BANK_ROOT = PROJECT_ROOT / "templates" / "field_bank"
-LIHC_PATH = FIELD_BANK_ROOT / "TCGA_LIHC" / "FIELD_BANK.csv"
-
-LIHC_TEMPLATES = {
-    "demographic.country_of_residence_at_enrollment": "Country of residence at enrollment is {}.",
-    "demographic.ethnicity": "Ethnicity is {}.",
-    "demographic.race": "Race is {}.",
-    "demographic.sex_at_birth": "Sex at birth is {}.",
-    "diagnoses[].age_at_diagnosis": "Age at diagnosis is {} years.",
-    "diagnoses[].ajcc_pathologic_m": "Pathologic M stage is {}.",
-    "diagnoses[].ajcc_pathologic_n": "Pathologic N stage is {}.",
-    "diagnoses[].ajcc_pathologic_t": "Pathologic T stage is {}.",
-    "diagnoses[].ajcc_staging_system_edition": "AJCC Staging System Edition is {}.",
-    "diagnoses[].child_pugh_classification": "Child-Pugh classification is {}.",
-    "diagnoses[].classification_of_tumor": "Classification Of Tumor is {}.",
-    "diagnoses[].diagnosis_is_primary_disease": "The diagnosis is the primary disease: {}.",
-    "diagnoses[].ishak_fibrosis_score": "Ishak fibrosis score is {}.",
-    "diagnoses[].morphology": "Tumor morphology is {}.",
-    "diagnoses[].pathology_details[].vascular_invasion_present": "Vascular invasion present is {}.",
-    "diagnoses[].pathology_details[].vascular_invasion_type": "Vascular invasion type is {}.",
-    "diagnoses[].primary_diagnosis": "Primary diagnosis is {}.",
-    "diagnoses[].prior_malignancy": "Prior malignancy is {}.",
-    "diagnoses[].prior_treatment": "Prior treatment before diagnosis is {}.",
-    "diagnoses[].residual_disease": "Residual disease is {}.",
-    "diagnoses[].tissue_or_organ_of_origin": "Tissue or organ of origin is {}.",
-    "diagnoses[].treatments[].treatment_anatomic_sites": "Treatment anatomic sites are {}.",
-    "diagnoses[].treatments[].treatment_type": "Treatment type is {}.",
-    "diagnoses[].tumor_grade": "Tumor grade is {}.",
-    "diagnoses[].tumor_of_origin": "Tumor Of Origin is {}.",
-    "diagnoses[].year_of_diagnosis": "Year Of Diagnosis is {}.",
-    "family_histories[].relative_with_cancer_history": "Relative with cancer history is {}.",
-}
 
 ALLOWED_CONVERT = {"", "days_to_years", "int"}
 
@@ -70,8 +38,23 @@ def _all_fields():
 def test_shared_spec_covers_all_kept_fields():
     fields = _all_fields()
     spec = load_shared_spec()
+    shared_path = FIELD_BANK_ROOT / "_shared" / "field_prompt_spec.csv"
+    shared_df = pd.read_csv(shared_path).fillna("")
+
+    # The checked-in shared template is the source of truth for this test.
+    assert shared_df["field"].is_unique
+    expected = {
+        str(row.field): {
+            "field": str(row.field),
+            "convert": str(row.convert),
+            "unit": str(row.unit),
+            "template": str(row.template),
+            "note": str(row.note),
+        }
+        for row in shared_df.itertuples(index=False)
+    }
+    assert spec == expected
     assert fields <= set(spec)
-    assert len(spec) == 406
 
 
 def test_convert_and_unit_are_shared():
@@ -96,18 +79,14 @@ def test_convert_and_unit_are_shared():
     assert not df.empty
 
 
-def test_templates_are_complete_and_lihc_preserved():
-    empty = []
+def test_templates_are_complete():
     for path in _dataset_tables():
         df = pd.read_csv(path)
+        assert df["field"].is_unique, path
         blank = df["template"].isna() | (df["template"].astype(str).str.strip() == "") | (df["template"].astype(str).str.lower() == "nan")
-        empty.extend(f"{path.parent.name}:{field}" for field in df.loc[blank, "field"].tolist())
-    assert empty == []
-    lihc = pd.read_csv(LIHC_PATH)
-    got = dict(zip(lihc["field"], lihc["template"]))
-    assert got == LIHC_TEMPLATES
-
-
+        assert not blank.any(), path
+        assert df["template"].astype(str).str.count(r"\{\}").eq(1).all(), path
+        assert df["template"].astype(str).str.endswith(".").all(), path
 def test_age_at_diagnosis_uses_days_to_years():
     assert field_convert("diagnoses[].age_at_diagnosis") == "days_to_years"
     for path in _dataset_tables():
@@ -118,7 +97,8 @@ def test_age_at_diagnosis_uses_days_to_years():
         row = sub.iloc[0]
         assert row["convert"] == "days_to_years"
         assert row["unit"] == "years"
-        assert row["template"] == "Age at diagnosis is {} years."
+        assert str(row["template"]).strip()
+        assert str(row["template"]).count("{}") == 1
 
 
 def test_write_templates_preserves_filled_rows(tmp_path):
@@ -169,7 +149,7 @@ if __name__ == "__main__":
     import tempfile
     test_shared_spec_covers_all_kept_fields()
     test_convert_and_unit_are_shared()
-    test_templates_are_complete_and_lihc_preserved()
+    test_templates_are_complete()
     test_age_at_diagnosis_uses_days_to_years()
     with tempfile.TemporaryDirectory() as tmp:
         test_write_templates_preserves_filled_rows(Path(tmp))

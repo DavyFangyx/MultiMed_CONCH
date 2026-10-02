@@ -49,7 +49,7 @@ def test_record_primary_and_narrow_table_fallback():
     _, _, record_df = _frames()
     row = record_df.loc[0]
     assert row["diagnoses_record1"] == 0
-    assert row["diagnoses_treatments_record1"] == 80  # t_hi via H1b follow-up
+    assert row["diagnoses_treatments_record1"] == 80  # t_hi via TH1b follow-up
     assert row["diagnoses_treatments_record2"] in ("", None) or pd.isna(row["diagnoses_treatments_record2"])  # timepoint-only stays unlocalized
     assert row["diagnoses_treatments_record3"] in ("", None) or pd.isna(row["diagnoses_treatments_record3"])
     assert row["diagnoses_treatments_record4"] in ("", None) or pd.isna(row["diagnoses_treatments_record4"])
@@ -60,7 +60,7 @@ def test_record_primary_and_narrow_table_fallback():
     assert row["follow_ups_record2"] in ("", None) or pd.isna(row["follow_ups_record2"])
     assert row["follow_ups_molecular_tests_record1"] == 80
     assert row["follow_ups_molecular_tests_record2"] in ("", None) or pd.isna(row["follow_ups_molecular_tests_record2"])
-    assert row["follow_ups_other_clinical_attributes_record1"] == 80  # positive comorbidity day is t_lo; t_hi via H1b
+    assert row["follow_ups_other_clinical_attributes_record1"] == 80  # positive comorbidity day is t_lo; t_hi via TH1b
     assert row["follow_ups_other_clinical_attributes_record2"] in ("", None) or pd.isna(row["follow_ups_other_clinical_attributes_record2"])
 
 

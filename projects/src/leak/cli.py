@@ -1,4 +1,4 @@
-"""CLI for the H1a leakage audit (spec §5)."""
+"""CLI for the Test_1a leakage audit (spec §5)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .audit import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "H1a 泄露审计：按 spec §2.4 绑定（HGCN_* 仅其对应癌种、泛癌种 × 33 TCGA、"
+            "Test_1a 泄露审计：按 spec §2.4 绑定（HGCN_* 仅其对应癌种、泛癌种 × 33 TCGA、"
             "剔除 CPTAC/MMRF，共 138 个组合）逐字段量化 t0 时刻不可得的患者比例"
             "（无训练，纯描述性统计）。"
         )

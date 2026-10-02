@@ -451,7 +451,7 @@ def _run_field_bank_one(args, name, datasets, encoding, onehot_encoder) -> None:
     if args.prompts_only:
         return
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("FIELD_BANK_GPU", DEFAULT_GPU)
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
 

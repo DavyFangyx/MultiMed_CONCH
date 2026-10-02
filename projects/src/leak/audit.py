@@ -1,4 +1,4 @@
-"""H1a 泄露审计：逐字段量化「t0 时刻不可得」的患者比例（规格 z_notes/H_series_spec.md §5）。
+"""Test_1a 泄露审计：逐字段量化「t0 时刻不可得」的患者比例（规格 z_notes/Test_series_spec.md §5）。
 
 口径（spec §2.1 / §5.2）
 ------------------------
@@ -81,7 +81,7 @@ LEAK_SCHEMES = (
 # ---------------------------------------------------------------------------
 TCGA_PREFIX = "TCGA"
 
-# TCGA 之外的外部数据集，本阶段一律不纳入（spec §2.4；H4c 数据轴阶段再议）
+# TCGA 之外的外部数据集，本阶段一律不纳入（spec §2.4；Test_4c 数据轴阶段再议）
 EXCLUDED_DATASETS = ("CPTAC", "MMRF")
 
 # HGCN_*：方案 → 其唯一允许的癌种队列（注册名。TCGA_LIHC 为下划线，见 S1 偏差 5）
@@ -536,7 +536,7 @@ def run_audit(
     prune: bool = False,
     quiet: bool = False,
 ) -> dict:
-    """跑 H1a 审计（按 §2.4 绑定）并落盘。
+    """跑 Test_1a 审计（按 §2.4 绑定）并落盘。
 
     返回 {"out_dir", "summary_csv", "n_datasets", "n_payloads", "n_schemes", "n_pairs", "binding"}。
     """
@@ -546,7 +546,7 @@ def run_audit(
     configs = load_dataset_configs(str(datasets_config))
     names = resolve_dataset_names(dataset, configs)
     if not names:
-        raise ValueError("H1a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
+        raise ValueError("Test_1a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
 
     plan = build_audit_plan(names, scheme_names, binding=binding)
     if not plan:

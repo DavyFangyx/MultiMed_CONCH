@@ -1,7 +1,7 @@
-"""Label-side landmark surgery (risk set + time-origin shift) for the H1b arms.
+"""Label-side landmark surgery (risk set + time-origin shift) for the Test_1b arms.
 
 Classical landmarking (Anderson 1983; van Houwelingen dynamic prediction) is
-three requirements at once (z_notes/H_series_spec.md §2.5):
+three requirements at once (z_notes/Test_series_spec.md §2.5):
 
 1. **covariate mask** - only `t_hi <= T` values are used → `landmark.py`;
 2. **risk set** - only patients still at risk at T stay in train/val/test

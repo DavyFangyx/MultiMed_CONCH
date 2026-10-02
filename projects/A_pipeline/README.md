@@ -54,7 +54,7 @@ python A_pipeline/run.py hgcn_clinic --dataset all --scheme manual
 
 cindex 先把每条 `(dataset, scheme, modality)` 写成 `Clinic_Analyzer/configs/A_manual/queue/*.conf`，再用 atomic `link`+`unlink` 抢到 `running/`，最后交给 `Clinic_Analyzer/run.sh`。同一条命令开多个终端就会并行抢活；本终端也可用 `--workers` 同时 claim 多条。GPU 用各终端自己的 `CUDA_VISIBLE_DEVICES`。成功进 `done/`，失败进 `failed/`；再跑同一条命令会把 `failed/` 里的任务重新入队。已有 fold CSV 时默认 reuse，不会再调 Analyzer 的 `run.sh`。调度日志用 `A_pipeline/bg.sh` 落到 `A_pipeline/*.log`；每个任务的训练日志仍在 `results/A_manual/runs/{study}__{scheme}/{modality}/run.log`。
 
-推荐入口和 greedy 一样：前台 `bash A_pipeline/run.sh`，后台 `bash A_pipeline/bg.sh <log>`。`run.sh` 等于 `python A_pipeline/run.py cindex ...`。`--workers` / `--modality` 换取值即可，不必各写一遍。
+推荐入口和 greedy 一样：前台 `bash A_pipeline/run.sh`，后台 `bash A_pipeline/bg.sh <log>`。`run.sh` 等于 `python A_pipeline/run.py cindex ...`。`--workers` / `--analyzer` 换取值即可，不必各写一遍。
 
 标注实验：
 
@@ -79,7 +79,7 @@ CUDA_VISIBLE_DEVICES=2 bash A_pipeline/run.sh \
     --dataset all \
     --scheme manual \
     --encoding text \
-    --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
+    --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
 
 # 后台：调度日志落到 A_pipeline/AGPU2.log
 CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log \
@@ -87,10 +87,10 @@ CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log \
     --dataset all \
     --scheme manual \
     --encoding text \
-    --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
+    --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten
 ```
 
-和编码命令一样：`--scheme all` 是 L0-L5+论文方案，`--scheme manual` 是 L0-L5，`--scheme paper` 是论文方案。`--encoding text` 评 CONCH embedding，`--encoding baseline` 评 D 向量。L0-L5 / D0-D5 只评 lizhe 那 9 个；论文方案绑了全部 33 个 TCGA，`--dataset all` 会把这些队列都评上。评估没有内外层，只看 `--modality`。默认 `mlp_clinic_flatten`；可逗号分隔：`mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,survgc_f,survpgc_f`。`survgc_f` / `survpgc_f` 只在 BRCA、COAD、KIRC、KIRP、LIHC 上跑。`--workers` 是本终端同时抢活的数量。
+和编码命令一样：`--scheme all` 是 L0-L5+论文方案，`--scheme manual` 是 L0-L5，`--scheme paper` 是论文方案。`--encoding text` 评 CONCH embedding，`--encoding baseline` 评 D 向量。L0-L5 / D0-D5 只评 lizhe 那 9 个；论文方案绑了全部 33 个 TCGA，`--dataset all` 会把这些队列都评上。评估没有内外层，只看 `--analyzer`。默认 `mlp_clinic_flatten`；可逗号分隔：`mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,survgc_f,survpgc_f`。`survgc_f` / `survpgc_f` 只在 BRCA、COAD、KIRC、KIRP、LIHC 上跑。`--workers` 是本终端同时抢活的数量。
 
 不传 `--dataset` 时走 `--json_path` 单 JSON，默认是 lizhe 肾癌 cart，产物写到 `outputs/custom/A_manual/`。`--dataset all --scheme all` 会同时跑 lizhe 的 L0-L5 和 GDC 的论文方案，不必再传 `--datasets_config`。
 

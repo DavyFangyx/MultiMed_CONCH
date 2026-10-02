@@ -255,7 +255,7 @@ def make_clinic_factory(dataset: str, field_bank_dir: Path, work_dir: Path, args
         fields=list(args._fields),
         field_bank_dir=field_bank_dir,
         work_dir=work_dir,
-        modality=args.inner_modality,
+        modality=args.inner_analyzer,
         max_epochs=args.max_epochs,
         conch_python=args.conch_python,
         analyzer_python=args.analyzer_python,
@@ -416,14 +416,14 @@ def run_one(args, dataset: str) -> Path:
     splits, split_source = _load_splits(args, dataset)
     split_dir = Path(split_source)
 
-    inner_modality = parse_one_modality(args.inner_modality)
-    raw_outer = getattr(args, "outer_modalities", None)
+    inner_modality = parse_one_modality(args.inner_analyzer)
+    raw_outer = getattr(args, "outer_analyzers", None)
     if raw_outer in (None, ""):
         outer_modalities = list(default_outer_modalities_for(dataset))
     else:
         outer_modalities = parse_modalities(raw_outer)
     ensure_modalities_allowed(dataset, [inner_modality, *outer_modalities])
-    args.inner_modality = inner_modality
+    args.inner_analyzer = inner_modality
     existing_config = _json_load(out_dir / "run_config.json") or {}
     existing_path = _json_load(out_dir / "path.json") or {}
     if existing_config and existing_path.get("path"):
@@ -519,14 +519,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="贪婪起点字段，写在大括号里。family 前缀：--init_field '{demographic.}' 会展开成该 dataset Field Bank 里所有 demographic.* 字段；也可写完整路径：--init_field '{demographic.ethnicity,demographic.sex_at_birth}'",
     )
     parser.add_argument(
-        "--inner_modality",
+        "--inner_analyzer",
         default=DEFAULT_INNER_MODALITY,
-        help="内层选字段只用一个 Clinic_Analyzer modality，默认 mlp_clinic_flatten",
+        help="内层选字段只用一个 Clinic Analyzer，默认 mlp_clinic_flatten",
     )
     parser.add_argument(
-        "--outer_modalities",
+        "--outer_analyzers",
         default=None,
-        help="外层复评 greedy 路径的 modality 列表，逗号分隔；单模态默认 mlp/snn，多模态默认 mlp/snn + survgc_f/survpgc_f",
+        help="外层复评 greedy 路径的 analyzer 列表，逗号分隔；单模态默认 mlp/snn，多模态默认 mlp/snn + survgc_f/survpgc_f",
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
@@ -561,6 +561,9 @@ def resolve_dataset_list(args) -> list[str]:
     names = resolve_dataset_names(args.dataset, datasets)
     if not names:
         names = [args.dataset]
+    names = [name for name in names if name and str(name).strip()]
+    if not names:
+        raise ValueError("--dataset 解析结果为空（shell 变量未定义时会展开成空串）；请检查 --dataset 取值")
     return names
 
 

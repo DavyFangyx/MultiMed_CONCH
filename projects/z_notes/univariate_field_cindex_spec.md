@@ -11,7 +11,7 @@ cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects
 CUDA_VISIBLE_DEVICES=6 python scripts/run_univariate_cindex.py \
     --dataset TCGA_LIHC \
     --encoding prompt \
-    --modality mlp_clinic_flatten \
+    --analyzer mlp_clinic_flatten \
     --workers 8 \
     --seed 0
 ```
@@ -72,16 +72,16 @@ outputs/{dataset}/greedy/{encoding}/subsets/{scheme}/embeddings/fields.json
 | `--field_index` | Field Bank 的 `field_index.json` | 字段名和顺序以它为准 |
 | `--splits` | `Clinic_Analyzer/data/splits/5foldcv/{study}` | 现成 `splits_*.csv`，不生成 split |
 | `--out` | `outputs/{dataset}/univariate/{encoding}` | 覆盖输出根目录 |
-| `--modality` | `mlp_clinic_flatten` | 只允许一个 clinic 模型 |
+| `--analyzer` | `mlp_clinic_flatten` | 逗号分隔列表；每个 analyzer 独立 conf 与结果目录 |
 | `--workers` | `8` | 并行评字段，不是并行 fold |
 | `--seed` | `0` | 传给 Clinic_Analyzer |
 | `--max_epochs` | `None` | 透传 |
 | `--conch_python` | conch env python | 切 embedding 时 fallback |
 | `--analyzer_python` | SurvPGC env python | 跑 `Clinic_Analyzer/evaluate.py` |
 
-不要加 `--init_field`、`--outer_modalities`、`--min_delta`、`--patience`、`--max_steps`。
+不要加 `--init_field`、`--outer_analyzers`、`--min_delta`、`--patience`、`--max_steps`。
 
-`--modality` 校验复用 `greedy.clinic.parse_one_modality` / `ensure_modalities_allowed`。单模态数据集选 `survgc_f` / `survpgc_f` 直接报错。
+`--analyzer` 校验复用 `greedy.clinic.parse_one_modality` / `ensure_modalities_allowed`。单模态数据集选 `survgc_f` / `survpgc_f` 直接报错。
 
 ---
 
@@ -94,7 +94,7 @@ split：`load_analyzer_split_dir(default_analyzer_split_dir(dataset))`。val 和
 每个字段调用：
 
 ```python
-ClinicSubsetEvaluator(..., modality=args.modality, for_test=False, split_dir=split_dir).evaluate([i])
+ClinicSubsetEvaluator(..., modality=args.analyzer, for_test=False, split_dir=split_dir).evaluate([i])
 ```
 
 必须：
@@ -158,7 +158,7 @@ field,field_idx,n_fields,c_index_mean,c_index_std,per_fold,status,scheme,clinic_
 加 `tests/test_univariate_cindex.py`：
 
 1. Stub evaluator：4 个字段，`evaluate([i])` 返回已知分数；跑完全部 singleton 后 CSV 按 val mean 降序，且每个 `n_fields==1`。
-2. CLI/parser：默认 `workers=8`，默认 `modality=mlp_clinic_flatten`，没有 `init_field` / `outer_modalities`。
+2. CLI/parser：默认 `workers=8`，默认 `analyzer=mlp_clinic_flatten`；支持逗号分隔列表，每个 analyzer 独立 conf 与结果目录；没有 `init_field` / `outer_analyzers`。
 3. 某个字段 `evaluate` raise：该行 `status=error`，其余行仍写出，进程不退出。
 4. 路径：`dataset_univariate_dir("TCGA_LIHC", "prompt")` 指向 `outputs/TCGA_LIHC/univariate/prompt`。
 

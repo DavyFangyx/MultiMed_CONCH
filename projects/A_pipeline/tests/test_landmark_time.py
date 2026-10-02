@@ -1,6 +1,6 @@
-"""Tests for the H1b landmark extension (`--landmark_time` / `--landmark_shift`).
+"""Tests for the Test_1b landmark extension (`--landmark_time` / `--landmark_shift`).
 
-Covers the three classical landmark requirements of z_notes/H_series_spec.md
+Covers the three classical landmark requirements of z_notes/Test_series_spec.md
 §2.5 on the A_pipeline side:
 
 1. covariate mask  - `src.landmark.mask_case`: only timed slots with

@@ -11,13 +11,20 @@ case / demographic / exposures / family_histories are ignored.
 t_write  uses each object's updated_datetime (created_datetime ignored).
 t_record is an interval (t_lo, t_hi). CSV cells store finite t_hi. Landmark keeps
 a slot iff status is not unlocated/non_informative and t_hi <= T. Event days are
-lower bounds, not proof the record already existed. See rawdata_stats/TIME_CRITERIA.md.
+lower bounds, not proof the record already existed. See z_notes/time_axis/time_axis.md.
 
 Outputs in projects/rawdata_stats/{dataset}/time_write and time_record:
   patient_time_stats.csv / patient_time_stats.png
   normalized_update_time.csv / normalized_update_time.png / normalized_update_time_boxplot.png
   sequences/{family}.csv / sequences/{family}.png
   missing/{family}.csv / missing/{family}.png
+
+Dataset-level axis-anchor audit (z_notes/time_axis/time_axis.md §2.1, one per dataset):
+  index_date_stats.csv - index_date value distribution (the 7 GDC enums), missing-key
+    split (empty shell vs clinical content) and primary-disease day-0 consistency
+  index_date_flagged.csv - cases needing attention (missing key with clinical content,
+    non-Diagnosis values); only written when non-empty
+  _shared/index_date_stats_all.csv - all datasets concatenated
 
 conda activate conch
 cd CONCH-main
@@ -137,7 +144,7 @@ AJCC_PATHOLOGIC_KEYS = (
 DELTA_RESP = 0.0
 DELTA_PATH = 0.0
 DELTA_LAB = 0.0
-USE_H1B = True
+USE_TH1B = True  # TH1b follow-up-ladder switch (assumption A2; time_axis.md §4.3)
 RECORD_STATUS_POINT = "point"
 RECORD_STATUS_BOUNDED = "bounded"
 RECORD_STATUS_LO_ONLY = "lo_only"
@@ -157,6 +164,23 @@ RECORD_COL_RE = re.compile(r"^(.*)_record(\d+)$")
 SEQUENCE_ID_COLS = ["dataset", "submitter_id", "case_id"]
 WRITE_KIND = "write"
 RECORD_KIND = "record"
+
+# index_date is the case-level anchor of the single time axis (time_axis.md §2.1).
+# GDC dictionary allows exactly these 7 values; "Diagnosis" is the expected one.
+INDEX_DATE_LEGAL_VALUES = (
+    "Diagnosis",
+    "First Patient Visit",
+    "First Treatment",
+    "Initial Genomic Sequencing",
+    "Recurrence",
+    "Sample Procurement",
+    "Study Enrollment",
+)
+INDEX_DATE_MISSING_SHELL = "missing_key_empty_shell"
+INDEX_DATE_MISSING_CLINICAL = "missing_key_clinical_content"
+# day-0 is GDC's index Diagnosis, not the primary tumour, when the share of
+# primary-disease objects not sitting at days_to_diagnosis == 0 crosses this bar.
+DAY0_NOT_PRIMARY_RATIO = 0.2
 
 
 def _iter_dict_items(value):
@@ -461,7 +485,7 @@ def _case_context(case: dict) -> dict:
     )
     recurrence = _max_numeric(item.get("days_to_recurrence") for item in diagnoses)
     located_events = _located_event_days(treatments, follow_days)
-    h2 = _max_of(last_fu, last_status, recurrence, *(located_events or [None]))
+    th2 = _max_of(last_fu, last_status, recurrence, *(located_events or [None]))
     adjuvant_starts = []
     adjuvant_labeled = False
     dated_starts = []
@@ -496,7 +520,7 @@ def _case_context(case: dict) -> dict:
         "diagnoses": diagnoses,
         "treatments": treatments,
         "follow_days": sorted(follow_days),
-        "h2": h2,
+        "th2": th2,
         "adjuvant_starts": adjuvant_starts,
         "earliest_tx_start": earliest_tx_start,
         "surgery_days": surgery_days,
@@ -513,8 +537,9 @@ def _case_context(case: dict) -> dict:
     }
 
 
-def _h1b(t_lo, follow_days):
-    if not USE_H1B or t_lo is None or t_lo == float("-inf"):
+def _th1b(t_lo, follow_days):
+    """TH1b follow-up ladder: min{days_to_follow_up >= t_lo} (assumption A2)."""
+    if not USE_TH1B or t_lo is None or t_lo == float("-inf"):
         return None
     later = [day for day in follow_days if day >= t_lo]
     if not later:
@@ -529,8 +554,10 @@ def _t_hi_from_sources(*values):
     return None
 
 
-def _t_hi_for_record(t_lo, ctx, h1=None):
-    return _t_hi_from_sources(h1, _h1b(t_lo, ctx.get("follow_days") or []), ctx.get("h2"))
+def _t_hi_for_record(t_lo, ctx, th1=None):
+    # t_hi fallback chain TH1 -> TH1b -> TH2, first non-None wins
+    # (z_notes/time_axis/time_axis.md §4.3).
+    return _t_hi_from_sources(th1, _th1b(t_lo, ctx.get("follow_days") or []), ctx.get("th2"))
 
 
 def _finalize_interval(t_lo, t_hi=None, *, unlocated=False, non_informative=False):
@@ -587,15 +614,15 @@ def _interval_pathology(obj: dict, diagnosis: dict, ctx: dict):
     if klass == "P3" or diagnosis_days is None:
         return _finalize_interval(None, None, unlocated=True)
     t_lo = diagnosis_days
-    h1 = None
+    th1 = None
     if ctx.get("has_resection_evidence") and ctx.get("adjuvant_starts"):
-        h1 = min(ctx["adjuvant_starts"])
+        th1 = min(ctx["adjuvant_starts"])
     if klass == "P1":
         t_hi = diagnosis_days + DELTA_PATH
-        if h1 is not None and h1 < t_hi:
-            t_hi = h1
+        if th1 is not None and th1 < t_hi:
+            t_hi = th1
         return _finalize_interval(t_lo, t_hi)
-    return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx, h1=h1))
+    return _finalize_interval(t_lo, _t_hi_for_record(t_lo, ctx, th1=th1))
 
 
 def _interval_follow_up(obj: dict):
@@ -1488,6 +1515,171 @@ def _write_kind_outputs(
     return df
 
 
+def _case_has_clinical_content(case: dict) -> bool:
+    diagnoses = case.get("diagnoses")
+    demographic = case.get("demographic")
+    return (isinstance(diagnoses, list) and bool(diagnoses)) or (
+        isinstance(demographic, dict) and bool(demographic)
+    )
+
+
+def _case_index_date(case: dict) -> str | None:
+    value = case.get("index_date")
+    if not _is_non_empty(value):
+        return None
+    return str(value).strip()
+
+
+def _flagged_case_row(
+    case: dict,
+    dataset_name: str,
+    index_date: str,
+    flag: str,
+) -> OrderedDict:
+    diagnoses = case.get("diagnoses")
+    return OrderedDict(
+        [
+            ("dataset", dataset_name or ""),
+            ("case_id", str(case.get("case_id") or "").strip()),
+            ("submitter_id", str(case.get("submitter_id") or "").strip()),
+            ("index_date", index_date),
+            ("n_diagnoses", len(diagnoses) if isinstance(diagnoses, list) else 0),
+            (
+                "has_demographic",
+                isinstance(case.get("demographic"), dict) and bool(case.get("demographic")),
+            ),
+            ("flag", flag),
+        ]
+    )
+
+
+def build_index_date_stats(
+    cases: list[dict],
+    dataset_name: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Axis-anchor audit per dataset (time_axis.md §2.1, index_date_anchor_audit.md).
+
+    Returns (summary, flagged). Summary has one row: counts for the 7 legal
+    index_date values, missing-key split (empty shell vs clinical content), and
+    primary-disease day-0 consistency counted on cases whose index_date is
+    Diagnosis. Flagged lists the cases needing attention: missing key while
+    clinical content exists (never silently treated as Diagnosis), or any value
+    other than Diagnosis.
+    """
+    counter = OrderedDict((value, 0) for value in INDEX_DATE_LEGAL_VALUES)
+    counter[INDEX_DATE_MISSING_SHELL] = 0
+    counter[INDEX_DATE_MISSING_CLINICAL] = 0
+    primary_zero = primary_nonzero = primary_missing = 0
+    flagged_rows = []
+
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        value = _case_index_date(case)
+        if value is None:
+            if _case_has_clinical_content(case):
+                counter[INDEX_DATE_MISSING_CLINICAL] += 1
+                flagged_rows.append(
+                    _flagged_case_row(case, dataset_name, "", "index_date_missing_clinical")
+                )
+            else:
+                counter[INDEX_DATE_MISSING_SHELL] += 1
+            continue
+        counter.setdefault(value, 0)
+        counter[value] += 1
+        if value != INDEX_DATE_LEGAL_VALUES[0]:
+            flagged_rows.append(
+                _flagged_case_row(case, dataset_name, value, "non_diagnosis_index_date")
+            )
+        else:
+            # day-0 consistency (audit check 3): where do the primary-disease
+            # objects sit relative to the axis anchor?
+            for item in _iter_dict_items(case.get("diagnoses")):
+                if str(item.get("diagnosis_is_primary_disease") or "").strip().lower() != "true":
+                    continue
+                days = _to_float(item.get("days_to_diagnosis"))
+                if days is None:
+                    primary_missing += 1
+                elif days == 0:
+                    primary_zero += 1
+                else:
+                    primary_nonzero += 1
+
+    non_missing_values = [v for v in INDEX_DATE_LEGAL_VALUES if counter[v] > 0]
+    unexpected = [
+        v for v in counter if v not in INDEX_DATE_LEGAL_VALUES and v not in (
+            INDEX_DATE_MISSING_SHELL, INDEX_DATE_MISSING_CLINICAL,
+        ) and counter[v] > 0
+    ]
+    flags = []
+    if len(non_missing_values) > 1:
+        flags.append("mixed_index_date")
+    if any(counter[v] > 0 for v in INDEX_DATE_LEGAL_VALUES[1:]) or unexpected:
+        flags.append("non_diagnosis_index_date")
+    if counter[INDEX_DATE_MISSING_CLINICAL] > 0:
+        flags.append("index_date_missing_clinical")
+    if primary_zero + primary_nonzero > 0 and primary_nonzero / (primary_zero + primary_nonzero) >= DAY0_NOT_PRIMARY_RATIO:
+        flags.append("day0_not_primary")
+
+    row = OrderedDict(
+        [
+            ("dataset", dataset_name or ""),
+            ("n_cases", len(cases)),
+        ]
+    )
+    row.update((value, counter[value]) for value in INDEX_DATE_LEGAL_VALUES)
+    row.update(
+        [
+            (INDEX_DATE_MISSING_SHELL, counter[INDEX_DATE_MISSING_SHELL]),
+            (INDEX_DATE_MISSING_CLINICAL, counter[INDEX_DATE_MISSING_CLINICAL]),
+        ]
+    )
+    for value in unexpected:
+        row[f"unexpected_{value}"] = counter[value]
+    row.update(
+        [
+            ("primary_dtd_zero", primary_zero),
+            ("primary_dtd_nonzero", primary_nonzero),
+            ("primary_dtd_missing", primary_missing),
+            ("flags", ", ".join(flags)),
+        ]
+    )
+    summary = pd.DataFrame([row])
+    flagged = pd.DataFrame(flagged_rows)
+    return summary, flagged
+
+
+def _write_index_date_outputs(
+    cases: list[dict],
+    dataset_name: str,
+    dataset_dir: Path,
+) -> None:
+    summary, flagged = build_index_date_stats(cases, dataset_name)
+    stats_path = dataset_dir / "index_date_stats.csv"
+    summary.to_csv(stats_path, index=False)
+    print(f"  index_date_stats: {stats_path}")
+
+    row = summary.loc[0]
+    values = ", ".join(f"{v}={row[v]}" for v in INDEX_DATE_LEGAL_VALUES if row[v] > 0) or "none"
+    print(f"    index_date 分布: {values}")
+    print(
+        f"    缺键: 空壳 {row[INDEX_DATE_MISSING_SHELL]}, "
+        f"有临床内容 {row[INDEX_DATE_MISSING_CLINICAL]}"
+    )
+    print(
+        f"    primary 诊断 day-0: ==0 {row['primary_dtd_zero']}, "
+        f"!=0 {row['primary_dtd_nonzero']}, 缺天数 {row['primary_dtd_missing']}"
+    )
+    flags = str(row["flags"] or "")
+    if flags:
+        print(f"    !! index_date flags: {flags}")
+
+    if not flagged.empty:
+        flagged_path = dataset_dir / "index_date_flagged.csv"
+        flagged.to_csv(flagged_path, index=False)
+        print(f"  index_date_flagged: {flagged_path} ({len(flagged)} 例)")
+
+
 def analyze_dataset_times(
     json_paths,
     dataset_name: str,
@@ -1499,6 +1691,7 @@ def analyze_dataset_times(
     records = [extract_patient_time_record(case, dataset_name=dataset_name) for case in cases]
 
     dataset_dir = Path(output_dir)
+    _write_index_date_outputs(cases, dataset_name, dataset_dir)
     _remove_legacy_time_dir(dataset_dir)
     write_df = _write_kind_outputs(records, dataset_dir / "time_write", dataset_name, WRITE_KIND)
     _write_kind_outputs(records, dataset_dir / "time_record", dataset_name, RECORD_KIND)
@@ -1509,6 +1702,7 @@ def _synthetic_cases() -> list[dict]:
         "submitter_id": "TCGA-AA-0001",
         "case_id": "uuid-1",
         "lost_to_followup": "No",
+        "index_date": "Diagnosis",
         "updated_datetime": "2024-01-01T00:00:00-06:00",
         "project": {"project_id": "TCGA-TEST"},
         "demographic": {
@@ -1664,6 +1858,23 @@ def run_self_test() -> None:
     oca2_days = record_df.loc[0, "follow_ups_other_clinical_attributes_record2"]
     assert oca2_days == "" or pd.isna(oca2_days)
 
+    index_summary, index_flagged = build_index_date_stats(cases, dataset_name="synthetic")
+    row = index_summary.loc[0]
+    assert row["n_cases"] == 2
+    assert row["Diagnosis"] == 1
+    assert row["missing_key_clinical_content"] == 1
+    assert row["missing_key_empty_shell"] == 0
+    assert "index_date_missing_clinical" in str(row["flags"])
+    assert len(index_flagged) == 1
+    assert index_flagged.loc[0, "submitter_id"] == "TCGA-AA-0002"
+    extra_summary, extra_flagged = build_index_date_stats(
+        [dict(cases[0], submitter_id="TCGA-AA-0003", index_date="Recurrence")],
+        dataset_name="synthetic",
+    )
+    assert extra_summary.loc[0, "Recurrence"] == 1
+    assert "non_diagnosis_index_date" in str(extra_summary.loc[0, "flags"])
+    assert extra_flagged.loc[0, "flag"] == "non_diagnosis_index_date"
+
     wide = build_normalized_write_frame(write_df)
     assert not wide.empty
     assert float(wide.loc[0, "last_time_days"]) == 120
@@ -1707,12 +1918,15 @@ def run_self_test() -> None:
     write_dir.mkdir(parents=True, exist_ok=True)
     for name in STALE_OUTPUTS:
         (write_dir / name).write_text("stale")
+    _write_index_date_outputs(cases, "synthetic", out_root)
     _write_kind_outputs(records, write_dir, "synthetic", WRITE_KIND)
     _write_kind_outputs(records, record_dir, "synthetic", RECORD_KIND)
     _remove_legacy_time_dir(out_root)
     for name in STALE_OUTPUTS:
         assert not (write_dir / name).exists()
     assert not legacy.exists()
+    assert (out_root / "index_date_stats.csv").exists()
+    assert (out_root / "index_date_flagged.csv").exists()
     assert (write_dir / "patient_time_stats.png").exists()
     assert (write_dir / "normalized_update_time.png").exists()
     assert (write_dir / "normalized_update_time_boxplot.png").exists()
@@ -1776,6 +1990,22 @@ def run(args):
     combined = plot_patient_time_stats_all(all_frames, shared_dir)
     if combined is not None:
         print(f"patient_time_stats_all: {combined}  ({len(all_frames)} 个数据集)")
+
+    index_date_rows = []
+    for dataset_dir in Path(output_root).iterdir():
+        if not dataset_dir.is_dir() or dataset_dir.name.startswith("_"):
+            continue
+        stats_path = dataset_dir / "index_date_stats.csv"
+        if stats_path.exists():
+            index_date_rows.append(pd.read_csv(stats_path))
+    if index_date_rows:
+        index_date_all = pd.concat(index_date_rows, ignore_index=True).sort_values(
+            "dataset", kind="stable"
+        )
+        index_date_all_path = shared_dir / "index_date_stats_all.csv"
+        index_date_all.to_csv(index_date_all_path, index=False)
+        flagged_summary = index_date_all["flags"].astype(str).str.strip().replace("", pd.NA).notna().sum()
+        print(f"index_date_stats_all: {index_date_all_path}  ({len(index_date_rows)} 个数据集, {flagged_summary} 个有 flag)")
 
 
 def main():

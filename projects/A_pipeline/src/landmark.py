@@ -1,4 +1,4 @@
-"""H1b landmark support for the A_manual pipeline.
+"""Test_1b landmark support for the A_manual pipeline.
 
 The mask is the *same* patient-level time model the Field Bank / leak audit use
 (`projects/src/discovery/landmark.py` + `projects/src/time_stats.py`, wired in

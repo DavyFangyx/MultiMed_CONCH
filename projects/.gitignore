@@ -20,6 +20,7 @@ Clinic_Analyzer/configs/failed/**
 Clinic_Analyzer/configs/running/**
 Clinic_Analyzer/configs/greedy/**
 Clinic_Analyzer/configs/A_manual/**
+Clinic_Analyzer/configs/univariate/**
 
 # Intermediate and result data files
 *.csv

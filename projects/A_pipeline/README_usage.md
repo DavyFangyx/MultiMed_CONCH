@@ -13,7 +13,7 @@
 | `--dataset` | `all`，或下列 9 个名称（逗号分隔） | `all` |
 | `--scheme` | `manual`=L0-L5，`paper`=论文方案，`all`=两组，或单个如 `L0` / `MULTISURV` | `manual` / `paper` |
 | `--encoding` | `text`=CONCH，`baseline`=D 向量，`all`=两种 | `text` / `baseline` |
-| `--modality` | 评估模型，逗号分隔；默认 `mlp_clinic_flatten` | `mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten` |
+| `--analyzer` | 测评器（analyzer），逗号分隔；默认 `mlp_clinic_flatten` | `mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten` |
 
 L0-L5 / D0-D5 的 9 个 dataset：`TCGA-BRCA`、`TCGA_LIHC`、`TCGA-COAD`、`TCGA-PRAD`、`TCGA-READ`、`TCGA-STAD`、`TCGA-KICH`、`TCGA-KIRC`、`TCGA-KIRP`。
 论文方案的 dataset：官方 33 个 TCGA 队列。
@@ -42,11 +42,11 @@ python A_pipeline/run.py hgcn_clinic --dataset all --scheme manual
 ```bash
 conda activate SurvPGC
 # L0-5测试
-CUDA_VISIBLE_DEVICES=2 bash A_pipeline/run.sh --workers 16 --dataset all --scheme manual --encoding text --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
+CUDA_VISIBLE_DEVICES=2 bash A_pipeline/run.sh --workers 16 --dataset all --scheme manual --encoding text --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
 # D0-5测试
-CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log --workers 16 --dataset all --scheme manual --encoding baseline --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
+CUDA_VISIBLE_DEVICES=2 bash A_pipeline/bg.sh AGPU2.log --workers 16 --dataset all --scheme manual --encoding baseline --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
 # 论文字段组合测试
-CUDA_VISIBLE_DEVICES=6 bash A_pipeline/bg.sh AGPU6.log --workers 16 --dataset all --scheme paper --encoding text --modality mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
+CUDA_VISIBLE_DEVICES=6 bash A_pipeline/bg.sh AGPU6.log --workers 16 --dataset all --scheme paper --encoding text --analyzer mlp_clinic_mean,mlp_clinic_flatten,snn_clinic_mean,snn_clinic_flatten,clinic_cox
 ```
 
 `run.sh` 等于 `python A_pipeline/run.py cindex ...`。多卡再开一个终端跑同一条命令。

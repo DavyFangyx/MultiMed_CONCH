@@ -1,4 +1,4 @@
-"""H1a 泄露审计单元测试：只用构造的小 JSON 病例，不碰真实数据、不跑 Clinic_Analyzer。"""
+"""Test_1a 泄露审计单元测试：只用构造的小 JSON 病例，不碰真实数据、不跑 Clinic_Analyzer。"""
 
 import json
 import math

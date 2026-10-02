@@ -1,14 +1,23 @@
 # index_date 与 t_record 零点核对
 
-对照 [TIME_CRITERIA.md](../rawdata_stats/TIME_CRITERIA.md) 和 [raw_json](../ClinicDatasets/gdc_clinical/raw_json)。
+> **地位**：本文是本目录 [`time_axis.md`](time_axis.md) §2.1（轴锚点）的全库审计依据；权威口径以 time_axis.md 为准。审计结论已生效（唯一时间轴成立、SKCM 反例已知）。**落地状态（2026-09-30）**：末尾检查 1（枚举分布）、2（缺键打标）、3（day-0 一致性）已在 `src/time_stats.py::build_index_date_stats` 落地，产物 `rawdata_stats/{dataset}/index_date_stats.csv` + `index_date_flagged.csv` + `_shared/index_date_stats_all.csv`；检查 4（原发诊断平移）、5（换非 TCGA 项目先跑此表）仍是待办。
+
+对照 [time_axis.md](time_axis.md) 和 [raw_json](../ClinicDatasets/gdc_clinical/raw_json)。
 问题不是 CHOL 里有没有写成 Diagnosis，而是 landmark 的第 0 天对每个 case 是否真是同一件事。当前实现没有读 index_date，CHOL 的数据巧合不能当默认。
 
 ## 结论
 
 1. 词典把 index_date 钉成 case 级锚点，合法取值 7 个：Diagnosis / First Patient Visit / First Treatment / Initial Genomic Sequencing / Recurrence / Sample Procurement / Study Enrollment。所有 days_to_*（诊断、治疗、随访、死亡）都相对这个锚点，不是相对各自事件日。
 2. 当前 33 份 TCGA JSON、11428 例里，有值的 index_date **全部是 Diagnosis**（11293）。没有任何一例写成另外 6 个枚举。项目内部也没有混用。字段只出现在 case 顶层，诊断对象上没有。
-3. 因此“同一批 landmark 队列里 index_date 取值不一致”这件事，**在现有 TCGA 文件里没有发生**。但缺字段发生了：135 例没有 index_date 键。其中 127 例是空壳（无 diagnoses / demographic），8 例仍有临床内容。
-4. 真正被 CHOL 掩盖的，不是“取值不是 Diagnosis”，而是 **Diagnosis 这个词也不等于原发诊断日**。SKCM 470 例全部 index_date=Diagnosis，但 diagnosis_is_primary_disease=true 的对象只有 118 例 days_to_diagnosis=0；其余 338 例的“研究疾病”钉在 Progression / metastasis 上，原发皮肤病灶反而在第 0 天。t_record 按 days_to_* 原样使用时，第 0 天对 SKCM 多数患者是转移/进展诊断，不是初诊。
+
+3. 风险一：锚点不一致（也就是不全都是 Diagnosis）没发生 但是存在缺失的情况
+因此“同一批 landmark 队列里 index_date 取值不一致”这件事，**在现有 TCGA 文件里没有发生**。但缺字段发生了：135 例没有 index_date 键。其中 127 例是空壳（无 diagnoses / demographic），8 例仍有临床内容。
+
+135 例没有 index_date 键。其中 127 例是空壳（无 diagnoses / demographic），8 例仍有临床内容。———— 处理方案，舍弃这些零点不明确的样本
+
+4. 风险点二：Diagnosis这个词名不副实
+真正被 CHOL 掩盖的，不是“取值不是 Diagnosis”，而是 **Diagnosis 这个词也不等于原发诊断日**。SKCM 470 例全部 index_date=Diagnosis，但 diagnosis_is_primary_disease=true 的对象只有 118 例 days_to_diagnosis=0；其余 338 例的“研究疾病”钉在 Progression / metastasis 上，原发皮肤病灶反而在第 0 天。t_record 按 days_to_* 原样使用时，第 0 天对 SKCM 多数患者是转移/进展诊断，不是初诊。
+
 5. 如果 landmark 概念原点必须是原发诊断日，不能假定 index_date=Diagnosis 已经够了，更不能假定 days_to_diagnosis=0 的那个对象就是 diagnosis_is_primary_disease。需要显式选锚点对象，再用该对象的 days_to_diagnosis 做一次整轴平移。当前 33 份文件里，这个平移量几乎只在 SKCM 非零。
 6. [time_stats.py](../src/time_stats.py) 完全不读 index_date，直接把各对象自己的 days_to_* 当 t_record。在现有 TCGA 数据上，这等价于“信任 GDC 已经把轴挂在 Diagnosis 上”，但没有校验，也没有记录。换癌种或换 GDC 导出后会静默错位。
 
@@ -141,14 +150,14 @@ SKCM 把这件事暴露出来。470 例全部 index_date=Diagnosis。age_at_inde
 
 ## 和当前 t_record 实现的关系
 
-TIME_CRITERIA.md 写的是：单元格是相对 index 的天数，归一化 days / last_time_days，不再减日历 t0。src/time_stats.py 的 _record_days_* 直接读各对象 days_to_*，不看 index_date，也不选诊断对象做平移。
+time_axis.md §4 写的是：单元格是相对 index 的天数，归一化 days / last_time_days，不再减日历 t0。src/time_stats.py 的 _record_days_* 直接读各对象 days_to_*，不看 index_date，也不选诊断对象做平移。
 
-这在数学上就是“GDC 给什么轴就用什么轴”。现有 TCGA 上几乎都是 Diagnosis 轴，所以 CHOL / BRCA / LAML 看起来正常。它没有做的事：
+这在数学上就是“GDC 给什么轴就用什么轴”。现有 TCGA 上几乎都是 Diagnosis 轴，所以 CHOL / BRCA / LAML 看起来正常。之前它没有做的事（前三项已随 2026-09-30 的 `build_index_date_stats` 落地，见末尾检查 1–3）：
 
-- 断言本数据集 index_date 唯一且等于 Diagnosis
-- 把缺 index_date 的有临床 case 打出来
-- 检查 diagnosis_is_primary_disease=true 是否在 0 附近
-- 在概念原点改成原发诊断时做平移
+- ✅ 断言本数据集 index_date 唯一且等于 Diagnosis
+- ✅ 把缺 index_date 的有临床 case 打出来
+- ✅ 检查 diagnosis_is_primary_disease=true 是否在 0 附近
+- 在概念原点改成原发诊断时做平移（仍未落地）
 
 生存终点同样相对 index：Dead 用 demographic.days_to_death，存活用 days_to_last_follow_up / days_to_follow_up。如果以后把特征轴平移到原发诊断日，终点必须一起平移，否则 L 和死亡日不在同一原点。词典还警告 days_to_last_follow_up 可能相对 initial pathologic diagnosis；CHOL/PCPG/ACC 上它与同对象 days_to_diagnosis 不冲突，SKCM 上也基本是 last_fu >= dtd，只有 TCGA-EB-A430 的 last_fu=-2。这不是这次的主问题，但如果做平移，终点字段要单独再核一次。
 
@@ -156,10 +165,10 @@ TIME_CRITERIA.md 写的是：单元格是相对 index 的天数，归一化 days
 
 不改口径公式，先加数据集级断言，写进 time_stats 的自检或每套 time_record/ 旁的小表。
 
-1. 枚举分布：每个数据集输出 index_date 取值计数。出现非 Diagnosis、或同一数据集多个非缺失取值，直接失败或标 mixed_index_date。
-2. 缺键：空壳忽略；有 diagnoses/demographic 仍缺键的 8 类 case 标 index_date_missing，不假装 Diagnosis。
-3. 零点一致性：对 index_date=Diagnosis 的 case，统计 is_primary_disease=true 的 days_to_diagnosis。若一个数据集里非 0 比例高（SKCM 338/470），在日志里写明：本数据集第 0 天是 GDC Diagnosis，不是原发灶。
+1. **枚举分布**（✅ 已落地）：每个数据集输出 index_date 取值计数。出现非 Diagnosis、或同一数据集多个非缺失取值，标 `non_diagnosis_index_date` / `mixed_index_date`。产物 `index_date_stats.csv`。
+2. **缺键**（✅ 已落地）：空壳忽略；有 diagnoses/demographic 仍缺键的 case 标 `index_date_missing_clinical`，逐例写入 `index_date_flagged.csv`，不假装 Diagnosis。
+3. **零点一致性**（✅ 已落地）：对 index_date=Diagnosis 的 case，统计 is_primary_disease=true 的 days_to_diagnosis。若一个数据集里非 0 比例 ≥ 20%（SKCM 338/470），标 `day0_not_primary`：本数据集第 0 天是 GDC Diagnosis，不是原发灶。
 4. 只有确认概念原点必须是原发诊断、并且该 case 找得到带数字的原发对象时，才做 t_prime = t - dtd_primary。候选对象建议优先 classification_of_tumor=primary 且天数最接近 0 的那个，而不是 diagnosis_is_primary_disease。找不到就保持原轴并标缺失，不要用 0 填。
-5. 换非 TCGA 项目时先跑这张表，再跑 landmark。当前 33 份文件不能外推。
+5. 换非 TCGA 项目时先跑这张表，再跑 landmark。当前 33 份文件不能外推。**首次非 TCGA 实测（2026-09-30）**：CPTAC-3 1866 例 = 1827 Diagnosis + 39 Sample Procurement（`mixed_index_date`）；MMRF-COMMPASS 995 例全部 First Treatment（`non_diagnosis_index_date`）。两个非 TCGA 项目的轴锚点都与 TCGA 不同，landmark 前必须核对。
 
 CHOL 可以继续当 Diagnosis 轴的干净例子。SKCM 是反例，必须进回归，不能只用 CHOL 锁规则。

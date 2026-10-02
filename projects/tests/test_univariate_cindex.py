@@ -14,8 +14,10 @@ from greedy.queue import DEFAULT_QUEUE_ROOT, DEFAULT_UNIVARIATE_QUEUE_ROOT, clai
 from greedy.univariate_cli import (
     CSV_COLUMNS,
     evaluate_all_fields,
+    expand_analyzer_args,
     make_parser,
     resolve_dataset_list,
+    univariate_out_dir,
     write_univariate_outputs,
 )
 
@@ -62,19 +64,69 @@ def test_parser_defaults_and_flags():
     parser = make_parser()
     args = parser.parse_args(["--dataset", "TCGA_LIHC", "--landmark_time", "none"])
     assert args.workers == 8
-    assert args.modality == "mlp_clinic_flatten"
+    assert args.analyzer == "mlp_clinic_flatten"
     assert args.encoding == "prompt"
     assert args.seed == 0
     assert args.experiment == ""
     flags = {action.option_strings[0] for action in parser._actions if action.option_strings}
     assert "--init_field" not in flags
-    assert "--outer_modalities" not in flags
+    assert "--outer_analyzers" not in flags
     assert "--min_delta" not in flags
     assert "--patience" not in flags
     assert "--max_steps" not in flags
     assert "--queue_root" in flags
     assert not hasattr(args, "init_field")
-    assert not hasattr(args, "outer_modalities")
+    assert not hasattr(args, "outer_analyzers")
+    multi = parser.parse_args(
+        ["--dataset", "TCGA_LIHC", "--landmark_time", "none",
+         "--analyzer", "mlp_clinic_mean,clinic_cox"]
+    )
+    assert multi.analyzer == "mlp_clinic_mean,clinic_cox"
+
+
+def test_univariate_out_dir_nesting(tmp_path):
+    parser = make_parser()
+    args = parser.parse_args(["--dataset", "TCGA_LIHC", "--landmark_time", "none"])
+    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "landmark_none", "", "mlp_clinic_flatten")
+    assert out == dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_none") / "mlp_clinic_flatten"
+
+    args = parser.parse_args(
+        ["--dataset", "all", "--landmark_time", "none", "--out", str(tmp_path)]
+    )
+    args._multi_dataset = True
+    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "landmark_none", "", "clinic_cox")
+    assert out == tmp_path / "TCGA_LIHC" / "landmark_none" / "clinic_cox"
+
+
+def test_resolve_dataset_list_rejects_empty():
+    parser = make_parser()
+    args = parser.parse_args(["--dataset", "", "--landmark_time", "none"])
+    try:
+        resolve_dataset_list(args)
+    except ValueError:
+        return
+    raise AssertionError("empty --dataset should raise ValueError")
+
+
+def test_expand_analyzer_args():
+    parser = make_parser()
+    args = parser.parse_args(
+        ["--dataset", "TCGA_LIHC", "--landmark_time", "none",
+         "--analyzer", "mlp_clinic_mean,clinic_cox"]
+    )
+    expanded = expand_analyzer_args(args)
+    assert [item.analyzer for item in expanded] == ["mlp_clinic_mean", "clinic_cox"]
+    assert all(item.dataset == "TCGA_LIHC" for item in expanded)
+    assert args.analyzer == "mlp_clinic_mean,clinic_cox"  # 原 namespace 不变
+
+    bad = parser.parse_args(
+        ["--dataset", "TCGA_LIHC", "--landmark_time", "none", "--analyzer", "bogus_name"]
+    )
+    try:
+        expand_analyzer_args(bad)
+    except ValueError:
+        return
+    raise AssertionError("unknown analyzer should raise ValueError")
 
 
 def test_stub_evaluator_writes_sorted_singleton_csv(tmp_path):
@@ -205,7 +257,11 @@ if __name__ == "__main__":
     import tempfile
     test_dataset_univariate_dir_prompt()
     test_parser_defaults_and_flags()
+    test_expand_analyzer_args()
+    test_resolve_dataset_list_rejects_empty()
     test_univariate_queue_is_separate_from_greedy()
+    with tempfile.TemporaryDirectory() as tmp:
+        test_univariate_out_dir_nesting(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_stub_evaluator_writes_sorted_singleton_csv(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:

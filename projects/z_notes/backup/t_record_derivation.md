@@ -1,13 +1,16 @@
 # t_record 区间确认规则（landmark 用）
 
+> **地位**：本文是本目录 [`time_axis.md`](time_axis.md) §4 t_record 判据表的**推导与实例依据**；权威口径以 time_axis.md 为准。旧规格 `time_write_record_spec.md` 与 `t_record_localization_current_problems.md` 已删除（其 timepoint 置信度继承、负向勾选挂父诊断日均已作废）。
+> **落地状态**：§2/§3 的 t_lo 规则与 TH1/TH1b/TH2 已落地（`src/time_stats.py`，Δ 参数恒 0）；§4 P1/P2 已落地；§5 N1/N2 未实现分类（现行 `treatment_or_therapy=no` 一律不建槽）；§6 既往史定点已落地；§11 F-merge 与 §12/§13 的 molecular/OCA 规则已落地。**未落地**：§7 `timepoint_category` 对照表（落地前须先做 §7.2 的方向检验）、biospecimen 实体连接（§7.1/§12 的 P2 型 Sample Procurement）、合并开关 M1/M2/M3 与假设开关 A1（默认关）、Δ_resp/Δ_path/Δ_lab（恒 0）；A2（TH1b 随访阶梯）已开启。
+
 依据实例归纳。`diagnoses[]` 一支：`TCGA-AD-6895`（COAD）、`TCGA-EA-A5O9`（CESC）、`TCGA-DS-A1OC`（CESC）。`follow_ups[]` 一支：`TCGA-AB-2810`（LAML）、`TCGA-2G-AAFY`（TGCT）、`TCGA-YU-A94M`（TGCT）。覆盖 `diagnoses[].treatments[]`、`diagnoses[].pathology_details[]`、`follow_ups[]`、`follow_ups[].molecular_tests[]`、`follow_ups[].other_clinical_attributes[]`。所有天数相对 `index_date`。
 
 ## 0. 定义与门控
 
-`t_record` 是区间 `(t_lo, t_hi)`，不是点。
+`t_record` 是区间 `(t_lo, t_hi)`，不是点。t 本身即**记录时间**——这条信息被写下的时刻；区间刻画的是这个时刻的不确定范围，**不是**记录所描述事件的时间跨度（如治疗记录的事件跨度是 [起始日, 结束日]，但其 `t_lo` 取结束日：疗程结束前无法结账）。
 
-- `t_lo`：该记录的内容最早可能被写下的时刻。由记录内**最晚才可得的字段**决定。
-- `t_hi`：该记录**必然已存在**的最早可证时刻。只能来自外部证据，不能由对象自身的事件天数推出。
+- `t_lo`：该记录时间的**起点**（下界）——该记录内容最早可能被写下的时刻。由记录内**最晚才可得的字段**决定。
+- `t_hi`：该记录时间的**终点**（上界）——该记录最晚可能已被写下的时刻。只能来自外部证据，不能由对象自身的事件天数推出。
 - landmark 门：记录在 L 时刻可用，当且仅当 `t_hi <= L` 且状态不为 `unlocated`。
 
 `created_datetime` / `updated_datetime` 是 GDC 入库时间（`t_write`），任何情况下不参与 `t_record`。
@@ -47,32 +50,32 @@
 
 ## 3. `t_hi`：三个来源，按优先级取最小可得值
 
-**H1 下游依赖事件（首选）**。存在一个天数已定位的事件 E，其发生必须以本记录为前提，则 `t_hi = t(E)`。
+**TH1 下游依赖事件（首选）**。存在一个天数已定位的事件 E，其发生必须以本记录为前提，则 `t_hi = t(E)`。
 
 已确认的唯一实例化形式：术后辅助治疗的适应证判断依赖术后病理报告。
 成立条件：(a) 本例确有切除标本证据（见第 4 节）；(b) 存在 `treatment_intent_type = "Adjuvant"` 或 `timepoint_category = "Postoperative"` 且带 `days_to_treatment_start` 的治疗。
 则 `t_hi(pathology_details) = min(该类治疗的 days_to_treatment_start)`。
 实例：`EA-A5O9` → 56；`DS-A1OC` → 117。
 
-新增 H1 形式须逐条论证并登记，不得由类比扩展。
+新增 TH1 形式须逐条论证并登记，不得由类比扩展。
 
-**H1b 随访阶梯（依赖假设 A2）**。真正随访记录（第 11 节）自带 `days_to_follow_up`，在本病例上构成一串已定位时点。对任一 `t_lo` 已知的记录，取 `t_hi = min{days_to_follow_up : days_to_follow_up >= t_lo}`。依据是随访表按设计采集区间事件。无满足条件的随访日时退 H2。
+**TH1b 随访阶梯（依赖假设 A2）**。真正随访记录（第 11 节）自带 `days_to_follow_up`，在本病例上构成一串已定位时点。对任一 `t_lo` 已知的记录，取 `t_hi = min{days_to_follow_up : days_to_follow_up >= t_lo}`。依据是随访表按设计采集区间事件。无满足条件的随访日时退 TH2。
 
-这条比 H2 紧得多：`YU-A94M` 的术后血清标志物 `t_lo = 0`，H2 给 564，H1b 给 333。对治疗对象同样适用——若某方案结束于 332 天而本例有 360 天随访，`t_hi = 360` 而非全案末锚点。
+这条比 TH2 紧得多：`YU-A94M` 的术后血清标志物 `t_lo = 0`，TH2 给 564，TH1b 给 333。对治疗对象同样适用——若某方案结束于 332 天而本例有 360 天随访，`t_hi = 360` 而非全案末锚点。
 
-**H2 病例级末锚点（兜底）**。`t_hi = max(days_to_last_follow_up, days_to_last_known_disease_status, days_to_recurrence, 全部已定位事件天数)`。
+**TH2 病例级末锚点（兜底）**。`t_hi = max(days_to_last_follow_up, days_to_last_known_disease_status, days_to_recurrence, 全部已定位事件天数)`。
 实例：`AD-6895` → 763；`EA-A5O9` → 788。
 
-**H3 上界失守**。上述皆不可得时 `t_hi = +∞`，状态记 `lo_only`。
+**TH3 上界失守**。上述皆不可得时 `t_hi = +∞`，状态记 `lo_only`。
 实例：`DS-A1OC` 的 `days_to_last_follow_up`、`days_to_recurrence`、`days_to_last_known_disease_status` 全空，最后的临床锚点是化疗结束日 332，之后无任何证据。该病例全部无日期对象上界失守。
 
 ## 4. `pathology_details` 的锚点判定
 
 标本获取日由 index 诊断的作出方式决定，与病理对象自身无关（`days_to_pathology_detail` 全库无值，不作判据）。
 
-- **P1 切除标本即确诊标本**：无活检记载，同时具备 `residual_disease` 或 `ajcc_pathologic_*`，且 `site_of_resection_or_biopsy` 为实体器官。此时标本日等于诊断日，`t_lo = days_to_diagnosis`，`t_hi = days_to_diagnosis + Δ_path`（`Δ_path` 为报告出具周期，默认 0，作敏感性参数）；若 H1 可得且更紧，取 H1。
+- **P1 切除标本即确诊标本**：无活检记载，同时具备 `residual_disease` 或 `ajcc_pathologic_*`，且 `site_of_resection_or_biopsy` 为实体器官。此时标本日等于诊断日，`t_lo = days_to_diagnosis`，`t_hi = days_to_diagnosis + Δ_path`（`Δ_path` 为报告出具周期，默认 0，作敏感性参数）；若 TH1 可得且更紧，取 TH1。
   实例：`AD-6895`，`residual_disease = R0`、pT3N1a、取材部位 Cecum，`t_record = (0, 0]`。
-- **P2 活检确诊、另有切除**：`method_of_diagnosis = "Biopsy"`，且存在切除类治疗或病理分期/清扫淋巴结等切除标本所见。`t_lo = days_to_diagnosis`（保守取诊断日，实际严格大于），`t_hi` 取 H1。
+- **P2 活检确诊、另有切除**：`method_of_diagnosis = "Biopsy"`，且存在切除类治疗或病理分期/清扫淋巴结等切除标本所见。`t_lo = days_to_diagnosis`（保守取诊断日，实际严格大于），`t_hi` 取 TH1。
   实例：`EA-A5O9` → `(0, 56]`；`DS-A1OC` → `(0, 117]`。
 - **P3 二者皆不成立**：`unlocated`。
 
@@ -82,7 +85,7 @@
 
 - **N1 恒真否定**：该治疗方式对本病种本就不属可选项，字段值不携带时间信息。标 `non_informative`，不进入 landmark 特征集，也不赋 0。
   实例：`AD-6895` 结肠癌的 `Radiation Therapy, NOS = no`。
-- **N2 有临床含义的否定**：该治疗方式属本病种本分期的标准选项，"未行"是实质结论，只有在相应治疗窗口关闭后才成立。`t_lo` = 窗口关闭时点，通常无法从本例推得，则 `t_lo` 记 `unlocated`；`t_hi` 取 H2/H3。
+- **N2 有临床含义的否定**：该治疗方式属本病种本分期的标准选项，"未行"是实质结论，只有在相应治疗窗口关闭后才成立。`t_lo` = 窗口关闭时点，通常无法从本例推得，则 `t_lo` 记 `unlocated`；`t_hi` 取 TH2/TH3。
   实例：`AD-6895` ⅢB 期结肠癌的 `Pharmaceutical Therapy, NOS = no`；`EA-A5O9` 的 `treatment2` / `treatment4`。
 
 N1 与 N2 形态完全相同，仅凭 JSON 不可分。此处是本规则集对外部知识的唯一硬依赖。
@@ -150,16 +153,24 @@ N1 与 N2 形态完全相同，仅凭 JSON 不可分。此处是本规则集对�
 
 ## 8. 假设开关与敏感性参数
 
+对于当前机制中一些 t_record 判据里有几处必须选边的地方,无法通过 JSON 文件与词典直接裁决，因此就变成了用户决定的假设开关与敏感性参数：
+- 「随访表会采集区间事件吗?」——选了"是",TH1b 才成立
+- 「治疗记录是事件当天就写下的吗?」——选了"是",每个带天数对象都变成点;选了"否",大多数只有下界
+- 「疗效评价要等多久?病理报告几天出?」
+
 | 名称 | 含义 | 默认 |
 | --- | --- | --- |
 | A1 | CRF 前瞻近实时录入，令带天数对象 `t_hi = t_lo` | 关闭 |
+| A2 | 随访表捕获区间事件，据此启用 TH1b 随访阶梯 | 开启 |
 | M3 | 新旧抄录对合并 | 关闭 |
-| A2 | 随访表捕获区间事件，据此启用 H1b 随访阶梯 | 开启 |
 | `Δ_resp` | 疗效评价延迟（天） | 0 |
 | `Δ_path` | 病理报告出具周期（天） | 0 |
 | `Δ_lab` | 实验室／分子检测周转期（天） | 0 |
 
-A1 关闭时，仅 H1 与第 6 节能给出有限上界，landmark 可用记录数会显著低于按事件日定点的做法；这是口径差异，不是数据缺失。建议主分析关闭 A1，敏感性分析开启并报告两组结果之差。
+A1 开了就回到"事件日定点"的老口径，可用记录暴涨,但等于默认写入 = 事件,乐观且无法验证,泄露风险；
+A1 关闭时，仅 TH1 与第 6 节能给出有限上界，landmark 可用记录数会显著低于按事件日定点的做法；这是口径差异，不是数据缺失。建议主分析关闭 A1，敏感性分析开启并报告两组结果之差。
+
+A2 是 TH1b 存在的开关，关闭之后原 TH1b 退 TH2。
 
 ## 9. 输出结构与病例分层
 
@@ -174,27 +185,27 @@ A1 关闭时，仅 H1 与第 6 节能给出有限上界，landmark 可用记录�
 | 病例 | 记录 | `t_record` | status | 依据 |
 | --- | --- | --- | --- | --- |
 | AD-6895 | 主诊断 pathology_details | `(0, 0]` | point | P1 |
-| AD-6895 | 药物 Adjuvant `no` | `(?, 763]` | lo_only | N2 + H2 |
+| AD-6895 | 药物 Adjuvant `no` | `(?, 763]` | lo_only | N2 + TH2 |
 | AD-6895 | 放疗 Adjuvant `no` | — | non_informative | N1 |
 | AD-6895 | 既往皮肤癌下 2 条 | `(0, 0]` | point | 第 6 节 |
-| EA-A5O9 | EBRT 56→81 CR | `[81, 788]` | bounded | 第 2 节 + H2 |
-| EA-A5O9 | pathology_details | `(0, 56]` | bounded | P2 + H1 |
+| EA-A5O9 | EBRT 56→81 CR | `[81, 788]` | bounded | 第 2 节 + TH2 |
+| EA-A5O9 | pathology_details | `(0, 56]` | bounded | P2 + TH1 |
 | EA-A5O9 | Hysterectomy `Prior to Diagnosis` | — | unlocated | 第 7 节 |
-| EA-A5O9 | 术后药物 `no` ×2 | `(?, 788]` | lo_only | N2 + H2 |
-| DS-A1OC | EBRT 117→155 | `[155, +∞)` | lo_only | 第 2 节 + H3 |
-| DS-A1OC | 化疗（2 行合并） | `[332, +∞)` | lo_only | M1 + H3 |
-| DS-A1OC | pathology_details（2 行合并） | `(0, 117]` | bounded | M2 + P2 + H1 |
+| EA-A5O9 | 术后药物 `no` ×2 | `(?, 788]` | lo_only | N2 + TH2 |
+| DS-A1OC | EBRT 117→155 | `[155, +∞)` | lo_only | 第 2 节 + TH3 |
+| DS-A1OC | 化疗（2 行合并） | `[332, +∞)` | lo_only | M1 + TH3 |
+| DS-A1OC | pathology_details（2 行合并） | `(0, 117]` | bounded | M2 + P2 + TH1 |
 | DS-A1OC | Hysterectomy `Prior to Diagnosis` | — | unlocated | 第 7 节 |
 | DS-A1OC | 既往乳腺癌下 2 条 | `(0, 0]` | point | 第 6 节 |
 | AB-2810 | 随访 ×2（均 31 天，Follow-up + Last Contact） | `[31, 31]` | point | 第 11 节，F-merge 合并为一次 |
 | AB-2810 | Sample Procurement 血象／骨髓象 ×15 | `(-∞, 0]` | bounded | 第 12 节，LAML 属 P1 |
 | AB-2810 | Initial Diagnosis IHC／突变 ×8 | `(-∞, 0+Δ_lab]` | bounded | 第 12 节 |
-| 2G-AAFY | 术前 LDH（`days_to_test = -3`） | `[-3, H1b]` | bounded | 第 12 节 |
-| 2G-AAFY | 术后 AFP（`days_to_test = 11`） | `[11, H1b]` | bounded | 第 12 节 |
+| 2G-AAFY | 术前 LDH（`days_to_test = -3`） | `[-3, TH1b]` | bounded | 第 12 节 |
+| 2G-AAFY | 术后 AFP（`days_to_test = 11`） | `[11, TH1b]` | bounded | 第 12 节 |
 | YU-A94M | 随访 333／431／493／564 | 各自 point | point | 第 11 节 |
 | YU-A94M | `follow_up6`（天数 null、无内容字段） | — | non_informative | 第 11 节 |
 | YU-A94M | 术前 AFP／LDH／hCG（`days_to_test = 0`） | `[0, 0]` | point | 第 12 节 |
-| YU-A94M | 术后 AFP／LDH／hCG（无天数） | `[0, 333]` | bounded | 第 12 节 + H1b |
+| YU-A94M | 术后 AFP／LDH／hCG（无天数） | `[0, 333]` | bounded | 第 12 节 + TH1b |
 | YU-A94M | `fertility_history`（Prior to Diagnosis） | `(0, 0]` | point | 第 13 节 |
 
 ## 11. 真正随访 `follow_ups[]`（43,360）
@@ -204,13 +215,13 @@ A1 关闭时，仅 H1 与第 6 节能给出有限上界，landmark 可用记录�
 - **定位**：视为时点，`t_lo = t_hi = days_to_follow_up`。该次访视的内容字段（`disease_response`、`last_known_disease_status` 等）就是这次访视的产出，无延后字段。
 - **F-merge**：`timepoint_category = "Last Contact"` 的行，若其 `days_to_follow_up` 与同案某条 `Follow-up` 相同，两者是同一次访视的两次抄录，合并为一次 record。`AB-2810` 两行同为 31、`YU-A94M` 两行同为 564，两例均如此。不合并会重复计数末次访视，并污染随访次数类特征。
 - **空行剔除**：`days_to_follow_up` 为 null 且无任何内容字段者记 `non_informative`（`YU-A94M_follow_up6`）；天数为 null 但有 `disease_response` 者记 `unlocated`。
-- 本集合同时是 H1b 随访阶梯的唯一来源，须在其余记录定位之前先行构建。
+- 本集合同时是 TH1b 随访阶梯的唯一来源，须在其余记录定位之前先行构建。
 
 ## 12. `molecular_tests[]`（20,754）
 
 `days_to_test` 覆盖 1,638 条（7.9%），`timepoint_category` 覆盖 14,643 条（70.5%）。
 
-- **有天数**：`t_lo = days_to_test + Δ_lab`，`t_hi` 走 H1b／H2。天数可为负（`2G-AAFY` 术前 LDH `-3`），说明 index 不是本例最早事件，负值不作异常处理。
+- **有天数**：`t_lo = days_to_test + Δ_lab`，`t_hi` 走 TH1b／TH2。天数可为负（`2G-AAFY` 术前 LDH `-3`），说明 index 不是本例最早事件，负值不作异常处理。
 - **无天数、有类别**：按下表取锚点。锚点的具体天数取决于本例在第 4 节中的 P1／P2 判定，两支共用同一判别。
 
 | 类别 | 计数 | P1 型（index 诊断作于切除／取材标本） | P2 型（活检确诊、手术在后） |
@@ -219,7 +230,7 @@ A1 关闭时，仅 H1 与第 6 节能给出有限上界，landmark 可用记录�
 | Sample Procurement | 3781 | `t_hi = 0` | `t_hi` = 取材日，须连接 biospecimen 实体 |
 | Preoperative | 3583 | `t_hi = 0` | `t_hi` = 手术日；无手术天数则 `unlocated` |
 | Prior to Treatment | 60 | `t_hi` = 全案最早 `days_to_treatment_start` | 同左 |
-| Postoperative | 564 | `t_lo = 0`，`t_hi` 走 H1b／H2 | `t_lo` = 手术日 |
+| Postoperative | 564 | `t_lo = 0`，`t_hi` 走 TH1b／TH2 | `t_lo` = 手术日 |
 
 **收益**：P1 型病例中前四类合计 14,079 条，占有类别对象的 96%，全部落在 `t_hi <= 0`，对任何 `L >= 0` 的 landmark 无条件通过门控。这是全规则集中收益最高的一条，其可靠性完全系于 P1／P2 判定，因此第 4 节的判别质量必须先保证。
 
@@ -231,8 +242,8 @@ A1 关闭时，仅 H1 与第 6 节能给出有限上界，landmark 可用记录�
 
 - **Initial Diagnosis（4245）与 Prior to Diagnosis（3497）**：合计 7,742 条一律 `t_record = (0, 0]`。机制同第 6 节——类别描述的是该状况**存在的时期**，不是它**被记录的时点**，两者都在基线问诊中一次采集。
 - **Not Reported（436）与生命阶段尾巴（Adulthood 27／Childhood 16／Adolescence 8，共 51）**：合并按 Not Reported 处理，记 `unlocated`，不再细分。生命阶段是年龄区间而非相对诊断的时点，51 条不值得为其引入 `age_at_diagnosis` 换算。
-- **陷阱**：24 条带 `days_to_comorbidity` / `days_to_risk_factor` 的对象，其天数是该状况的**发生时间**，不是记录时间，不得直接充当 `t_record`。天数为负则仍取 `(0, 0]`；天数为正说明该状况在 index 之后出现，取 `t_lo` = 该天数、`t_hi` 走 H1b。
+- **陷阱**：24 条带 `days_to_comorbidity` / `days_to_risk_factor` 的对象，其天数是该状况的**发生时间**，不是记录时间，不得直接充当 `t_record`。天数为负则仍取 `(0, 0]`；天数为正说明该状况在 index 之后出现，取 `t_lo` = 该天数、`t_hi` 走 TH1b。
 
 ## 14. 未覆盖范围
 
-`demographic`、`exposures[]`、`family_histories[]` 三支不在本规则集内，沿用既有的"默认最早"口径。biospecimen 实体连接（第 7.1 节 Prior to Procurement 1480 条、第 12 节 P2 型 Sample Procurement 所需）尚未实现。`treatments` 上 `timepoint_category` 的语义方向（第 7.2 节）尚未检验。
+biospecimen 实体连接（第 7.1 节 Prior to Procurement 1480 条、第 12 节 P2 型 Sample Procurement 所需）尚未实现。`treatments` 上 `timepoint_category` 的语义方向（第 7.2 节）尚未检验。
