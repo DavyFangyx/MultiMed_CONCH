@@ -25,20 +25,23 @@
   重算（写进 tier_source 列），并在图/表标题注明；manifest tier 仅作为对照列保留。
 
 输出（默认 results_display/Test_1b_dataset_cindex/；gitignore 产物，不入库）：
-  表：Test_1b_dataset_summary.csv     每数据集分布统计 + tier + top-1 字段
-      Test_1b_field_summary.csv       每字段跨数据集统计（n_datasets/median/range/...）
-      Test_1b_cindex_matrix.csv       dataset × field 对齐矩阵（原始 c_index_mean）
-      Test_1b_topk_members.csv        各数据集 top-k 成员（长表）
-      Test_1b_topk_pairwise_k{k}.csv  两两重叠率矩阵（交叠数 / k）
-      Test_1b_topk_overlap_summary.csv 各 k 的聚合重叠率（Jaccard / 交叠率 / 零重叠对数）
-      Test_1b_metrics.json            报告用头条量化数字
-  图：Test_1b_per_dataset_profile.png              E1 Fig2 升级（逐数据集字段画像）
-      Test_1b_per_dataset_distribution.png       指标 a：分布 + 四挡分层
-      Test_1b_cross_dataset_field_distribution.png 指标 b
-      Test_1b_topk_overlap_matrix.png            指标 c：两两重叠矩阵
-      Test_1b_topk_overlap_summary.png           指标 c：聚合重叠率
+  文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
+  Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据；本目录平铺，无子目录。
+  表：Main_dataset_summary.csv     每数据集分布统计 + tier + top-1 字段
+      Appx_field_summary.csv       每字段跨数据集统计（n_datasets/median/range/...）
+      Raw_cindex_matrix.csv        dataset × field 对齐矩阵（原始 c_index_mean）
+      Appx_topk_members.csv        各数据集 top-k 成员（长表）
+      Appx_topk_pairwise_k{k}.csv  两两重叠率矩阵（交叠数 / k）
+      Main_topk_overlap.csv        各 k 的聚合重叠率（Jaccard / 交叠率 / 零重叠对数）
+      Meta_metrics.json            报告用头条量化数字
+  图：Main_per_dataset_profile.png              E1 Fig2 升级（逐数据集字段画像）
+      Appx_per_dataset_distribution.png         指标 a：分布 + 四挡分层
+      Appx_cross_dataset_field_spread.png       指标 b：同一字段跨数据集 c-index 分布
+      Appx_topk_overlap_matrix.png              指标 c：两两重叠矩阵
+      Main_topk_overlap.png                     指标 c：聚合重叠率汇总
 
 可复跑：同输入重跑 diff=0（无时间戳、固定排序、固定数值格式、固定随机种子）。
+产物清单核对：main() 末尾遍历 out_dir，逐个核对上面这组文件名（清单外文件按旧名遗留告警）。
 
 用法：
   python3 results_display/scripts/Test_1b_dataset_cindex.py            # 生成全部产物
@@ -88,6 +91,23 @@ DEFAULT_TOP_K = (5, 10, 20)
 DEFAULT_MIN_DATASETS = 10
 AUDIT_SEED = 20261002
 AUDIT_N = 3
+
+# ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
+OUT_MAIN_PER_DATASET_PROFILE = "Main_per_dataset_profile.png"
+OUT_MAIN_TOPK_OVERLAP_PNG = "Main_topk_overlap.png"
+OUT_MAIN_TOPK_OVERLAP_CSV = "Main_topk_overlap.csv"
+OUT_MAIN_DATASET_SUMMARY = "Main_dataset_summary.csv"
+OUT_APPX_PER_DATASET_DISTRIBUTION = "Appx_per_dataset_distribution.png"
+OUT_APPX_CROSS_DATASET_FIELD_SPREAD = "Appx_cross_dataset_field_spread.png"
+OUT_APPX_TOPK_OVERLAP_MATRIX = "Appx_topk_overlap_matrix.png"
+OUT_APPX_FIELD_SUMMARY = "Appx_field_summary.csv"
+OUT_APPX_TOPK_MEMBERS = "Appx_topk_members.csv"
+OUT_RAW_CINDEX_MATRIX = "Raw_cindex_matrix.csv"
+OUT_META_METRICS = "Meta_metrics.json"
+
+
+def topk_pairwise_name(k: int) -> str:
+    return f"Appx_topk_pairwise_k{k}.csv"
 
 # ---- 视觉常量（与 Test_2b_delta_report.py 同一套：dataviz 参考调色板 light 表面）----
 INK = "#0b0b0b"
@@ -843,6 +863,21 @@ def parse_top_k(raw: str) -> list[int]:
     return ks
 
 
+def check_out_dir_inventory(out_dir: Path, wrote: list[Path]) -> None:
+    """遍历 out_dir 核对本次写出的产物清单（新前缀名），并提示清单外的遗留文件。
+
+    "同输入重跑 diff=0" 的核对即以这份文件名集合为准（本约定平铺、无子目录）；
+    清单外文件通常是旧名（Test_1b_*）遗留，删除即可（本脚本只写新名）。
+    """
+    expected = {p.name for p in wrote}
+    missing = sorted(name for name in expected if not (out_dir / name).exists())
+    if missing:
+        print(f"  [warn] 产物缺失: {', '.join(missing)}")
+    for name in sorted(p.name for p in out_dir.iterdir() if p.is_file()):
+        if name not in expected and name != "README.md":  # README = 目录说明，非脚本产物
+            print(f"  [warn] 清单外文件（旧名遗留？）: {name}")
+
+
 def audit(records: list[dict], stats: dict[str, dict]) -> bool:
     """固定种子抽 3 个 (dataset, field)，从原始 CSV 独立重算并与产物对照。"""
     all_pairs = sorted(
@@ -954,7 +989,7 @@ def main(argv: list[str] | None = None) -> int:
             "top1_field": r["top1_field"],
             "top1_c_index": "%.6f" % r["top1_value"],
         })
-    p = out_dir / "Test_1b_dataset_summary.csv"
+    p = out_dir / OUT_MAIN_DATASET_SUMMARY
     write_rows(p, ds_rows, list(ds_rows[0]))
     wrote.append(p)
 
@@ -973,12 +1008,12 @@ def main(argv: list[str] | None = None) -> int:
             "c_std": "%.6f" % st["c_std"],
             "datasets": ";".join(st["datasets"]),
         })
-    p = out_dir / "Test_1b_field_summary.csv"
+    p = out_dir / OUT_APPX_FIELD_SUMMARY
     write_rows(p, field_rows, list(field_rows[0]))
     wrote.append(p)
 
     # --- 表：对齐矩阵 ---
-    p = out_dir / "Test_1b_cindex_matrix.csv"
+    p = out_dir / OUT_RAW_CINDEX_MATRIX
     write_matrix(p, datasets, matrix)
     wrote.append(p)
 
@@ -1035,11 +1070,11 @@ def main(argv: list[str] | None = None) -> int:
             "n_fields_unique_to_one_dataset": sum(1 for c in hits.values() if c == 1),
             "n_fields_ge_0.5_of_datasets": int(sum(1 for c in hits.values() if c >= 0.5 * n_ds)),
         }
-        p = out_dir / f"Test_1b_topk_pairwise_k{k}.csv"
+        p = out_dir / topk_pairwise_name(k)
         write_matrix(p, datasets, ov)
         wrote.append(p)
 
-    p = out_dir / "Test_1b_topk_members.csv"
+    p = out_dir / OUT_APPX_TOPK_MEMBERS
     write_rows(p, member_rows, ["k", "dataset", "rank", "field", "c_index_mean"])
     wrote.append(p)
 
@@ -1062,7 +1097,7 @@ def main(argv: list[str] | None = None) -> int:
             "n_fields_in_at_least_half_of_datasets": info["n_fields_in_at_least_half"],
             "n_fields_unique_to_one_dataset": info["n_fields_unique_to_one_dataset"],
         })
-    p = out_dir / "Test_1b_topk_overlap_summary.csv"
+    p = out_dir / OUT_MAIN_TOPK_OVERLAP_CSV
     write_rows(p, overlap_rows, list(overlap_rows[0]))
     wrote.append(p)
 
@@ -1074,24 +1109,24 @@ def main(argv: list[str] | None = None) -> int:
     # --- 图 ---
     wrote.append(figure_per_dataset_profile(
         records, fields, shared_fields, stats,
-        out_dir / "Test_1b_per_dataset_profile.png",
+        out_dir / OUT_MAIN_PER_DATASET_PROFILE,
         analyzer=args.analyzer, tier_note=tier_note,
     ))
     wrote.append(figure_per_dataset_distribution(
-        records, out_dir / "Test_1b_per_dataset_distribution.png",
+        records, out_dir / OUT_APPX_PER_DATASET_DISTRIBUTION,
         analyzer=args.analyzer, tier_note=tier_note,
     ))
     wrote.append(figure_cross_dataset_fields(
         records, stats, shared_fields,
-        out_dir / "Test_1b_cross_dataset_field_distribution.png",
+        out_dir / OUT_APPX_CROSS_DATASET_FIELD_SPREAD,
         analyzer=args.analyzer, tier_note=tier_note, min_datasets=args.min_datasets,
     ))
     wrote.append(figure_topk_matrices(
         datasets, overlap_by_k, summary,
-        out_dir / "Test_1b_topk_overlap_matrix.png", tier_note=tier_note,
+        out_dir / OUT_APPX_TOPK_OVERLAP_MATRIX, tier_note=tier_note,
     ))
     wrote.append(figure_topk_summary(
-        summary, pairwise_values, out_dir / "Test_1b_topk_overlap_summary.png",
+        summary, pairwise_values, out_dir / OUT_MAIN_TOPK_OVERLAP_PNG,
     ))
 
     # --- 头条量化数字 ---
@@ -1167,7 +1202,7 @@ def main(argv: list[str] | None = None) -> int:
             for k in ks
         },
     }
-    p = out_dir / "Test_1b_metrics.json"
+    p = out_dir / OUT_META_METRICS
     p.write_text(
         json.dumps(metrics, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -1195,6 +1230,7 @@ def main(argv: list[str] | None = None) -> int:
               f"zero-shared pairs {info['n_empty_pairs']}/{info['n_pairs']} "
               f"({100.0 * info['fraction_empty_pairs']:.1f}%)")
     print(f"  out_dir: {out_dir}")
+    check_out_dir_inventory(out_dir, wrote)
 
     rc = 0
     if args.audit:

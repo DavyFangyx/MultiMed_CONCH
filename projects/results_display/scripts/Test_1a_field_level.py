@@ -19,20 +19,29 @@ leak_rate 列（Test_2a 审计）：
   - 「理论上能动组合 Δc 的字段清单」= leak_rate > --leak_threshold 且 |Δc_field| >= --delta_threshold。
 
 输出（默认 results_display/Test_1a_field_level/；gitignore 产物，不入库）：
-  Test_1a_field_delta.csv       逐 (dataset, field)：c_t0/c_off/Δc/leak_rate（待填）
-  Test_1a_dataset_summary.csv   逐 dataset：字段数、Δc 均值/中位/极值、非平凡占比、Top ± 字段
-  Test_1a_field_summary.csv     逐 field 跨数据集：Δc 均值/中位/极值、符号计数
-  Test_1a_delta_matrix.csv      dataset × field Δc 对齐矩阵
-  Test_1a_influential_fields.csv「能动字段清单」（leak 未出数时为空表，列齐全）
-  Test_1a_metrics.json          头条量化数字 + 覆盖度（pending 数据集/字段）
-  Test_1a_c_off_vs_t0.png       两臂 c-index 散点（对角线 = 无差异）
-  Test_1a_delta_distribution.png  Δc 分布（全体 + 逐数据集条带）
-  Test_1a_delta_boxplot.png      逐数据集 Δc 箱线（按 n_event 排序）
-  Test_1a_delta_by_mask_group.png Δc 分组（取值未改动 = 噪声本底 vs 被 mask 改动）
-  Test_1a_audit.json             --audit 的抽查记录
-  Test_1a_leak_vs_delta.png      x=leak_rate, y=Δc_field（leak 未出数时跳过并记 pending）
+  文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
+  Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据与审计；本目录平铺，无子目录。
+  Main_mask_group_delta.png      Δc 分组（取值未改动 = 噪声本底 vs 被 mask 改动）——唯一主结论
+  Main_field_ranking.csv         条件化字段汇总：「哪些字段的泄露值得关注」（大小 × 涉及面 × 一致性）。
+                                 列 = field / n_datasets_total（该字段覆盖的数据集数）/
+                                 n_datasets_affected（取值被 mask 改动的数据集数）/
+                                 median_delta_among_affected（仅 affected 子集的中位 Δc）/
+                                 frac_abs_delta_ge_0p05（affected 子集中 |Δc| >= 0.05 占比 = 一致性）/
+                                 max_abs_delta（该字段全部数据集上的 max |Δc|）。
+                                 排序：median_delta_among_affected 降序；无 affected 数据集的字段排表尾。
+  Appx_off_vs_t0.png             两臂 c-index 散点（对角线 = 无差异）
+  Appx_delta_distribution.png    Δc 分布（全体 + 逐数据集条带）
+  Appx_delta_by_dataset.png      逐数据集 Δc 箱线（按 n_event 排序）
+  Appx_field_delta.csv           逐 (dataset, field)：c_t0/c_off/Δc/leak_rate（待填）
+  Appx_dataset_summary.csv       逐 dataset：字段数、Δc 均值/中位/极值、非平凡占比、Top ± 字段
+  Appx_influential_fields.csv    「能动字段清单」（leak 未出数时为空表，列齐全）
+  Appx_leak_vs_delta.png         x=leak_rate, y=Δc_field（leak 未出数时跳过并记 pending）
+  Raw_delta_matrix.csv           dataset × field Δc 对齐矩阵（字段列序 = 逐字段 |Δc 均值| 降序）
+  Meta_metrics.json              头条量化数字 + 覆盖度（pending 数据集/字段）
+  Meta_audit.json                --audit 的抽查记录
 
 可复跑：同输入重跑 diff=0（无时间戳、固定排序、固定数值格式、固定随机种子）。
+产物清单核对：main() 末尾遍历 out_dir，逐个核对上面这组文件名（清单外文件按旧名遗留告警）。
 
 用法：
   python3 results_display/scripts/Test_1a_field_level.py              # 生成全部产物
@@ -74,6 +83,35 @@ DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary
 DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
 MIN_EVENT = 100  # R13
+CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 阈值（列名固定，不随 CLI 变）
+
+# ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
+OUT_MAIN_MASK_GROUP = "Main_mask_group_delta.png"
+OUT_MAIN_FIELD_RANKING = "Main_field_ranking.csv"
+OUT_APPX_OFF_VS_T0 = "Appx_off_vs_t0.png"
+OUT_APPX_DELTA_BY_DATASET = "Appx_delta_by_dataset.png"
+OUT_APPX_DELTA_DISTRIBUTION = "Appx_delta_distribution.png"
+OUT_APPX_FIELD_DELTA = "Appx_field_delta.csv"
+OUT_APPX_DATASET_SUMMARY = "Appx_dataset_summary.csv"
+OUT_APPX_INFLUENTIAL_FIELDS = "Appx_influential_fields.csv"
+OUT_RAW_DELTA_MATRIX = "Raw_delta_matrix.csv"
+OUT_META_METRICS = "Meta_metrics.json"
+# 条件产物：leak 出数后才有 / 只有 --audit 才写
+OUT_APPX_LEAK_VS_DELTA = "Appx_leak_vs_delta.png"
+OUT_META_AUDIT = "Meta_audit.json"
+OUTPUT_FILES = (
+    OUT_MAIN_MASK_GROUP,
+    OUT_MAIN_FIELD_RANKING,
+    OUT_APPX_OFF_VS_T0,
+    OUT_APPX_DELTA_BY_DATASET,
+    OUT_APPX_DELTA_DISTRIBUTION,
+    OUT_APPX_FIELD_DELTA,
+    OUT_APPX_DATASET_SUMMARY,
+    OUT_APPX_INFLUENTIAL_FIELDS,
+    OUT_RAW_DELTA_MATRIX,
+    OUT_META_METRICS,
+)
+OUTPUT_FILES_CONDITIONAL = (OUT_APPX_LEAK_VS_DELTA, OUT_META_AUDIT)
 
 # ---- 视觉常量（与 Test_1b_dataset_cindex.py / Test_2b_delta_report.py 同一套）----
 INK = "#0b0b0b"
@@ -386,6 +424,12 @@ def summarize_datasets(rows: list[dict], delta_threshold: float) -> list[dict]:
 
 
 def summarize_fields(rows: list[dict], delta_threshold: float) -> list[dict]:
+    """逐 field 跨数据集的**无条件**汇总。
+
+    仅内部使用：给 Raw_delta_matrix.csv 定字段列序（|Δc 均值| 降序）——该列序是历史产物
+    的既定口径，不写入磁盘（旧的无条件 field_summary.csv 已由条件化的
+    Main_field_ranking.csv 取代，见 rank_fields_by_impact）。
+    """
     by_field: dict[str, list[dict]] = {}
     for row in rows:
         by_field.setdefault(row["field"], []).append(row)
@@ -416,6 +460,73 @@ def summarize_fields(rows: list[dict], delta_threshold: float) -> list[dict]:
     return out
 
 
+def rank_fields_by_impact(rows: list[dict], consistency_delta: float) -> list[dict]:
+    """条件化字段汇总（Main_field_ranking.csv）=「哪些字段的泄露值得关注」。
+
+    只看取值确实被 mask 改动（mask_affected=True）的 (dataset, field) 行；未改动行是
+    噪声本底（见 noise_floor_stats），不参与排序。列：
+      field                        字段名
+      n_datasets_total             该字段有配对行的数据集数（含未受影响行）
+      n_datasets_affected          该字段取值被 mask 改动的数据集数（涉及面）
+      median_delta_among_affected  仅 affected 子集的中位 Δc（效应大小）
+      frac_abs_delta_ge_0p05       affected 子集中 |Δc| >= consistency_delta 的占比（一致性）
+      max_abs_delta                该字段**全部**数据集上的 max |Δc|（极值参考，不限 affected）
+    排序：median_delta_among_affected 降序（同值按 field 升序）；无 affected 数据集的字段
+    排表尾（按 n_datasets_total 降序、field 升序），中位/占比列留空。
+    """
+    by_field: dict[str, list[dict]] = {}
+    for row in rows:
+        by_field.setdefault(row["field"], []).append(row)
+    affected_rows: list[dict] = []
+    tail_rows: list[dict] = []
+    for field in sorted(by_field):
+        items = by_field[field]
+        affected = [r for r in items if r.get("mask_affected") is True]
+        deltas = np.asarray([r["delta_c"] for r in items], dtype=float)
+        record = {
+            "field": field,
+            "n_datasets_total": len(items),
+            "n_datasets_affected": len(affected),
+            "median_delta_among_affected": "",
+            "frac_abs_delta_ge_0p05": "",
+            "max_abs_delta": float(np.abs(deltas).max()),
+        }
+        if affected:
+            arr = np.asarray([r["delta_c"] for r in affected], dtype=float)
+            record["median_delta_among_affected"] = float(np.median(arr))
+            record["frac_abs_delta_ge_0p05"] = float(
+                np.mean(np.abs(arr) >= consistency_delta)
+            )
+            affected_rows.append(record)
+        else:
+            tail_rows.append(record)
+    affected_rows.sort(key=lambda r: (-r["median_delta_among_affected"], r["field"]))
+    tail_rows.sort(key=lambda r: (-r["n_datasets_total"], r["field"]))
+    return affected_rows + tail_rows
+
+
+def check_out_dir_inventory(out_dir: Path, *, audit: bool, leak_plotted: bool) -> None:
+    """遍历 out_dir 核对产物清单（新前缀名），并提示清单外的遗留文件。
+
+    "同输入重跑 diff=0" 的核对即以这份文件名集合为准（本约定平铺、无子目录）；
+    清单外文件通常是旧名（Test_1a_*）遗留，删除即可（本脚本只写新名）。
+    """
+    expected = set(OUTPUT_FILES)
+    if leak_plotted:
+        expected.add(OUT_APPX_LEAK_VS_DELTA)
+    if audit:
+        expected.add(OUT_META_AUDIT)
+    missing = sorted(name for name in expected if not (out_dir / name).exists())
+    if missing:
+        print(f"[Test_1a] [warn] 产物缺失: {', '.join(missing)}")
+    for name in sorted(p.name for p in out_dir.iterdir() if p.is_file()):
+        if name not in expected and name != "README.md":  # README = 目录说明，非脚本产物
+            print(f"[Test_1a] [warn] 清单外文件（旧名遗留？）: {name}")
+    for name in OUTPUT_FILES_CONDITIONAL:
+        if name not in expected:
+            print(f"[Test_1a] [info] {name} 未生成（leak 未出数 / 未传 --audit）")
+
+
 def write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -435,9 +546,9 @@ DATASET_COLUMNS = [
     "delta_min", "delta_max", "n_abs_ge_threshold", "share_abs_ge_threshold", "n_delta_positive",
     "top_positive_field", "top_positive_delta", "top_negative_field", "top_negative_delta",
 ]
-FIELD_SUMMARY_COLUMNS = [
-    "field", "family", "n_datasets", "delta_mean", "delta_median", "delta_min", "delta_max",
-    "n_positive", "n_negative", "n_abs_ge_threshold", "leak_rate_max",
+RANKING_COLUMNS = [
+    "field", "n_datasets_total", "n_datasets_affected", "median_delta_among_affected",
+    "frac_abs_delta_ge_0p05", "max_abs_delta",
 ]
 INFLUENTIAL_COLUMNS = [
     "dataset", "field", "field_idx", "scheme", "family", "n_event", "leak_rate", "delta_c",
@@ -687,6 +798,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ds_summary = summarize_datasets(rows, args.delta_threshold)
     field_summary = summarize_fields(rows, args.delta_threshold)
+    field_ranking = rank_fields_by_impact(rows, CONSISTENCY_DELTA)
 
     # 能动字段清单（leak_rate 未出数时为空表，列齐）
     influential = []
@@ -701,27 +813,27 @@ def main(argv: list[str] | None = None) -> int:
             influential.append(item)
     influential.sort(key=lambda r: (-float(r["leak_rate"]), -r["abs_delta_c"], r["dataset"], r["field"]))
 
-    write_csv(out_dir / "Test_1a_field_delta.csv", rows, FIELD_COLUMNS)
-    write_csv(out_dir / "Test_1a_dataset_summary.csv", ds_summary, DATASET_COLUMNS)
-    write_csv(out_dir / "Test_1a_field_summary.csv", field_summary, FIELD_SUMMARY_COLUMNS)
-    write_csv(out_dir / "Test_1a_influential_fields.csv", influential, INFLUENTIAL_COLUMNS)
+    write_csv(out_dir / OUT_APPX_FIELD_DELTA, rows, FIELD_COLUMNS)
+    write_csv(out_dir / OUT_APPX_DATASET_SUMMARY, ds_summary, DATASET_COLUMNS)
+    write_csv(out_dir / OUT_MAIN_FIELD_RANKING, field_ranking, RANKING_COLUMNS)
+    write_csv(out_dir / OUT_APPX_INFLUENTIAL_FIELDS, influential, INFLUENTIAL_COLUMNS)
 
-    # dataset × field 矩阵
+    # dataset × field 矩阵（字段列序沿用逐字段 |Δc 均值| 降序 = field_summary 的行序）
     datasets_present = sorted({r["dataset"] for r in rows})
     field_order = [r["field"] for r in field_summary]
-    with (out_dir / "Test_1a_delta_matrix.csv").open("w", encoding="utf-8", newline="") as handle:
+    with (out_dir / OUT_RAW_DELTA_MATRIX).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["dataset"] + field_order)
         lookup = {(r["dataset"], r["field"]): r["delta_c"] for r in rows}
         for dataset in datasets_present:
             writer.writerow([dataset] + [fmt(lookup.get((dataset, f), "")) for f in field_order])
 
-    plot_c_off_vs_t0(rows, out_dir / "Test_1a_c_off_vs_t0.png")
-    plot_delta_distribution(rows, out_dir / "Test_1a_delta_distribution.png", args.delta_threshold)
-    plot_delta_boxplot(rows, out_dir / "Test_1a_delta_boxplot.png")
-    plot_delta_by_mask_group(rows, out_dir / "Test_1a_delta_by_mask_group.png", args.delta_threshold)
+    plot_c_off_vs_t0(rows, out_dir / OUT_APPX_OFF_VS_T0)
+    plot_delta_distribution(rows, out_dir / OUT_APPX_DELTA_DISTRIBUTION, args.delta_threshold)
+    plot_delta_boxplot(rows, out_dir / OUT_APPX_DELTA_BY_DATASET)
+    plot_delta_by_mask_group(rows, out_dir / OUT_MAIN_MASK_GROUP, args.delta_threshold)
     leak_plotted = plot_leak_vs_delta(
-        rows, out_dir / "Test_1a_leak_vs_delta.png", args.delta_threshold, args.leak_threshold
+        rows, out_dir / OUT_APPX_LEAK_VS_DELTA, args.delta_threshold, args.leak_threshold
     )
 
     deltas = np.asarray([r["delta_c"] for r in rows], dtype=float)
@@ -760,7 +872,7 @@ def main(argv: list[str] | None = None) -> int:
             "Δc 归因于 mask 需显著超过它。"
         ),
     }
-    (out_dir / "Test_1a_metrics.json").write_text(
+    (out_dir / OUT_META_METRICS).write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
@@ -773,6 +885,13 @@ def main(argv: list[str] | None = None) -> int:
     for label, stats in metrics["delta_c_by_mask_group"].items():
         print(f"[Test_1a]   Δc[{label}]: n={stats['n_fields']} mean={stats['delta_mean']:+.4f} "
               f"median={stats['delta_median']:+.4f} p90|Δc|={stats['abs_delta_p90']:.4f}")
+    ranked = [r for r in field_ranking if r["n_datasets_affected"] > 0]
+    if ranked:
+        top = ranked[0]
+        print(f"[Test_1a] {OUT_MAIN_FIELD_RANKING}: {len(ranked)} fields affected in >= 1 dataset; top = "
+              f"{top['field']} (n_affected={top['n_datasets_affected']}, "
+              f"median Δc={top['median_delta_among_affected']:+.4f}, "
+              f"|Δc|>={CONSISTENCY_DELTA} share={top['frac_abs_delta_ge_0p05']:.0%})")
     print(f"[Test_1a] out: {out_dir}")
 
     if args.audit:
@@ -784,12 +903,15 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.audit_seed,
             n=args.audit_n,
         )
-        (out_dir / "Test_1a_audit.json").write_text(
+        (out_dir / OUT_META_AUDIT).write_text(
             json.dumps(checks, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
+        check_out_dir_inventory(out_dir, audit=True, leak_plotted=leak_plotted)
         if not all(c["match"] for c in checks):
             print("[Test_1a] AUDIT MISMATCH")
             return 1
+    else:
+        check_out_dir_inventory(out_dir, audit=False, leak_plotted=leak_plotted)
     return 0
 
 

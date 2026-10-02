@@ -9,20 +9,27 @@
     / 30–70 supp / <30 low（仅定性讨论）
 
 输入：
-  - results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv + run_config.json（S4 两臂产物）
+  - results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv + run_config.json（S4 两臂产物；S4 summarize
+    把报告臂 {scheme}__landmark_none 行与去泄露臂 {scheme}__landmark_0 行写进同一张表，
+    故两臂都从这张表读——同字段集、同编码、同模型、同划分，唯一差异 = mask 状态）
   - results/Test_2b/arm_B/runs/{study}__{scheme}__landmark_{T}/{modality}/val_result_fold*.csv
     （run 折文件 = c 值的最终口径；S4 汇总表首次写入后不再更新，100/552 行为中途快照，
     本脚本按同算术（纯 python sum，python 3.13）从折文件重算，表冻结值保留在 *_table 列）
+  - results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv（论文报告值原表，4 方案 × 5 modality；
+    仅作 Test_4 三档参考，不参与本文 Δc 配对——配对用同链路的 landmark_none 行）
   - rawdata_stats/_shared/event_summary.csv（n_event 分层）
   - results/Test_2b/arm_B/labels/{study}__landmark_0.json（审计用：排除病例清单）
 
 输出（默认 results_display/Test_2b_delta/，全部为 gitignore 产物，不入库）：
-  - Test_2b_delta_main.csv / Test_2b_delta_supp.csv / Test_2b_delta_low.csv
-  - Test_2b_delta_summary.csv（按 scheme × analyzer × tier_group 汇总）
-  - Test_2b_delta_forest_{scheme}_{analyzer}.png（每方案 × 分析器森林图，共 20 张）
-  - Test_2b_delta_overview_{analyzer}.png（跨方案总览，共 2 张）
+  文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
+  Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据；本目录平铺，无子目录。
+  - Main_overview_{analyzer}.png（跨方案总览，共 2 张）
+  - Main_delta_summary.csv（按 scheme × analyzer × tier_group 汇总）
+  - Appx_forest_{scheme}_{analyzer}.png（每方案 × 分析器森林图，共 20 张）
+  - Appx_delta_main.csv / Appx_delta_supp.csv / Appx_delta_low.csv
 
 可复跑：同输入重跑 diff=0（固定随机种子、固定行列序、无时间戳）。
+产物清单核对：main() 末尾遍历 out_dir，逐个核对上面这组文件名（清单外文件按旧名遗留告警）。
 用法：
   python3 results_display/scripts/Test_2b_delta_report.py            # 生成全部产物
   python3 results_display/scripts/Test_2b_delta_report.py --audit    # 生成 + 3 组抽查
@@ -76,6 +83,20 @@ BOOTSTRAP_SEED = 0
 BOOTSTRAP_N = 10_000
 AUDIT_SEED = 20260930
 AUDIT_N = 3
+
+# ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
+OUT_MAIN_DELTA_SUMMARY = "Main_delta_summary.csv"
+OUT_APPX_DELTA_MAIN = "Appx_delta_main.csv"
+OUT_APPX_DELTA_SUPP = "Appx_delta_supp.csv"
+OUT_APPX_DELTA_LOW = "Appx_delta_low.csv"
+
+
+def out_forest_name(scheme: str, analyzer: str) -> str:
+    return f"Appx_forest_{scheme}_{analyzer}.png"
+
+
+def out_overview_name(analyzer: str) -> str:
+    return f"Main_overview_{analyzer}.png"
 
 
 # --------------------------------------------------------------------------- 分层
@@ -267,9 +288,9 @@ def write_tier_tables(rows: list[dict], out_dir: Path) -> dict[str, Path]:
     df = pd.DataFrame(rows)[COLUMNS]
     files = {}
     for tier, fname in (
-        ("main", "Test_2b_delta_main.csv"),
-        ("supp", "Test_2b_delta_supp.csv"),
-        ("low", "Test_2b_delta_low.csv"),
+        ("main", OUT_APPX_DELTA_MAIN),
+        ("supp", OUT_APPX_DELTA_SUPP),
+        ("low", OUT_APPX_DELTA_LOW),
     ):
         sub = df[df["tier"] == tier]
         path = out_dir / fname
@@ -277,7 +298,7 @@ def write_tier_tables(rows: list[dict], out_dir: Path) -> dict[str, Path]:
         files[tier] = path
     # main_ci（70–100）并入主表文件，用 tier 列标注 CI 要求（不排名）
     main = df[df["tier"].isin(("main", "main_ci"))]
-    path = out_dir / "Test_2b_delta_main.csv"
+    path = out_dir / OUT_APPX_DELTA_MAIN
     main.to_csv(path, index=False)
     files["main_ci"] = path
     return files
@@ -335,7 +356,7 @@ def summarize(rows: list[dict], out_dir: Path) -> Path:
     out = pd.DataFrame(recs).sort_values(
         ["analyzer", "scheme", "tier_group"], kind="mergesort"
     )
-    path = out_dir / "Test_2b_delta_summary.csv"
+    path = out_dir / OUT_MAIN_DELTA_SUMMARY
     out.to_csv(path, index=False)
     return path
 
@@ -441,7 +462,7 @@ def forest_figure(rows: list[dict], scheme: str, analyzer: str, out_dir: Path) -
         plt.Line2D([], [], marker="o", linestyle="", color=COL_NEG, label="Δc < 0"),
     ]
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="lower right", labelcolor=INK)
-    path = out_dir / f"Test_2b_delta_forest_{scheme}_{analyzer}.png"
+    path = out_dir / out_forest_name(scheme, analyzer)
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
     return path
@@ -519,7 +540,7 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
     )
     _setup_axes(ax)
     ax.legend(frameon=False, fontsize=8, loc="upper right", labelcolor=INK)
-    path = out_dir / f"Test_2b_delta_overview_{analyzer}.png"
+    path = out_dir / out_overview_name(analyzer)
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
     return path
@@ -593,6 +614,21 @@ def audit(rows: list[dict]) -> None:
 
 
 # --------------------------------------------------------------------------- 主流程
+def check_out_dir_inventory(out_dir: Path, written: list[Path]) -> None:
+    """遍历 out_dir 核对本次写出的产物清单（新前缀名），并提示清单外的遗留文件。
+
+    "同输入重跑 diff=0" 的核对即以这份文件名集合为准（本约定平铺、无子目录）；
+    清单外文件通常是旧名（Test_2b_delta_*）遗留，删除即可（本脚本只写新名）。
+    """
+    expected = {p.name for p in written}
+    missing = sorted(name for name in expected if not (out_dir / name).exists())
+    if missing:
+        print(f"[warn] 产物缺失: {', '.join(missing)}")
+    for name in sorted(p.name for p in out_dir.iterdir() if p.is_file()):
+        if name not in expected and name != "README.md":  # README = 目录说明，非脚本产物
+            print(f"[warn] 清单外文件（旧名遗留？）: {name}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Test_2b Δc 对照报表（纯汇总）")
     ap.add_argument(
@@ -611,23 +647,29 @@ def main() -> None:
     tier_counts = pd.Series([r["tier"] for r in rows]).value_counts().to_dict()
     print(f"[build] tier 分布: {tier_counts}")
 
+    written: list[Path] = []
     files = write_tier_tables(rows, out_dir)
+    written.extend(files.values())
     for tier, path in files.items():
         print(f"[csv] {path.name} ({tier})")
     summary_path = summarize(rows, out_dir)
+    written.append(summary_path)
     print(f"[csv] {summary_path.name}")
 
     if not args.no_figs:
         pairs = sorted({(r["scheme"], r["analyzer"]) for r in rows})
         for scheme, analyzer in pairs:
             p = forest_figure(rows, scheme, analyzer, out_dir)
+            written.append(p)
             print(f"[png] {p.name}")
         for analyzer in ANALYZERS:
             p = overview_figure(rows, analyzer, out_dir)
+            written.append(p)
             print(f"[png] {p.name}")
 
     if args.audit:
         audit(rows)
+    check_out_dir_inventory(out_dir, written)
     print("[done]")
 
 

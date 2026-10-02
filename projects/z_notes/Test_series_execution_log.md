@@ -1082,3 +1082,76 @@ python3 scripts/Test_3_compare.py --all
 - 状态：进行中（截至本条目完成第 ①② 步）。
 
 **补记（2026-10-02 深夜，M1 完成）**：迁移四步全部完成并逐步提交——① 基线 `1ca3f45`；② 公约文档+README `c08bf04`；③ 代码路径登记+兼容 `60148c6`；④ configs 物理迁移 `b698cb7`（E2_selection 的 9 个 stale running conf 恢复回 queue）；⑤ results/results_display 物理迁移（本步）。迁移后 resolve 全命中新名；tests/ 186 passed+6 skipped、A_pipeline 44 passed。规格文档产物路径已同步新名；执行日志历史条目未改。
+
+---
+
+## S5d: 结果文件 Main/Appx/Raw/Meta 前缀重组与脚本同步（条件化字段主表，2026-10-02）
+
+- 时间 / 执行者：2026-10-02 深夜 / Claude（结果展示层整理 agent）
+- 目标：把三个结果目录（`results_display/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta}`）的文件角色前缀约定（用户指令 2026-10-02）落到生成脚本——① 输出文件名改前缀；② 输入路径同步新树；③ 新增条件化字段主表 `Main_field_ranking.csv`；④ 重跑验证 diff=0；⑤ 清理旧名遗留。**目录结构不动**（主键 = Test 编号，`z_notes/experiment_list/naming_convention.md`），纯分析不训练。
+
+### 前缀公约（用户指令 2026-10-02）
+
+- `Main_` = 头条（回答命题）、`Appx_` = 附录（明细/主表补充）、`Raw_` = 原始矩阵、`Meta_` = 元数据与审计；三个目录内**平铺，无子目录**；各目录 README.md 为逐文件地图。
+- 旧名 → 新名逐项对应：Test_1a 11 项（含新表）、Test_1b 14 项、Test_2b 26 项（4 CSV + 22 PNG）。
+
+### 输入（全部新树，ls 核实内部层后照现状改）
+
+- Test_1a：t0 臂 `results/Test_1a/arm_t0/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`；off 臂 `results/Test_1a/arm_off/univariate/prompt/landmark_none/{ds}/mlp_clinic_flatten/field_cindex.csv`（16 个数据集目录 = 主集 15 + TCGA-ACC）；主集名单仍由 `results/Test_0_dataset_availability/manifest.csv` 的 n_event ≥ 100 派生（15 个），**不硬编码**。
+- Test_1b：t0 臂同源路径（33/33 齐备）；名单 datasets.json + manifest + event_summary 分层。
+- Test_2b：`results/Test_2b/arm_B/{ds}[gdc]/cindex.csv`（S4 summarize 把报告臂 `{scheme}__landmark_none` 与去泄露臂 `{scheme}__landmark_0` 写进同一张表，配对即取此表；c 值以 run 折文件为准）+ `arm_B/labels/`（审计）。
+  注：`results/Test_2b/arm_A/{ds}[gdc]/cindex.csv` 是论文报告值原表（4 方案 × 5 modality，行名无 landmark 后缀），只作 Test_4 三档参考，**不参与 Δc 配对**（同链路对照才可比）——已写进脚本 docstring。
+- 路径构造仍走 `src/common/paths.py` 的 `test_results_dir` / `remap_legacy_result_path`（新名优先，LEGACY 回退仅兜底陈旧 run_config，脚本字面量只写新名）。
+
+### 命令与参数（base python 3.13.12）
+
+```bash
+python3 results_display/scripts/Test_1a_field_level.py --audit
+python3 results_display/scripts/Test_1b_dataset_cindex.py --audit
+python3 results_display/scripts/Test_2b_delta_report.py --audit
+```
+
+（均默认 out_dir = 各自结果目录；Test_1a/Test_1b 默认 `--t0_root/--univariate_root` 已是 arm_t0 新路径。）
+
+### 产物
+
+- `Test_1a_field_level/`：`Main_mask_group_delta.png`、**`Main_field_ranking.csv`（新）**、`Appx_{off_vs_t0,delta_by_dataset,delta_distribution}.png`、`Appx_{field_delta,dataset_summary,influential_fields}.csv`、`Raw_delta_matrix.csv`、`Meta_{metrics,audit}.json`。
+- `Test_1b_dataset_cindex/`：`Main_{per_dataset_profile,topk_overlap}.png`、`Main_{topk_overlap,dataset_summary}.csv`、`Appx_{per_dataset_distribution,cross_dataset_field_spread,topk_overlap_matrix}.png`、`Appx_{field_summary,topk_members}.csv`、`Appx_topk_pairwise_k{5,10,20}.csv`、`Raw_cindex_matrix.csv`、`Meta_metrics.json`。
+- `Test_2b_delta/`：`Main_{overview_clinic_cox,overview_mlp_clinic_flatten}.png`、`Main_delta_summary.csv`、`Appx_forest_{scheme}_{analyzer}.png` ×20、`Appx_delta_{main,supp,low}.csv`。
+
+### 条件化主表口径（`Main_field_ranking.csv`）
+
+- **只统计取值确实被 mask 改动的行**（`mask_affected=True`，来自 `outputs/_raw/{ds}/field_bank/prompt/landmark_none/raw_value_diff.json` 的 changed_cells > 0）；未改动行是噪声本底，不参与排序。
+- 列：`field` / `n_datasets_total`（该字段有配对行的数据集数）/ `n_datasets_affected`（取值被改动的数据集数 = 涉及面）/ `median_delta_among_affected`（仅 affected 子集的中位 Δc = 大小）/ `frac_abs_delta_ge_0p05`（affected 子集中 |Δc| ≥ 0.05 占比 = 一致性）/ `max_abs_delta`（该字段**全部**数据集上的 max |Δc|）。
+- 排序：`median_delta_among_affected` 降序；无 affected 数据集的字段排表尾（中位/占比列留空）。一致性阈值 0.05 固化为常量 `CONSISTENCY_DELTA`（列名固定，不随 CLI 阈值变）。
+- 旧的**无条件** `Test_1a_field_summary.csv` 删除；其内部聚合（`summarize_fields`）保留但不落盘，只用于 `Raw_delta_matrix.csv` 的字段列序（|Δc 均值| 降序）——该列序是既有产物既定口径，改则破坏 diff=0。
+
+### 审计
+
+- **重跑 diff=0（脚本级）**：三个脚本同输入重跑，产物与改名后磁盘文件**逐字节一致**——Test_1a 10/10、Test_1b 14/14、Test_2b 26/26 = **50/50**（`Main_field_ranking.csv` 为新增，磁盘原先没有）。
+- **连跑两次稳定性**：第二次连跑后 51/51 产物 sha256 不变（11+14+26，含新表）。
+- **清单核对（新逻辑）**：三脚本 main() 末尾新增 `check_out_dir_inventory`——遍历 out_dir 核对本脚本产物清单（新前缀名集合）并对清单外文件告警（README.md 白名单）；首跑在 Test_2b 报出 26 个旧名遗留，清理后二跑零告警。
+- **--audit 抽查（逻辑未改）**：Test_1a 3 组 OK（BRCA idx28/38、PAAD idx10，重跑 Meta_audit.json 与磁盘逐字节一致）；Test_1b ALL PASS（GBM/ESCA/SARC × 字段，per_fold 独立重算）；Test_2b ALL PASS（3 组 × 4 项检查：Δc 独立重算 / stale 标记自洽 / SEED 两臂一致 / 臂B=臂A−排除患者 5 折）。
+- **新表抽查（3 字段，与 `Appx_field_delta.csv` 手算核对）**：`treatment_type_administered`（total 2 / affected 2 / median 0.136279 / frac 1.0 / maxabs 0.195297）、`route_of_administration`（3/3/0.116070/1.0/0.134370）、`menopause_status`（1/0/—/—/0.000259）——n_affected 与 median_among_affected 全部一致。
+- **旧名遗留清理**：`Test_2b_delta/` 内 26 个旧名文件逐个 sha256 与新名文件核等后删除（目录 53 → 27 文件）；Test_1a/Test_1b 无旧名遗留。
+
+### 偏差与原因
+
+- `Test_1a_field_level/README.md` 结论句「mask 改动的字段 Δc 均值 **+0.061**」与当前产物口径对不上：产物 `Meta_metrics.json` 的 `delta_c_by_mask_group.mask_affected.delta_mean` = **+0.034**（未改动组 +0.001）；另试算逐字段均值/逐数据集均值/|Δc| 均值/timed_family 分组等口径均非 0.061，疑为 off 臂未跑齐时的中间数（早期 2 数据集冒烟值为 +0.087）。**未改用户结论文本**（本步只同步文件名），在此标记待用户裁定。
+- `Appx_leak_vs_delta.png` 为条件产物：Test_2a 逐字段审计（`results/Test_2a_leak_audit/{ds}/G1_*.json`）未出数 → 不生成，`Meta_metrics.json` 记 `leak_rate_status=pending_test_2a`；已在 Test_1a README 注明。
+- 三个目录内 README.md 被 `projects/.gitignore`（`results_display/**`）忽略：本步提交只含已跟踪的 `results_display/README.md`，目录内 README 留在磁盘不入库（如需入库须 `git add -f`，未做）。
+- 新树路径本身与脚本既有常量一致（前步 S5c/M1 已改过路径，本步只核实）：off 臂内部层确为 `univariate/prompt/landmark_none`（保留层，非旧名残留）。
+
+### 决策点
+
+- ① `max_abs_delta` 取"该字段全部数据集"（列名无 affected 限定词，中位/占比两列已显式限定 affected）——脚本 docstring 与目录 README 均写明。
+- ② 一致性阈值 0.05 固化常量，不随 `--delta_threshold`（0.01）/`--leak_threshold` 变。
+- ③ `Raw_delta_matrix.csv` 列序沿用既有 |Δc 均值| 降序（内部聚合），不用新表排序——保 diff=0。
+- ④ Test_2b 两臂都从 arm_B 汇总表读（同链路配对），arm_A 原表不参与 Δc；docstring 已澄清。
+- ⑤ 脚本新增"产物清单核对"只打印告警、不改产物（不影响 diff=0 口径）。
+
+### 状态
+
+- 完成：三脚本输出名 / 输入路径 / docstring 产物清单 / 清单核对全量同步；三个目录重跑 diff=0（50/50 改名文件逐字节一致 + 新表生成）；旧名遗留清零。
+- 本步提交（**本地提交，不 push**）：`results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report}.py`、`results_display/README.md`（Test 系列索引，含新表入口）、本日志条目。
+- 遗留：① 上述 +0.061 数字待用户裁定；② Test_2a 逐字段审计出数后重跑 Test_1a 脚本即自动补 `leak_rate` 列 + `Appx_leak_vs_delta.png`（无需改代码）。
