@@ -99,9 +99,9 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 ### Test_5 不变性(规格已落地 2026-10-03,详见 `Test_series_spec.md` §8bis)
 
 - **命题**:Test_2b(时间轴链)与 Test_3(字段轴链)的结论在换编码(E)、换分析器(M)、换指标(Q)后依然成立。
-- **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
-- **四个子检查**:5E_2b / 5E_3(换编码)、5M_2b / 5M_3(换分析器),约 546 新 confs;锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
-- **HGCN**:路线 A(编码扩展 + gcn_clinic 分析器移植);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)已备份仓库外,等价性回归不过则冻结。
+- **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
+- **四个子检查**:5E_2b / 5E_3(换编码)、5M_2b / 5M_3(换分析器),约 388 新 confs;锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
+- **HGCN 不纳入**(用户指令 2026-10-03):训练器由用户自行移植进 Clinic_Analyzer 内部,属独立工作;既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)冻结,已备份仓库外。
 
 ### 基础建设(非单一命题,已落地)
 
