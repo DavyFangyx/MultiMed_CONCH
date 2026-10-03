@@ -1321,3 +1321,23 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：**D6**（三轴口径）→ 已确认（2026-10-03），结论见决策点状态表；D7/D8/D9 待 S10/S11/S13 执行时确认。
 - 状态：完成。下一步 S10（Q 指标修复 + 离线重算）。
 
+---
+
+## S10a Q 指标修复（代码 + 单元测试，2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code 子 Agent（用户指令"每阶段测试/归档/提交，继续推进"）
+- 目标：按 spec §8bis.4 修复 Clinic_Analyzer 的 IBS/时依 AUC 计算（6 处缺陷），先落代码与测试，不跑任何训练。
+- 输入：SurvPGC 参考实现（`utils/survival_metrics.py`、`utils/core_utils.py:1391-1403/1944-2091/2730-2738`）、Clinic_Analyzer `utils/core_utils.py` 旧 `_calculate_metrics`（:535-617）。
+- 产物：
+  - `Clinic_Analyzer/utils/survival_metrics.py`——逐字节移植 SurvPGC 原版（md5 `b0e0f134b81c2f022e10838798d1baf9`，与源一致）。
+  - `Clinic_Analyzer/utils/core_utils.py`——6 处编辑（md5 提交时 `06bd14fc599e36683dfe3680c500a6d7`）：共享指标层导入；新增 `_collect_train_survival_risks`（:363，移植 SurvPGC :1391-1403）；`_calculate_metrics` 重写（:558-708：删硬编码网格/`np.append(iauc_list,0)`，edges 插值、Breslow 分支、守卫 NaN 语义、负时间过滤）；`_summary` 加 `train_survival_risks` 透传（:710/:807）；`_step` 对 cox 在 test 前收集训练折 risk（:893-896）；6 个裸 `except:` 全部改为打印原因。
+  - `projects/tests/test_survival_metrics.py`——21 用例（两模块逐函数 np.allclose 等价、已知值锚点、守卫 NaN、cox Breslow、负时间等价性、`_summary` 传参）。
+- 命令与参数：`PYTHONPATH=/tmp/s10a_pytest_env /data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python -m pytest tests/test_survival_metrics.py -q`（pytest 装入 /tmp 临时目录，未改任何 conda env）。
+- 审计（自检项 + 实际结果）：
+  - 新用例 **21 passed**（复跑两次一致）；base env 既有套件 198 passed / 7 skipped；A_pipeline 44 passed——无回归。
+  - **控制流结论**：val IBS/BS/iauc 只进 `val_result_fold*.csv` 日志与 wandb（wandb 只记 c-index/loss/ipcw，core_utils.py:853-880），**不参与最优 epoch 与剪枝**；val_cindex 参与控制（:859-860）→ c-index 计算**逐位保持旧实现**（NaN 删除后、负时间过滤前，:606-611），并以负时间行用例证明 c-index/IBS/AUC 均不受影响（参考实现把 c-index 放在过滤后，此为唯一结构性偏离，数值等价）。
+  - 现场并发核查：`Clinic_Analyzer/utils/` 有并发 worker 在改（hgcn_train.py/hgcn_data/general_utils.py/process_args.py，19:14–19:20 新建/修改，已按新签名适配 train risks 收集）；本步的 core_utils.py 编辑现场完好（六处标记 grep 齐、测试通过）。
+- 偏差与原因：**`Clinic_Analyzer/` 整体被 .gitignore 忽略**（`*` + `*/`，仅 .gitignore 本身入库，历史唯一提交 4870cdf）→ 本步提交只含测试与日志，Clinic_Analyzer 代码改动以 md5 记录于本条目；是否 force-add 入库**待用户裁定**。hgcn_train.py（bin=None 无 train risks）的旧 0 契约未动（与参考一致，用例固定）。
+- 决策点：**D7**（在线 vs 离线 diff=0）——代码侧落地完成，验收待 S10b 离线重算脚本与 S12 新臂实测。
+- 状态：完成（S10a）。下一步 S10b（离线重算脚本 `results_display/scripts/Test_5_q_recompute.py`）。
+
