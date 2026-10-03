@@ -1421,3 +1421,10 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：无新增。
 - 状态：完成（S10d）。**15 主集相关 Q 电池全部自检干净**。
 
+### 补记（S10d-2，arm_A cox 补跑 + GPU 政策，2026-10-03 晚）
+
+- arm_A cox 410 折后台补跑完成并入 q_metrics.csv（现 4221 行）；**15 折自检失败**（KIRC HGCN_KIRC f0/f1/f4、LIHC HGCN_LIHC f0/f1/f3/f4、LIHC MULTISURV 全 5 折、SARC INTEGRATIVE_DNN f0、STAD INTEGRATIVE_DNN f0/f4，diff 3e-4~3e-2）。
+- 根因判断（与 arm_B 的 tie 翻转不同）：arm_A 是旧时代 run——experiment.txt 的 `label_file` 指向旧源 `SurvPGC_github_init/datasets_csv/metadata/tcga_lihc.csv`，`results_dir` 为旧路径 `results/A_manual/...`；自检参照的 csv c-index 由旧代码/旧 label 源产生，当前代码前向无法逐位复现。属已知时代差异（D3 曾记录 label 源迁移），非脚本缺陷。处置：行保留（`source=pkl_recompute`，recomputed 值 = 当前代码口径），abs_diff 列如实记录；报告层按"旧时代 arm_A cox"标注，不参与严格排名。
+- **GPU 政策（用户指令 2026-10-03）**：本机为公共服务器，用户 GPU 范围 = **0–3（最多 4 张）**。Test_5 后续训练批跑（S12b）一律限定 GPU 0–3 并现场协调；我方当前进程（编码/重算）零 GPU 占用；现场超限（S6 搜索占 0,2,3,4,5,6 + Table3 占 0/1）属 S6 会话与用户任务，未擅动。
+- **S12b 推迟至 S6 收尾后启动**（用户指令）。
+

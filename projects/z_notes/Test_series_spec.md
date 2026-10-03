@@ -90,7 +90,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | S9 | **Test_5 规格落地 + HGCN 产物备份**（§8bis） | 仓库外备份 + 校验记录 | **D6** 路线 A、多模态子集 4 个——已确认（2026-10-03） |
 | S10 | Q 指标修复（对齐 SurvPGC）+ 离线重算 | `Clinic_Analyzer/utils/survival_metrics.py`、`results_display/scripts/Test_5_q_recompute.py`、`q_metrics.csv` | **D7** 在线 vs 离线 diff=0 |
 | S11 | HGCN 编码落地（hgcn_clinic 任意 scheme + landmark 支持，pkl 格式不变）+ L0-L5 等价性回归 | 扩展后的 hgcn_clinic.py、L0-L5 diff=0 报告 | **D8** 等价→放行 / 不等价→冻结 |
-| S12 | baseline 编码产物 + Test_5 conf 批跑（5E_2b/5E_3/5M_2b/5M_3） | `outputs/*/A_manual/baseline/`、`configs/Test_5_*/`、`results/Test_5_invariance/` | — |
+| S12 | baseline 编码产物 + Test_5 conf 批跑（5E_2b/5E_3/5M_2b/5M_3）——训练限 **GPU 0–3**（公共服务器 4 卡上限，用户 2026-10-03），S6 收尾后启动 | `outputs/*/A_manual/baseline/`、`configs/Test_5_*/`、`results/Test_5_invariance/` | — |
 | S13 | Test_5 报告（不变性矩阵收口） | `results_display/Test_5_invariance/` | **D9** 与 Test_4 三档表衔接 |
 
 依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：S9 → S10 → S11 → S12 → S13；S9 不依赖 S6/S7 收尾，但 S12 批跑与 S6 续跑共享 GPU/队列资源，执行时协调。
