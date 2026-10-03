@@ -1266,3 +1266,10 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 进行中：搜索 15/15 running（0 done / 0 failed）；臂 C 接力链已挂后台轮询等待首个 result.json。三条自愈链路（搜索 watch、臂 C 接力链、队列 recover/retry）均已部署。
 - 提交：本条目正文在写入后 11 s 被并发的 S2c 提交 `027673b` 先行带入（其 `git add` 覆盖到本文件；内容与本人所写一致，未覆盖他人条目）；本步骤另以独立提交 "S6 续跑: Test_3 搜索与臂 C 链恢复" 落库该行的补记，并 push origin main（无脚本改动，只 add 本日志）。
 
+### 补记（14:40，ETA 修正与现场续报）
+
+- **ETA 修正（上一节"首个 result.json 预计由 LAML 出（~10 分钟）"的推测不成立）**：核对 `src/selection/stopping.py`（SigStop）后确认：停判计数 `no_improvement` 需**同时**满足 gain < 0.005 **且** Wilcoxon p ≥ 0.05；若 gain < delta 但 p < 0.05（显著变差）则 `count=0` **清零重数**。LAML 实测 k=4 −0.00248 / k=5 −0.00196 / k=6 −0.00495 后并未停（k=6 处被清零），14:40 已推进到 k=7，首停点不可预判（取决于各 k 的 Wilcoxon 结果）。
+- 现场池规模（k=1 跑完才确知）：BLCA 44、COAD 34、LUAD 32、LGG 30、HNSC 29、KIRC 22、LAML 21、BRCA 20、GBM 19；小池（LUSC/OV/SKCM/STAD/LIHC）k=1 未完（暂知 ≤8）。**全梯上界 = P(P+1)/2**（`config.budget_for`，无更紧 cap）：BLCA ≤990 evals、COAD ≤595、LUAD ≤528、LGG ≤465、LAML ≤231；按实测 110–540 s/eval，最坏情形单集 ~7–30 h（实际应远早于穷尽停，但不可承诺时刻）。首个 result.json 更可能先由小池数据集（梯子短）产出。
+- 14:40 现场：15/15 running、0 failed、0 result.json；watch（PID 3715209）与臂 C 链（PID 3724666）均存活；臂 C 触发验证（generate custom scheme → encode → enqueue）因首个 result.json 未落盘而**待续**。已重挂监视（60 s 轮询 result.json 计数 + watch/chain 存活；落盘 / 15 全完成 / 进程死亡即报）。
+- **14:42 GPU 竞争 → 臂 C 链改卡**：用户并行起了 Table3_MissingRate 实验（PID 3791694/3791712/3791517/3791547，各 ~21 GB，14:20 起），占满 GPU 0/1（现场余量 0.9 GB / 3.2 GB）。搜索 drainer 已分配显存不受影响（GPU 0 上 3 槽照跑）；但臂 C 的 encode + 8 worker drain 放 GPU 1 会 OOM。处置：终止旧链（PID 3724666）→ `T3_ENC_GPU=7 T3_GPU=7 T3_WORKERS=8 T3_POLL=120` 重启（新 PID 3904207，14:43:12），GPU 7 空闲（余 45.4 GB）；链幂等（当时尚未处理任何数据集），日志续写同一文件，监视改挂新 PID。**他人进程一律未动**。注意：GPU 0 余量紧，若其上任一搜索 drainer 死亡被 watch 拉起，~540 MiB 分配可能失败并触发限次重试（3 次后记 failed，需人工补投）。
+
