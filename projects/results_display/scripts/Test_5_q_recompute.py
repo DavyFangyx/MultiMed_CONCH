@@ -26,6 +26,20 @@ Self-check: c-index recomputed from the saved risks must equal test_result.csv's
 test_cindex (abs diff <= CINDEX_TOLERANCE); mismatching confs are flagged with
 [FAIL] and listed in the closing summary (they need investigation).
 
+Cox test-side risks (S10d): the online test risks are NOT persisted - for
+cox_surv the online loader puts the whole split into one batch and _summary keys
+patient_results by batch, so every cox split_{fold}_results.pkl holds exactly
+ONE row.  The test-side c-index therefore always needs a re-forward, and the
+choice of composition matters: with float32 risks O(1e-2) differing by ~1e-8
+between compositions, any comparable pair whose gap sits at sksurv's
+tied_tol=1e-8 boundary flips between tied (0.5) and ordered (0/1), moving the
+c-index by ~0.5/denominator.  Default policy --cox-test-batch auto: recompute
+with the cheap per-patient forward, and ONLY when that disagrees with the
+recorded test_cindex fall back to the online batch composition (the composition
+the online forward actually used); the better reconstruction wins and repaired
+rows are marked source=pkl_recompute_cox_online.  Rows that already pass the
+self-check are untouched.
+
 Usage (SurvPGC env):
   /data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python \
     results_display/scripts/Test_5_q_recompute.py \
@@ -104,6 +118,20 @@ Q_COLUMNS = [
 DUMP_NAME_TEMPLATE = "fold{fold}_metrics_input.pkl"
 CINDEX_TOLERANCE = 1e-8
 COX_BAG_LOSS = "cox_surv"
+# test-side risk reconstructions for cox folds (the pkl never stores the online
+# test risks: the online cox loader collapses the whole split into ONE batch and
+# `_summary` keys patient_results by batch, so split_{fold}_results.pkl holds a
+# single row - see collect_cox_fold).  Two re-forward compositions exist:
+#   - per_patient: batch_size=1 loader (the historical default here);
+#   - online: the batch composition the online path used for cox_surv, i.e. one
+#     full batch over the split (general_utils._get_split_loader's cox override).
+COX_TEST_BATCH_AUTO = "auto"
+COX_TEST_BATCH_PER_PATIENT = "per_patient"
+COX_TEST_BATCH_ONLINE = "online"
+COX_TEST_BATCH_MODES = (COX_TEST_BATCH_AUTO, COX_TEST_BATCH_PER_PATIENT, COX_TEST_BATCH_ONLINE)
+SOURCE_PKL_RECOMPUTE = "pkl_recompute"
+SOURCE_PKL_COX_ONLINE = "pkl_recompute_cox_online"
+_UNSET = object()
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +689,33 @@ def calculate_metrics_mirror(
     return c_index, c_index_ipcw, BS, IBS, iauc, iauc_list
 
 
+def pick_cox_reconstruction(fast, online, cindex_csv, tolerance: float = CINDEX_TOLERANCE):
+    """Choose the cox test-side risk reconstruction the self-check should keep.
+
+    The recorded `test_cindex` is the online value; the offline script can only
+    re-forward the test split.  Two compositions are available (see module
+    docstring); the per-patient one is cheaper and is the historical default,
+    the online one mirrors the composition the online forward used.  Policy:
+    only when the fast (per-patient) reconstruction DISAGREES with the recorded
+    value do we look at the online one, and we adopt it only when it is a
+    strictly better reproduction (smaller abs diff).  No recorded value (or an
+    already-matching fast run) -> keep the fast metrics untouched, so folds that
+    pass the self-check are never perturbed.
+
+    Returns (metrics, adopted_online: bool).
+    """
+    if cindex_csv is None:
+        return fast, False
+    target = float(cindex_csv)
+    fast_diff = abs(float(fast["cindex"]) - target)
+    if fast_diff <= tolerance:
+        return fast, False
+    online_diff = abs(float(online["cindex"]) - target)
+    if online_diff < fast_diff:
+        return online, True
+    return fast, False
+
+
 def fold_q_metrics(
     edges,
     cohort_surv,
@@ -827,7 +882,52 @@ def prepare_conf(ref: RunRef, extra_label_dirs: Sequence[Path] = ()) -> dict:
     }
 
 
-def compute_fold_from_artifacts(ref: RunRef, conf: dict, fold: int) -> tuple[dict, str]:
+def cox_fold_metrics(
+    ref: RunRef,
+    conf: dict,
+    fold: int,
+    artifacts: dict,
+    cohort_surv,
+    *,
+    test_batch_mode: str = COX_TEST_BATCH_PER_PATIENT,
+    cox_device: str = "cpu",
+) -> dict:
+    """Q metrics of one cox fold under one test-side batch composition.
+
+    `artifacts` is the loaded split_{fold}_results.pkl; its risks are used only
+    when they cover the whole test split (they never do for the cox loader
+    layout - see the module docstring).
+    """
+    factory = conf["factory"]
+    train_survival_risks, test_forward = collect_cox_fold(
+        ref, conf, fold, cox_device=cox_device, test_batch_mode=test_batch_mode
+    )
+    if test_forward is not None:
+        times, censorships, risks = test_forward
+    else:
+        times = artifacts["times"]
+        censorships = artifacts["censorships"]
+        risks = artifacts["risks"]
+    return fold_q_metrics(
+        edges_from_factory(factory),
+        cohort_surv,
+        times,
+        censorships,
+        risks,
+        risk_by_bin=None,
+        train_survival_risks=train_survival_risks,
+    )
+
+
+def compute_fold_from_artifacts(
+    ref: RunRef,
+    conf: dict,
+    fold: int,
+    *,
+    cox_test_batch: str = COX_TEST_BATCH_AUTO,
+    cindex_csv=_UNSET,
+    cox_device: str = "cpu",
+) -> tuple[dict, str]:
     """Recompute one fold from saved artifacts (dump preferred, pkl fallback)."""
     dump_path = ref.modality_dir / DUMP_NAME_TEMPLATE.format(fold=fold)
     dump = read_metrics_input_dump(dump_path)
@@ -837,12 +937,6 @@ def compute_fold_from_artifacts(ref: RunRef, conf: dict, fold: int) -> tuple[dic
     factory = conf["factory"]
     is_cox = conf["experiment"].get("bag_loss") == COX_BAG_LOSS
     artifacts = load_fold_pkl(ref.modality_dir / f"split_{fold}_results.pkl")
-    times = artifacts["times"]
-    censorships = artifacts["censorships"]
-    risks = artifacts["risks"]
-    risk_by_bin = None
-    if not is_cox and artifacts["logits"] is not None:
-        risk_by_bin = survival_columns_from_logits(artifacts["logits"])
 
     cohort_surv = None
     splits_csv = ref.modality_dir / f"splits_{fold}.csv"
@@ -854,22 +948,63 @@ def compute_fold_from_artifacts(ref: RunRef, conf: dict, fold: int) -> tuple[dic
         )
         cohort_surv = build_surv(cohort_times, cohort_censorships)
 
-    train_survival_risks = None
-    if is_cox:
-        train_survival_risks, test_forward = collect_cox_fold(ref, conf, fold)
-        if test_forward is not None:
-            times, censorships, risks = test_forward
+    if not is_cox:
+        risk_by_bin = None
+        if artifacts["logits"] is not None:
+            risk_by_bin = survival_columns_from_logits(artifacts["logits"])
+        metrics = fold_q_metrics(
+            edges_from_factory(factory),
+            cohort_surv,
+            artifacts["times"],
+            artifacts["censorships"],
+            artifacts["risks"],
+            risk_by_bin=risk_by_bin,
+            train_survival_risks=None,
+        )
+        return metrics, SOURCE_PKL_RECOMPUTE
 
-    metrics = fold_q_metrics(
-        edges_from_factory(factory),
+    if cindex_csv is _UNSET:
+        cindex_csv = load_csv_cindex_by_fold(ref.modality_dir / "test_result.csv").get(fold)
+    mode = cox_test_batch
+    if mode == COX_TEST_BATCH_AUTO:
+        mode = COX_TEST_BATCH_PER_PATIENT
+    metrics = cox_fold_metrics(
+        ref,
+        conf,
+        fold,
+        artifacts,
         cohort_surv,
-        times,
-        censorships,
-        risks,
-        risk_by_bin=risk_by_bin,
-        train_survival_risks=train_survival_risks,
+        test_batch_mode=mode,
+        cox_device=cox_device,
     )
-    return metrics, "pkl_recompute"
+    source = SOURCE_PKL_RECOMPUTE
+
+    needs_repair = (
+        cox_test_batch == COX_TEST_BATCH_AUTO
+        and cindex_csv is not None
+        and abs(float(metrics["cindex"]) - float(cindex_csv)) > CINDEX_TOLERANCE
+    )
+    if needs_repair:
+        online_metrics = cox_fold_metrics(
+            ref,
+            conf,
+            fold,
+            artifacts,
+            cohort_surv,
+            test_batch_mode=COX_TEST_BATCH_ONLINE,
+            cox_device=cox_device,
+        )
+        tag = f"{ref.study}__{ref.scheme}/{ref.modality}"
+        print(
+            f"[REPAIR] {tag} fold {fold}: per-patient cindex="
+            f"{metrics['cindex']!r} (diff {abs(float(metrics['cindex']) - float(cindex_csv)):.3e}), "
+            f"online-batch cindex={online_metrics['cindex']!r} (diff "
+            f"{abs(float(online_metrics['cindex']) - float(cindex_csv)):.3e}) vs csv {cindex_csv!r}"
+        )
+        metrics, adopted = pick_cox_reconstruction(metrics, online_metrics, cindex_csv)
+        if adopted:
+            source = SOURCE_PKL_COX_ONLINE
+    return metrics, source
 
 
 # ---------------------------------------------------------------------------
@@ -951,14 +1086,70 @@ def _cox_train_csv(ref: RunRef, conf: dict, fold: int) -> Path:
     return out
 
 
-def collect_cox_fold(ref: RunRef, conf: dict, fold: int, cox_device: str = "cpu"):
+def _collect_split_rows(args, model, loader):
+    """Per-row (times, censorships, risks) in loader order, like _summary's arrays.
+
+    Unlike utils.core_utils._collect_train_survival_risks (which reads
+    _summary's patient_results dict, keyed by the 12-char case id and therefore
+    collapsing rows whenever two slides of one batch share a case id - for the
+    cox full-batch loader that collapses the WHOLE split into one row), this
+    collects the raw concatenated rows exactly as _calculate_metrics sees them
+    online.  Same ops as _summary: _process_data_and_forward -> _calculate_risk
+    -> _tensor_to_numpy_safe.
+    """
+    import torch
+    from utils.core_utils import (
+        _calculate_risk,
+        _process_data_and_forward,
+        _tensor_to_numpy_safe,
+    )
+
+    device = args.device
+    times, censorships, risks = [], [], []
+    with torch.no_grad():
+        for data in loader:
+            out, _, event_time, censor, _ = _process_data_and_forward(
+                args, model, args.modality, device, data
+            )
+            if len(out.shape) == 1:
+                out = out.unsqueeze(0)
+            risk, _ = _calculate_risk(out, args.bag_loss)
+            risks.append(np.asarray(risk, dtype=np.float64).reshape(-1))
+            censorships.append(_tensor_to_numpy_safe(censor, dtype=np.float64))
+            times.append(_tensor_to_numpy_safe(event_time, dtype=np.float64))
+    if not risks:
+        empty = np.empty(0, dtype=np.float64)
+        return empty, empty, empty
+    return (
+        np.concatenate(times, axis=0),
+        np.concatenate(censorships, axis=0),
+        np.concatenate(risks, axis=0),
+    )
+
+
+def collect_cox_fold(
+    ref: RunRef,
+    conf: dict,
+    fold: int,
+    cox_device: str = "cpu",
+    test_batch_mode: str = COX_TEST_BATCH_PER_PATIENT,
+):
     """No-grad forward pass for a cox fold.
 
     Returns ((train_times, train_events, train_risks), test_forward) where
     test_forward = (times, censorships, risks) is only returned when the saved
-    pkl is incomplete (clinic_cox saves a single full-batch row, see
+    pkl does not cover the whole test split (for clinic_cox it never does: the
+    online full-batch loader collapses patient_results to a single row, see
     Table1_CoxBreslow_Forward.py) - otherwise None and the pkl risks are used.
+
+    test_batch_mode picks the test-side composition:
+      - COX_TEST_BATCH_PER_PATIENT: batch_size=1 loader, risks read from
+        _summary's patient_results (historical default);
+      - COX_TEST_BATCH_ONLINE: the composition the online forward used for
+        cox_surv - one full batch (the loader's cox override), raw rows.
     """
+    if test_batch_mode not in (COX_TEST_BATCH_PER_PATIENT, COX_TEST_BATCH_ONLINE):
+        raise ValueError(f"unsupported cox test batch mode: {test_batch_mode!r}")
     import torch
     from utils.core_utils import (
         _collect_train_survival_risks,
@@ -982,32 +1173,47 @@ def collect_cox_fold(ref: RunRef, conf: dict, fold: int, cox_device: str = "cpu"
         args, csv_path=str(csv_path), fold=fold
     )
     loss_fn = _init_loss_function(args)
-    loader_kwargs = dict(
+    per_patient_kwargs = dict(
         training=False,
         testing=False,
         weighted=False,
         batch_size=1,
-        disable_cox_batch_override=True,  # per-patient: the online full-batch
-        # loader collapses patient_results to one row per batch
+        disable_cox_batch_override=True,
     )
-    train_loader = _get_split_loader(args, train_split, **loader_kwargs)
-    train_times, train_events, train_risks = _collect_train_survival_risks(
-        args, model, train_loader, loss_fn
-    )
+    if test_batch_mode == COX_TEST_BATCH_ONLINE:
+        # the online loader for cox_surv: effective batch = len(split), raw rows
+        online_kwargs = dict(per_patient_kwargs, disable_cox_batch_override=False)
+        train_loader = _get_split_loader(args, train_split, **online_kwargs)
+        train_times, train_censorships, train_risks = _collect_split_rows(
+            args, model, train_loader
+        )
+        train_events = (1.0 - train_censorships) > 0.5
+    else:
+        train_loader = _get_split_loader(args, train_split, **per_patient_kwargs)
+        train_times, train_events, train_risks = _collect_train_survival_risks(
+            args, model, train_loader, loss_fn
+        )
 
     test_forward = None
     pkl_path = ref.modality_dir / f"split_{fold}_results.pkl"
     artifacts = load_fold_pkl(pkl_path)
-    if len(artifacts["times"]) < 2:
-        test_loader = _get_split_loader(args, test_split, **loader_kwargs)
-        test_times, test_events, test_risks = _collect_train_survival_risks(
-            args, model, test_loader, loss_fn
-        )
-        test_forward = (
-            test_times,
-            (~np.asarray(test_events, dtype=bool)).astype(np.float64),
-            test_risks,
-        )
+    if len(artifacts["times"]) != len(test_split):
+        # pkl risks are only usable when they cover EVERY loader row
+        if test_batch_mode == COX_TEST_BATCH_ONLINE:
+            test_loader = _get_split_loader(
+                args, test_split, **dict(per_patient_kwargs, disable_cox_batch_override=False)
+            )
+            test_forward = _collect_split_rows(args, model, test_loader)
+        else:
+            test_loader = _get_split_loader(args, test_split, **per_patient_kwargs)
+            test_times, test_events, test_risks = _collect_train_survival_risks(
+                args, model, test_loader, loss_fn
+            )
+            test_forward = (
+                test_times,
+                (~np.asarray(test_events, dtype=bool)).astype(np.float64),
+                test_risks,
+            )
     return (train_times, train_events, train_risks), test_forward
 
 
@@ -1031,6 +1237,37 @@ def _abs_paths(values: Sequence[str]) -> list[Path]:
     return paths
 
 
+def merge_rows(existing: Sequence[dict], new: Sequence[dict]) -> tuple[list[dict], int, int]:
+    """Merge `new` rows into `existing` keyed by (study, scheme, modality, fold).
+
+    Existing order is preserved; a new row replaces any existing row with the
+    same key (so re-running a fold never duplicates it).  Returns
+    (merged, n_replaced, n_appended).
+    """
+    key = lambda row: (row["study"], row["scheme"], row["modality"], str(row["fold"]))  # noqa: E731
+    merged = list(existing)
+    index = {key(row): pos for pos, row in enumerate(merged)}
+    n_replaced = n_appended = 0
+    for row in new:
+        pos = index.get(key(row))
+        if pos is None:
+            index[key(row)] = len(merged)
+            merged.append(row)
+            n_appended += 1
+        else:
+            merged[pos] = row
+            n_replaced += 1
+    return merged, n_replaced, n_appended
+
+
+def read_q_rows(path: Path) -> list[dict]:
+    path = Path(path)
+    if not path.is_file():
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
 def recompute(
     roots: Sequence[Path],
     out_path: Path,
@@ -1041,6 +1278,8 @@ def recompute(
     labels_dirs: Sequence[Path] = (),
     conf_filters: Sequence[str] = (),
     quiet: bool = False,
+    cox_test_batch: str = COX_TEST_BATCH_AUTO,
+    merge: bool = False,
 ) -> list[dict]:
     refs = discover_run_dirs(roots, modalities)
     if conf_filters:
@@ -1074,7 +1313,14 @@ def recompute(
                 print(f"[WARN] {tag} fold {fold}: missing {pkl_path.name}")
                 continue
             try:
-                metrics, source = compute_fold_from_artifacts(ref, conf, fold)
+                metrics, source = compute_fold_from_artifacts(
+                    ref,
+                    conf,
+                    fold,
+                    cox_test_batch=cox_test_batch,
+                    cindex_csv=cindex_csv.get(fold),
+                    cox_device=cox_device,
+                )
             except Exception as exc:
                 print(f"[FAIL] {tag} fold {fold}: recompute error ({exc})")
                 failures.append(f"{tag} fold {fold}: {exc}")
@@ -1118,6 +1364,14 @@ def recompute(
                 failures.append(msg)
                 print(f"[FAIL] {msg}")
 
+    if merge and Path(out_path).is_file():
+        existing = read_q_rows(out_path)
+        merged, n_replaced, n_appended = merge_rows(existing, rows)
+        print(
+            f"[MERGE] {out_path}: kept {len(existing) - n_replaced} existing rows, "
+            f"replaced {n_replaced}, appended {n_appended}"
+        )
+        rows = merged
     write_rows(out_path, rows)
 
     print(
@@ -1167,6 +1421,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="comma-separated modality dir names to scan",
     )
     parser.add_argument("--cox-device", default="cpu", help="cpu (default) or a GPU index")
+    parser.add_argument(
+        "--cox-test-batch",
+        choices=COX_TEST_BATCH_MODES,
+        default=COX_TEST_BATCH_AUTO,
+        help=(
+            "cox test-side risk reconstruction: auto (default) recomputes "
+            "per-patient and, only when that disagrees with the recorded "
+            "test_cindex, re-forwards in the online full-batch composition and "
+            "adopts it if strictly closer; per_patient / online force one mode"
+        ),
+    )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="merge into an existing --out csv (replace rows by study/scheme/modality/fold)",
+    )
     parser.add_argument("--limit", type=int, default=None, help="max confs (smoke runs)")
     parser.add_argument("--folds", default=None, help="comma-separated folds (default: all)")
     parser.add_argument(
@@ -1210,6 +1480,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         labels_dirs=labels_dirs,
         conf_filters=_split_cli_list(args.confs),
         quiet=args.quiet,
+        cox_test_batch=args.cox_test_batch,
+        merge=args.merge,
     )
     return 0
 

@@ -1404,3 +1404,20 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：**D8** 实质等价成立（byte 级唯一差异 = 输出根路径行）——**用户已确认（2026-10-03）：等价→放行**；既有 L0-L5 产物维持冻结不覆盖。
 - 状态：完成（S11）。E=hgcn 评估臂待模型接入后再定（遗留：模型侧消费方、cindex --encoding hgcn、keep_none 节点处理方式未决）。
 
+---
+
+## S10d Q 重算自检失败调查与修复（2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code 子 Agent
+- 目标：查清 S10c 全量重算中 7 个 cox 折 c-index 自检失败（diff 4e-4~6.7e-3）的根因并修复；复核枚举完整性。
+- 根因（数值证明）：cox 的 `split_{fold}_results.pkl` 每折只有 **1 行**（cox loader 把 batch 覆写为 len(split)，`patient_results` 按 batch 键坍缩）→ 脚本必须重做前向；CPU 前向与训练时 GPU 前向差 ~1 float32 ULP（~1e-8），sksurv `tied_tol=1e-8` 为绝对阈值，恰好跨界的可比对在 tied/有序间翻转 → c-index 恰差 0.5/n_pairs。7 折全部落在该格点上；行集不一致假设被排除（行/事件/时序全同、无 case 前缀重复）。
+- 修复（`results_display/scripts/Test_5_q_recompute.py`）：cox 重构两模式（per-patient batch=1 / online 全批组合）；`pick_cox_reconstruction` 自动修复策略（与 csv 更近才采用，否则保留快路径）；pkl 复用门槛改为"覆盖全部 loader 行"；新增 `--cox-test-batch {auto,per_patient,online}`、`--merge`、`_collect_split_rows`（绕过 patient_results 坍缩）。
+- 审计（自检项 + 实际结果）：
+  - 测试 **51 passed**（44 + 7 新，复跑一致）。
+  - 枚举完整性：arm_B 实有 **349 conf**（264 = 33 数据集 × 8 主方案 + 85 个 Test_3/HGCN/det1/oldlabel 额外 conf）；arm_A 136 conf。CSV 0 孤儿行（每行都有磁盘 pkl）。
+  - 缺口处置：arm_A `mlp_clinic_flatten` 136 refs/676 折已补算并入（pkl-only，max |diff| 1.1e-16）；arm_A cox 410 折与 arm_B `mlp_clinic_mean` 4 refs 见补记（后台补跑）。
+  - 最终 CSV：**3791 行、0 重复**、除 3 行修复外其余 3112 行与 S10c 逐字节一致；3 行修复（paad lm0/lm_none f1、coad lm0 f0）diff=0；**4 行未能复现**（acc MMSURV lm0/lm_none f4、sarc f0、ucec f3，均非 15 主集）——需训练时 GPU 的 float32 原值，CPU 任何组合都复现不出，判定为环境受限而非脚本缺陷，未强行放行（可选后续：GPU 空闲时重跑这 4 个 conf 的 cox 前向取原值）。
+- 偏差与原因：无。
+- 决策点：无新增。
+- 状态：完成（S10d）。**15 主集相关 Q 电池全部自检干净**。
+

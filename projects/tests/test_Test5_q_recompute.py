@@ -668,3 +668,313 @@ def test_recompute_prefers_metrics_input_dump(tmp_path):
     )
     assert row["source"] == "metrics_input_dump"
     assert row["abs_diff"] != "" and float(row["abs_diff"]) <= CINDEX_TOLERANCE
+
+
+# ---------------------------------------------------------------------------
+# S10d: cox test-side risk reconstruction (1-row pkl collapse + tie-flip repair)
+# ---------------------------------------------------------------------------
+
+
+def test_pick_cox_reconstruction_policy():
+    """auto policy: never perturb a fast result that already matches."""
+    fast = {"cindex": 0.4533333333333333}
+    online = {"cindex": 0.46}
+    # no recorded online value -> keep the fast result untouched
+    metrics, adopted = qrec.pick_cox_reconstruction(fast, online, None)
+    assert metrics is fast and adopted is False
+    # fast already within tolerance -> keep it, the online value is not consulted
+    metrics, adopted = qrec.pick_cox_reconstruction(fast, online, 0.4533333333333333)
+    assert metrics is fast and adopted is False
+    # fast disagrees, online strictly closer -> adopt online
+    metrics, adopted = qrec.pick_cox_reconstruction(fast, online, 0.46)
+    assert metrics is online and adopted is True
+    # fast disagrees, online no closer -> keep fast (ties keep the cheap path)
+    metrics, adopted = qrec.pick_cox_reconstruction(fast, {"cindex": 0.45}, 0.46)
+    assert metrics is fast and adopted is False
+
+
+def test_cindex_tie_flip_at_tied_tol_boundary():
+    """The S10d mechanism: a comparable pair whose risk gap straddles sksurv's
+    tied_tol=1e-8 contributes 0.5 (tied) or 0/1 (ordered), moving the c-index."""
+    times = np.array([1.0, 2.0, 3.0, 4.0])
+    censorships = np.array([0.0, 0.0, 1.0, 1.0])  # rows 0/1 are events
+    base = np.array([0.5, 0.4, 0.3, 0.2])
+
+    tied = base.copy()
+    tied[1] = tied[0] + 5e-9  # gap 5e-9 <= 1e-8 -> tied pair
+    untied = base.copy()
+    untied[1] = untied[0] + 1.2e-8  # gap 1.2e-8 > 1e-8 -> ordered, discordant
+
+    ci_tied = qrec.cindex_from_risk(times, censorships, tied)
+    ci_untied = qrec.cindex_from_risk(times, censorships, untied)
+    # 5 comparable pairs: 4 ordered + one tied (0.5) vs 4 ordered + one wrong (0)
+    assert ci_tied == pytest.approx(4.5 / 5)
+    assert ci_untied == pytest.approx(4.0 / 5)
+    # the two risk vectors differ by ~7e-9, i.e. a couple of float32 ULP at 0.5
+    assert abs(untied[1] - tied[1]) < 1e-8
+    assert ci_tied != ci_untied
+
+
+class _CoxFactoryStub:
+    """Just enough factory for compute_fold_from_artifacts' cox branch."""
+
+    def __init__(self, patients_df, bins):
+        self.patients_df = patients_df
+        self.label_data = patients_df
+        self.label_col = "survival_months"
+        self.censorship_var = "censorship"
+        self.bins = np.asarray(bins, dtype=np.float64)
+
+
+def _cox_fold_artifacts(tmp_path):
+    """Synthetic cox fold: 1-row pkl (the online full-batch collapse) + csv."""
+    times, censorships, risks, _ = synthetic_fold(n=80, seed=11)
+    cohort_times, cohort_censorships = synthetic_cohort(n=240)
+    patients = pd.DataFrame(
+        {"survival_months": cohort_times, "censorship": cohort_censorships}
+    )
+    factory = _CoxFactoryStub(patients, bins=np.linspace(0.0, 100.0, 5))
+
+    modality_dir = tmp_path / "runs" / "tcga_x__COXSPLIT__landmark_0" / "clinic_cox"
+    modality_dir.mkdir(parents=True)
+    ref = qrec.RunRef(
+        root=tmp_path,
+        conf_dir=modality_dir.parent,
+        modality_dir=modality_dir,
+        study="tcga_x",
+        scheme="COXSPLIT__landmark_0",
+        modality="clinic_cox",
+    )
+    # the online loader collapses patient_results to one row per batch: 1 row here
+    with (modality_dir / "split_0_results.pkl").open("wb") as handle:
+        pickle.dump(
+            {"TCGA-XX-0000": {"time": 1.0, "risk": 0.1, "censorship": 0.0}}, handle
+        )
+
+    # the tie-flip pair: an event row and a longer-surviving comparable row
+    i = int(np.flatnonzero(censorships == 0)[0])
+    j = int(np.flatnonzero(times > times[i])[0])
+    risks_pp = risks.copy()
+    risks_pp[i] = 0.5
+    risks_pp[j] = 0.5 + 5e-9  # tied (<= tied_tol)
+    risks_online = risks_pp.copy()
+    risks_online[j] = 0.5 + 1.2e-8  # untied (> tied_tol): the online GPU bits
+    return ref, factory, times, censorships, risks_pp, risks_online
+
+
+def test_cox_auto_repair_adopts_online_batch_when_tie_flips(monkeypatch, tmp_path):
+    ref, factory, times, censorships, risks_pp, risks_online = _cox_fold_artifacts(tmp_path)
+    ci_pp = qrec.cindex_from_risk(times, censorships, risks_pp)
+    ci_online = qrec.cindex_from_risk(times, censorships, risks_online)
+    assert ci_pp != ci_online
+
+    conf = {"factory": factory, "experiment": {"bag_loss": "cox_surv"}}
+    calls = []
+
+    def fake_collect(
+        ref, conf, fold, cox_device="cpu",
+        test_batch_mode=qrec.COX_TEST_BATCH_PER_PATIENT,
+    ):
+        calls.append(test_batch_mode)
+        train = (np.array([1.0, 2.0]), np.array([True, False]), np.array([0.1, 0.2]))
+        risks = risks_online if test_batch_mode == qrec.COX_TEST_BATCH_ONLINE else risks_pp
+        return train, (times, censorships, risks)
+
+    monkeypatch.setattr(qrec, "collect_cox_fold", fake_collect)
+
+    # auto + disagreeing csv -> per-patient first, then the online reconstruction
+    metrics, source = qrec.compute_fold_from_artifacts(
+        ref, conf, 0, cox_test_batch="auto", cindex_csv=ci_online
+    )
+    assert calls == [qrec.COX_TEST_BATCH_PER_PATIENT, qrec.COX_TEST_BATCH_ONLINE]
+    assert source == qrec.SOURCE_PKL_COX_ONLINE
+    assert metrics["cindex"] == pytest.approx(ci_online, abs=1e-12)
+
+    # auto + csv that the per-patient run already reproduces -> untouched
+    calls.clear()
+    metrics, source = qrec.compute_fold_from_artifacts(
+        ref, conf, 0, cox_test_batch="auto", cindex_csv=ci_pp
+    )
+    assert calls == [qrec.COX_TEST_BATCH_PER_PATIENT]
+    assert source == qrec.SOURCE_PKL_RECOMPUTE
+    assert metrics["cindex"] == pytest.approx(ci_pp, abs=1e-12)
+
+    # forced per-patient never repairs, even when the csv disagrees
+    calls.clear()
+    metrics, source = qrec.compute_fold_from_artifacts(
+        ref, conf, 0, cox_test_batch="per_patient", cindex_csv=ci_online
+    )
+    assert calls == [qrec.COX_TEST_BATCH_PER_PATIENT]
+    assert source == qrec.SOURCE_PKL_RECOMPUTE
+    assert metrics["cindex"] == pytest.approx(ci_pp, abs=1e-12)
+
+
+def test_cox_auto_repair_reads_csv_when_cindex_not_passed(monkeypatch, tmp_path):
+    """The default path (no explicit cindex_csv) must read test_result.csv."""
+    ref, factory, times, censorships, risks_pp, risks_online = _cox_fold_artifacts(tmp_path)
+    ci_online = qrec.cindex_from_risk(times, censorships, risks_online)
+    with (ref.modality_dir / "test_result.csv").open("w", encoding="utf-8") as handle:
+        handle.write(",test_cindex\n0,%r\n" % ci_online)
+
+    conf = {"factory": factory, "experiment": {"bag_loss": "cox_surv"}}
+
+    def fake_collect(
+        ref, conf, fold, cox_device="cpu",
+        test_batch_mode=qrec.COX_TEST_BATCH_PER_PATIENT,
+    ):
+        train = (np.array([1.0, 2.0]), np.array([True, False]), np.array([0.1, 0.2]))
+        risks = risks_online if test_batch_mode == qrec.COX_TEST_BATCH_ONLINE else risks_pp
+        return train, (times, censorships, risks)
+
+    monkeypatch.setattr(qrec, "collect_cox_fold", fake_collect)
+    metrics, source = qrec.compute_fold_from_artifacts(ref, conf, 0)
+    assert source == qrec.SOURCE_PKL_COX_ONLINE
+    assert metrics["cindex"] == pytest.approx(ci_online, abs=1e-12)
+
+
+def test_collect_cox_fold_pkl_gate_requires_full_row_coverage(monkeypatch, tmp_path):
+    """The pkl risks are used only when they cover EVERY test-split row."""
+    import torch
+    from types import SimpleNamespace
+
+    import utils.core_utils as core_utils
+
+    modality_dir = tmp_path / "runs" / "tcga_x__COXSPLIT__landmark_0" / "clinic_cox"
+    modality_dir.mkdir(parents=True)
+    ref = qrec.RunRef(
+        root=tmp_path,
+        conf_dir=modality_dir.parent,
+        modality_dir=modality_dir,
+        study="tcga_x",
+        scheme="COXSPLIT__landmark_0",
+        modality="clinic_cox",
+    )
+
+    class _Model:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    class _Loader:
+        def __init__(self, split):
+            self.split = split
+
+    class _Factory:
+        def __init__(self):
+            self.train, self.val, self.test = ["a"], ["b"], ["c1", "c2", "c3"]
+
+        def return_splits(self, args, csv_path=None, fold=0):
+            return self.train, self.val, self.test
+
+    conf = {
+        "factory": _Factory(),
+        "experiment": {"bag_loss": "cox_surv"},
+        "label_col": "survival_months",
+        "n_bins": 4,
+    }
+    torch.save(
+        torch.nn.Linear(1, 1, bias=False).state_dict(),
+        modality_dir / "s_0_checkpoint.pt",
+    )
+
+    train_rows = (
+        np.array([1.0, 2.0]),
+        np.array([True, False]),
+        np.array([0.1, 0.2]),
+    )
+    loader_splits = []
+
+    def fake_split_rows(args, model, loader):
+        return (
+            np.array([2.0, 3.0, 4.0]),
+            np.zeros(3),
+            np.array([0.1, 0.2, 0.3]),
+        )
+
+    def fake_get_split_loader(args, split, **kwargs):
+        loader_splits.append(split)
+        return _Loader(split)
+
+    monkeypatch.setattr(
+        qrec,
+        "_build_cox_args",
+        lambda *a, **k: SimpleNamespace(
+            device="cpu", bag_loss="cox_surv", modality="clinic_cox"
+        ),
+    )
+    monkeypatch.setattr(qrec, "_build_cox_model", lambda args, state_dict=None: _Model())
+    monkeypatch.setattr(qrec, "_cox_train_csv", lambda ref, conf, fold: tmp_path / "splits.csv")
+    monkeypatch.setattr(core_utils, "_init_loss_function", lambda args: None)
+    monkeypatch.setattr(core_utils, "_get_split_loader", fake_get_split_loader)
+    monkeypatch.setattr(
+        core_utils,
+        "_collect_train_survival_risks",
+        lambda args, model, loader, loss_fn: train_rows,
+    )
+    monkeypatch.setattr(qrec, "_collect_split_rows", fake_split_rows)
+
+    def write_pkl(n_rows):
+        patients = {
+            f"TCGA-XX-{i:04d}": {"time": 1.0 + i, "risk": 0.1 * i, "censorship": 0.0}
+            for i in range(n_rows)
+        }
+        with (modality_dir / "split_0_results.pkl").open("wb") as handle:
+            pickle.dump(patients, handle)
+
+    # 1-row pkl (the observed cox layout) cannot cover a 3-row split -> forward
+    write_pkl(1)
+    _, test_forward = qrec.collect_cox_fold(ref, conf, 0)
+    assert loader_splits == [["a"], ["c1", "c2", "c3"]]
+    assert test_forward is not None
+
+    # a pkl covering every test row is preferred over any forward
+    loader_splits.clear()
+    write_pkl(3)
+    _, test_forward = qrec.collect_cox_fold(ref, conf, 0)
+    assert loader_splits == [["a"]]
+    assert test_forward is None
+
+
+def test_merge_rows_replaces_by_key_and_keeps_order():
+    existing = [
+        {"study": "a", "scheme": "s", "modality": "m", "fold": "0", "cindex_csv": "0.5"},
+        {"study": "a", "scheme": "s", "modality": "m", "fold": "1", "cindex_csv": "0.6"},
+    ]
+    new = [
+        {"study": "a", "scheme": "s", "modality": "m", "fold": 1, "cindex_csv": "0.61"},
+        {"study": "b", "scheme": "s2", "modality": "m", "fold": 0, "cindex_csv": "0.7"},
+    ]
+    merged, n_replaced, n_appended = qrec.merge_rows(existing, new)
+    assert (n_replaced, n_appended) == (1, 1)
+    assert len(merged) == 3
+    assert [row["fold"] for row in merged] == ["0", 1, 0]
+    assert merged[1]["cindex_csv"] == "0.61"
+    # re-merging the same rows never duplicates
+    again, n_replaced, n_appended = qrec.merge_rows(merged, new)
+    assert (n_replaced, n_appended) == (2, 0)
+    assert len(again) == 3
+
+
+@pytest.mark.skipif(
+    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no Test_2b/arm_B artifacts"
+)
+def test_recompute_merge_into_existing_csv_has_no_duplicate_rows(tmp_path):
+    out_csv = tmp_path / "q_metrics.csv"
+    kwargs = dict(
+        roots=[SMOKE_ROOT],
+        out_path=out_csv,
+        modalities=["mlp_clinic_flatten"],
+        folds=[0],
+        limit=1,
+        cox_device="cpu",
+        quiet=True,
+    )
+    first = qrec.recompute(**kwargs)
+    assert first
+    second = qrec.recompute(merge=True, **kwargs)
+    assert len(second) == len(first)
+    keys = [(row["study"], row["scheme"], row["modality"], row["fold"]) for row in second]
+    assert len(keys) == len(set(keys))
+    assert len(qrec.read_q_rows(out_csv)) == len(first)
