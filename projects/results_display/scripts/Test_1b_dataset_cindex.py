@@ -38,7 +38,9 @@
       Appx_per_dataset_distribution.png         指标 a：分布 + 四挡分层
       Appx_cross_dataset_field_spread.png       指标 b：同一字段跨数据集 c-index 分布
       Appx_topk_overlap_matrix.png              指标 c：两两重叠矩阵
-      Main_topk_overlap.png                     指标 c：聚合重叠率汇总
+      Main_topk_overlap_rate.png               头条图1：逐 k 平均/中位重叠率（越低 = 最优组合越因数据集而异）
+      Main_topk_zero_share.png                头条图2：逐 k 零共享占比（多少数据集对完全不重合）
+      Appx_topk_pairwise_distribution.png     附录图：528 对重叠率散点分布（Q1/Q3/中位）
 
 可复跑：同输入重跑 diff=0（无时间戳、固定排序、固定数值格式、固定随机种子）。
 产物清单核对：main() 末尾遍历 out_dir，逐个核对上面这组文件名（清单外文件按旧名遗留告警）。
@@ -94,12 +96,14 @@ AUDIT_N = 3
 
 # ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
 OUT_MAIN_PER_DATASET_PROFILE = "Main_per_dataset_profile.png"
-OUT_MAIN_TOPK_OVERLAP_PNG = "Main_topk_overlap.png"
+OUT_MAIN_TOPK_OVERLAP_RATE = "Main_topk_overlap_rate.png"
+OUT_MAIN_TOPK_ZERO_SHARE = "Main_topk_zero_share.png"
 OUT_MAIN_TOPK_OVERLAP_CSV = "Main_topk_overlap.csv"
 OUT_MAIN_DATASET_SUMMARY = "Main_dataset_summary.csv"
 OUT_APPX_PER_DATASET_DISTRIBUTION = "Appx_per_dataset_distribution.png"
 OUT_APPX_CROSS_DATASET_FIELD_SPREAD = "Appx_cross_dataset_field_spread.png"
 OUT_APPX_TOPK_OVERLAP_MATRIX = "Appx_topk_overlap_matrix.png"
+OUT_APPX_TOPK_PAIRWISE_DIST = "Appx_topk_pairwise_distribution.png"
 OUT_APPX_FIELD_SUMMARY = "Appx_field_summary.csv"
 OUT_APPX_TOPK_MEMBERS = "Appx_topk_members.csv"
 OUT_RAW_CINDEX_MATRIX = "Raw_cindex_matrix.csv"
@@ -730,81 +734,112 @@ def figure_topk_matrices(
     return out_path
 
 
-def figure_topk_summary(
-    summary: dict[int, dict],
-    pairwise_values: dict[int, list[float]],
-    out_path: Path,
-) -> Path:
+def figure_topk_overlap_rate(summary: dict[int, dict], out_path: Path) -> Path:
+    """头条图 1：各数据集 top-k 排名的平均重叠率（越低 = 最优组合越因数据集而异）。"""
     ks = sorted(summary)
-    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(12.6, 5.4))
+    fig, ax = plt.subplots(figsize=(6.8, 4.6))
     fig.patch.set_facecolor(SURFACE)
 
     x = np.arange(len(ks))
     means = [summary[k]["mean_overlap"] for k in ks]
     medians = [summary[k]["median_overlap"] for k in ks]
-    top = max(means + medians) * 1.55
-    ax_a.bar(x, means, width=0.56, color=COL_NEG, edgecolor="none", zorder=2)
-    ax_a.plot(x, medians, linestyle="", marker="D", markersize=6, color=INK, zorder=4)
+    ax.bar(x, means, width=0.56, color=COL_NEG, edgecolor="none", zorder=2,
+           label="mean overlap rate")
+    ax.plot(x, medians, linestyle="", marker="D", markersize=7, color=INK, zorder=4,
+            label="median")
     for xi, (k, mean) in enumerate(zip(ks, means)):
-        info = summary[k]
-        ax_a.annotate(
+        ax.annotate(
             f"{mean:.3f}", xy=(xi, mean), xytext=(0, 5), textcoords="offset points",
-            ha="center", va="bottom", fontsize=9.0, color=INK,
+            ha="center", va="bottom", fontsize=10.0, color=INK,
         )
-        if info["n_empty_pairs"]:
-            share = 100.0 * info["fraction_empty_pairs"]
-            ax_a.annotate(
-                f"{info['n_empty_pairs']}/{info['n_pairs']} pairs\nshare 0 fields "
-                f"({share:.1f}%)",
-                xy=(xi, top), ha="center", va="top", fontsize=7.5, color=COL_POS,
-            )
-    ax_a.set_xticks(x)
-    ax_a.set_xticklabels([f"k = {k}" for k in ks], color=INK, fontsize=9.5)
-    ax_a.set_ylim(0.0, top)
-    ax_a.set_ylabel("pairwise overlap rate  |A ∩ B| / k")
-    ax_a.set_title(
-        "Top-k overlap between dataset field rankings (528 dataset pairs)",
-        fontsize=10, color=INK,
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"k = {k}" for k in ks], color=INK, fontsize=10)
+    ax.set_ylim(0.0, max(means + medians) * 1.45)
+    ax.set_ylabel("mean pairwise overlap rate  |A ∩ B| / k", color=INK, fontsize=9)
+    ax.set_title(
+        "Mean overlap of dataset top-k field rankings (528 dataset pairs)\n"
+        "low overlap = the best fields are dataset-specific",
+        color=INK, fontsize=10.5, loc="left",
     )
-    setup_axes(ax_a)
-    handles = [
-        plt.Line2D([], [], marker="s", linestyle="", color=COL_NEG, markersize=8,
-                   label="mean overlap rate"),
-        plt.Line2D([], [], marker="D", linestyle="", color=INK, markersize=6,
-                   label="median overlap rate"),
-    ]
-    ax_a.legend(handles=handles, frameon=False, fontsize=8, loc="upper center",
-                bbox_to_anchor=(0.5, -0.075), ncol=2, labelcolor=INK)
+    setup_axes(ax)
+    ax.legend(frameon=False, fontsize=9, loc="upper left", labelcolor=INK)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    return out_path
+
+
+def figure_topk_zero_share(summary: dict[int, dict], out_path: Path) -> Path:
+    """头条图 2：零共享占比（多少数据集对的最优组合完全不重合）。"""
+    ks = sorted(summary)
+    fig, ax = plt.subplots(figsize=(6.8, 4.6))
+    fig.patch.set_facecolor(SURFACE)
+
+    x = np.arange(len(ks))
+    shares = [summary[k]["fraction_empty_pairs"] for k in ks]
+    ax.bar(x, shares, width=0.56, color=COL_POS, edgecolor="none", zorder=2)
+    for xi, k in enumerate(ks):
+        info = summary[k]
+        ax.annotate(
+            f"{info['n_empty_pairs']}/{info['n_pairs']} pairs\n({shares[xi] * 100:.1f}%)",
+            xy=(xi, shares[xi]), xytext=(0, 5), textcoords="offset points",
+            ha="center", va="bottom", fontsize=9.5, color=INK,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"k = {k}" for k in ks], color=INK, fontsize=10)
+    ax.set_ylim(0.0, max(shares) * 1.45)
+    ax.set_ylabel("share of dataset pairs sharing 0 fields", color=INK, fontsize=9)
+    ax.set_title(
+        "Dataset pairs with zero overlap in top-k field rankings\n"
+        "0 fields appear in every dataset's top-k (k = 5/10/20)",
+        color=INK, fontsize=10.5, loc="left",
+    )
+    setup_axes(ax)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    return out_path
+
+
+def figure_topk_pairwise_distribution(
+    summary: dict[int, dict],
+    pairwise_values: dict[int, list[float]],
+    out_path: Path,
+) -> Path:
+    """附录图：每对数据集的重叠率散点分布（Q1/Q3/中位；每点 = 一对数据集）。"""
+    ks = sorted(summary)
+    fig, ax = plt.subplots(figsize=(7.6, 4.8))
+    fig.patch.set_facecolor(SURFACE)
 
     for xi, k in enumerate(ks):
         values = np.array(pairwise_values[k])
         jitter = np.random.default_rng(AUDIT_SEED + k).uniform(-0.22, 0.22, size=values.shape[0])
         colors = [COL_POS if v == 0.0 else COL_NEG for v in values]
-        ax_b.scatter(np.full(values.shape[0], xi) + jitter, values, s=6, c=colors,
-                     linewidths=0, alpha=0.55, zorder=3)
+        ax.scatter(np.full(values.shape[0], xi) + jitter, values, s=6, c=colors,
+                   linewidths=0, alpha=0.55, zorder=3)
         q1 = float(np.percentile(values, 25))
         q3 = float(np.percentile(values, 75))
-        ax_b.plot([xi - 0.26, xi + 0.26], [q1, q1], color=MUTED, lw=1.2, zorder=4)
-        ax_b.plot([xi - 0.26, xi + 0.26], [q3, q3], color=MUTED, lw=1.2, zorder=4)
-        ax_b.plot([xi - 0.30, xi + 0.30],
-                  [summary[k]["median_overlap"]] * 2, color=INK, lw=1.8, zorder=5)
+        ax.plot([xi - 0.26, xi + 0.26], [q1, q1], color=MUTED, lw=1.2, zorder=4)
+        ax.plot([xi - 0.26, xi + 0.26], [q3, q3], color=MUTED, lw=1.2, zorder=4)
+        ax.plot([xi - 0.30, xi + 0.30],
+                [summary[k]["median_overlap"]] * 2, color=INK, lw=1.8, zorder=5)
         n_zero = int((values == 0.0).sum())
         if n_zero:
-            ax_b.annotate(
+            ax.annotate(
                 f'{n_zero} pairs = 0',
                 xy=(xi + 0.07, 0.035), ha="left", va="bottom", fontsize=7.5,
                 color=COL_POS,
             )
-    ax_b.set_xticks(np.arange(len(ks)))
-    ax_b.set_xticklabels([f"k = {k}" for k in ks], color=INK, fontsize=9)
-    ax_b.set_ylim(-0.02, 1.0)
-    ax_b.set_ylabel("overlap rate per dataset pair")
-    ax_b.set_title(
-        "Distribution of pairwise overlap (each dot = one dataset pair)",
-        fontsize=10, color=INK,
+    ax.set_xticks(np.arange(len(ks)))
+    ax.set_xticklabels([f"k = {k}" for k in ks], color=INK, fontsize=9)
+    ax.set_ylim(-0.02, 1.0)
+    ax.set_ylabel("overlap rate per dataset pair", color=INK, fontsize=9)
+    ax.set_title(
+        "Distribution of pairwise top-k overlap (each dot = one dataset pair)",
+        color=INK, fontsize=10.5, loc="left",
     )
-    setup_axes(ax_b)
-    handles_b = [
+    setup_axes(ax)
+    handles = [
         plt.Line2D([], [], marker="o", linestyle="", color=COL_POS, markersize=6,
                    label="zero shared fields"),
         plt.Line2D([], [], marker="o", linestyle="", color=COL_NEG, markersize=6,
@@ -814,19 +849,10 @@ def figure_topk_summary(
         plt.Line2D([], [], marker="_", linestyle="", color=MUTED, markersize=12,
                    label="Q1/Q3"),
     ]
-    ax_b.legend(handles=handles_b, frameon=False, fontsize=8.0,
-                loc="upper center", bbox_to_anchor=(0.5, -0.075), ncol=4,
-                labelcolor=INK)
-    fig.suptitle(
-        "Test_1b — top-k field overlap summary  |  "
-        "low overlap = the best fields are dataset-specific\n"
-        "fields ranked per dataset by single-field c-index (S5 univariate, "
-        "mlp_clinic_flatten, landmark_0); top-k over that dataset's own bank",
-        fontsize=10,
-        color=INK,
-        y=0.985,
-    )
-    fig.subplots_adjust(left=0.065, right=0.99, top=0.82, bottom=0.19, wspace=0.22)
+    ax.legend(handles=handles, frameon=False, fontsize=8.0,
+              loc="upper center", bbox_to_anchor=(0.5, -0.10), ncol=4,
+              labelcolor=INK)
+    fig.tight_layout()
     fig.savefig(out_path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
     return out_path
@@ -1125,8 +1151,14 @@ def main(argv: list[str] | None = None) -> int:
         datasets, overlap_by_k, summary,
         out_dir / OUT_APPX_TOPK_OVERLAP_MATRIX, tier_note=tier_note,
     ))
-    wrote.append(figure_topk_summary(
-        summary, pairwise_values, out_dir / OUT_MAIN_TOPK_OVERLAP_PNG,
+    wrote.append(figure_topk_overlap_rate(
+        summary, out_dir / OUT_MAIN_TOPK_OVERLAP_RATE,
+    ))
+    wrote.append(figure_topk_zero_share(
+        summary, out_dir / OUT_MAIN_TOPK_ZERO_SHARE,
+    ))
+    wrote.append(figure_topk_pairwise_distribution(
+        summary, pairwise_values, out_dir / OUT_APPX_TOPK_PAIRWISE_DIST,
     ))
 
     # --- 头条量化数字 ---
