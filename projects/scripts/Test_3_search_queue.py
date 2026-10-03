@@ -43,9 +43,9 @@ MAX_RETRIES = 3
 BUCKETS = ("queue", "running", "done", "failed")
 
 
-def _runner_argv(dataset: str) -> list[str]:
+def _runner_argv(dataset: str, workers: int | None = None) -> list[str]:
     """drainer 命令行（脚本之后的 argv 亦直接送进 drainer 自己的 parser 求 job args）。"""
-    return [
+    argv = [
         sys.executable, str(ROOT / "scripts" / "run_e2_selection_queue.py"),
         "--dataset", dataset,
         "--landmark_time", str(C.LANDMARK_TIME),
@@ -54,6 +54,23 @@ def _runner_argv(dataset: str) -> list[str]:
         "--out", str(C.search_dir(dataset)),
         "--inner_analyzer", C.ANALYZER,
     ]
+    if workers is not None:
+        argv.extend(["--workers", str(workers)])
+    return argv
+
+
+def _workers_for(gpu: str) -> int:
+    """按 GPU 取 drainer workers：T3_SEARCH_WORKERS_MAP="0:32,2:32,3:32"（gpu:workers 对），
+    未列出的 GPU 用 T3_SEARCH_WORKERS（默认 16）。"""
+    try:
+        mapping = {
+            part.split(":")[0]: int(part.split(":")[1])
+            for part in os.environ.get("T3_SEARCH_WORKERS_MAP", "").split(",")
+            if ":" in part
+        }
+    except (TypeError, ValueError):
+        mapping = {}
+    return mapping.get(gpu, int(os.environ.get("T3_SEARCH_WORKERS", "16")))
 
 
 _RUNNER_MODULE = None
@@ -190,7 +207,7 @@ def _pid_path(dataset: str) -> Path:
 def _start_drainer(dataset: str, gpu: str) -> int:
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    argv = _runner_argv(dataset)
+    argv = _runner_argv(dataset, workers=_workers_for(gpu))
     with log_path(dataset).open("a", encoding="utf-8") as handle:
         handle.write(f"\n===== start {time.strftime('%F %T')} gpu={gpu}\n")
         handle.write("argv: " + " ".join(argv) + "\n")
