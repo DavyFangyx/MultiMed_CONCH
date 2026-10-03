@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """H1a leakage-audit figures: where the paper schemes carry t0-future information.
 
+New-definition display (spec §2.1 / §5.2, S2c): a patient leaks for field f iff the value
+that actually entered the model came from a source slot with ``t_hi > 0``;
+``leak_rate(f, D) = n_leak / n_valid`` with n_valid = patients whose pipeline value is
+not the field's missing placeholder.  ``leaky_ratio`` (per scheme × dataset) counts
+fields with ``leak_rate > 0``.
+
 Reads the audit products written by ``scripts/run_leak_audit.py``:
 
   * ``results/Test_2a_leak_audit/leak_audit_summary.csv``  —— (dataset, scheme) aggregates,
-  * ``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` —— per-field detail.
+  * ``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` —— per-field detail
+    (``n_valid`` / ``n_leak`` / ``n_t0_blocked`` / ``audit_mode`` …; 旧口径的
+    ``n_valid_none`` / ``n_valid_t0`` / ``mask_applicable`` 列已作废)。
 
 Renders two figures:
 
@@ -17,8 +25,8 @@ Renders two figures:
 
 用法::
 
-    python results_display/leak_audit/scripts/audit_leak.py
-    python results_display/leak_audit/scripts/audit_leak.py --audit_root results/Test_2a_leak_audit
+    python results_display/Test_2a_leak_audit/scripts/audit_leak.py
+    python results_display/Test_2a_leak_audit/scripts/audit_leak.py --audit_root results/Test_2a_leak_audit
 """
 
 from __future__ import annotations
@@ -111,6 +119,11 @@ def load_summary(path: Path) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     for col in ("leaky_ratio", "mean_leak_rate"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "n_leak_total" not in df.columns or "n_valid_total" not in df.columns:
+        raise ValueError(
+            f"{path} 不是新口径（S2c）产物：缺 n_leak_total / n_valid_total 列。"
+            "请先跑 python3 scripts/run_leak_audit.py --prune 重出 Test_2a 审计。"
+        )
     df["scheme"] = pd.Categorical(df["scheme"], categories=SCHEME_ORDER, ordered=True)
     return df
 
@@ -132,11 +145,13 @@ def load_field_rows(audit_root: Path, summary: pd.DataFrame) -> pd.DataFrame:
                     "family": item.get("family"),
                     "leak_rate": item.get("leak_rate"),
                     "leak_rate_undefined": bool(item.get("leak_rate_undefined")),
-                    "n_valid_none": item.get("n_valid_none"),
-                    "n_valid_t0": item.get("n_valid_t0"),
+                    "n_valid": item.get("n_valid"),
+                    "n_leak": item.get("n_leak"),
+                    "n_t0_blocked": item.get("n_t0_blocked"),
+                    "max_source_t_hi": item.get("max_source_t_hi"),
                     "not_in_bank": bool(item.get("not_in_bank")),
                     "audit_mode": item.get("audit_mode"),
-                    "mask_applicable": bool(item.get("mask_applicable")),
+                    "a_pipeline": str(item.get("audit_mode")) == "a_pipeline",
                 }
             )
     df = pd.DataFrame(rows)
@@ -201,7 +216,7 @@ def field_table(rows: pd.DataFrame, top: int = 0) -> pd.DataFrame:
             mean_leak_rate=("leak_rate", "mean"),
             max_leak_rate=("leak_rate", "max"),
             n_not_in_bank=("not_in_bank", "sum"),
-            n_masked=("mask_applicable", "sum"),
+            n_a_pipeline=("a_pipeline", "sum"),
         )
         .reset_index()
         .sort_values("mean_leak_rate", ascending=False)
@@ -347,12 +362,14 @@ def plot_overview(
     )
     fig.suptitle(
         f"H1a 泄露审计 | 10 个论文方案 × {n_datasets} 个 TCGA 队列"
-        f"（spec §2.4 绑定，{n_pairs} 个组合）：t0 时刻不可得的方案字段占比（landmark_0, t0=0d）",
+        f"（spec §2.4 绑定，{n_pairs} 个组合）：t0 landmark 门控下不可得的方案字段占比（landmark_0, t0=0d）",
         fontsize=12, color=INK_PRIMARY, x=0.13, ha="left", y=0.965,
     )
     fig.text(
         0.13, 0.935,
-        "leaky_ratio = 泄露字段数 / 方案字段数；leak_rate(f,D) = 1 − n_valid_t0 / n_valid_none（患者级）；"
+        "leaky_ratio = 泄露字段数 / 方案字段数；leak_rate(f,D) = #(实际进入模型的值来自 t_hi > 0 槽位的患者) "
+        "/ #(管线产出有效值的患者)（spec §2.1 新口径，A_pipeline 取值 + time_stats 槽位时点；"
+        "无人工阈值，泄露字段 = leak_rate > 0）；"
         "灰格 = 该方案不含此字段；× = 该方案按 §2.4 不绑定该队列"
         + (f"（{restricted} 个 HGCN 工作各只跑其对应癌种）" if restricted else "")
         + "；CPTAC/MMRF 不在本阶段范围。",
@@ -426,7 +443,9 @@ def plot_fields(
     )
     fig.text(
         0.235, 0.935,
-        f"† = 多数队列里该字段不在 Field Bank（rawdata_stats/{{dataset}}/landmark_0/kept_fields.json）。"
+        f"† = 多数队列里该字段不在 Field Bank（rawdata_stats/{{dataset}}/landmark_0/kept_fields.json；"
+        f"≠ 不进模型——审计字段全部来自方案模板，† 字段同样进入模型）。"
+        f"leak_rate = 值来源槽位 t_hi > 0 的患者占比（分母 = 管线产出有效值的患者）。"
         f"仅展示平均 leak_rate 最高的 {len(fields)} 个字段。灰格 = 该方案不含此字段 / 未绑定该队列。",
         fontsize=8, color=INK_SECONDARY, ha="left",
     )

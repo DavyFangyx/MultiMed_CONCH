@@ -1,27 +1,30 @@
-"""Test_1a 泄露审计：逐字段量化「t0 时刻不可得」的患者比例（规格 z_notes/Test_series_spec.md §5）。
+"""Test_2a 泄露审计（新口径，spec §2.1 / §5.2）：逐字段量化「进入模型的值来自未来」的患者比例。
 
-口径（spec §2.1 / §5.2）
-------------------------
-``leak_rate(f, D) = 1 − n_valid_t0 / n_valid_none``
+口径（唯一依据 = spec §2.1；用户 2026-09-30 纠错，执行日志 R9 / S2c）
+------------------------------------------------------------------
+::
 
-- ``n_valid_none`` / ``n_valid_t0``：landmark 关闭 / ``landmark_0`` 下**该字段取到有效值的患者数**。
-  取患者数而非取值条数：Field Bank 的缺失 mask 本身是「患者 × 字段」级
-  （``generate_field_bank_prompt_row`` 里 ``valid = bool(valid_vals)``），且 spec §2.1 把
-  leak_rate 定义为「该字段在 t0 时刻不可得的**患者**比例」。
-- 有效值判定沿用 ``discovery.field_bank.extract_field_bank_raw_values``（Field Bank 同一套规则），
-  逐患者、双臂各抽一次。
-- ``family`` = ``discovery.landmark.timed_family_for_field``；只有 timed 家族会被 t0 mask 掉。
-- 特判：
-  - ``project.project_id``：常数 → ``leak_rate = 0``；
-  - ``derived.*``：audit 其**底层槽位**（``common.fields.field_gdc_path`` 给出的 source path），
-    底层家族无时点（如 exposures）时 mask 不存在，``leak_rate = 0``；
-  - 不在 ``rawdata_stats/{dataset}/landmark_0/kept_fields.json`` 的字段标 ``not_in_bank``
-    （「无依据」问题的证据，不跳过审计）。
-- ``n_valid_none == 0``：``leak_rate = NaN`` 且 ``leak_rate_undefined = true``（分母无意义）。
+    leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的槽位}
+                      / #{患者: 管线产出有效值}
+
+- **取值 = 论文管线**：直接调用 ``A_pipeline/src/extract.py`` 的 ``extract_values(case, landmark_time=None)``
+  （无泄露处理），得到"实际进入模型的值"；来源实体由 ``leak.provenance`` 镜像追溯并逐患者比对
+  （不一致即报错）。**不再**用旧的 ``1 − n_valid_t0/n_valid_none``（S2b 旧数已作废）。
+- **判据 = 来源槽位时点**：来源实体映射到 ``src/time_stats.py`` 的时间槽（``t_hi`` = t_record 上界）。
+  任一来历槽位 ``t_hi > 0`` → 该患者泄露；无时点家族（demographic / exposures / family_histories …）
+  恒不泄露。槽位状态按 ``z_notes/time_axis/time_axis.md`` §4.1 逐条处理：
+  ``point``/``bounded`` 有限 ``t_hi > 0`` → 泄露；``lo_only``（``t_hi = +∞``，「任何有限 T 都不放行」）
+  → 泄露；``unlocated``/``non_informative``（无 t_hi，无法断言未来）**不判泄露**，
+  单列 ``n_unlocated_source`` 并给出 ``n_t0_blocked`` = 泄露 ∪ 未定位
+  （= 该值在 t0 landmark 门控下会被丢弃的患者数，供与旧口径对照）。
+- **分母 = 管线产出有效值的患者数**（值 ≠ 该字段缺失占位符）；分母 0 → ``leak_rate = NaN`` 且
+  ``leak_rate_undefined = true``。
+- 字段级「泄露字段」判据：``n_leak > 0``（即 ``leak_rate > 0``），无人工阈值。
+- ``derived.*`` 追到底层槽位（同 A_pipeline 自身的派生逻辑）。
 
 范围（spec §2.4；用户决议 2026-09-30，执行日志 R1）
 --------------------------------------------------
-审计**只跑绑定允许的 (dataset, scheme) 组合**，不再做 35 × 10 全交叉：
+审计**只跑绑定允许的 (dataset, scheme) 组合**，不做 35 × 10 全交叉：
 
 - ``HGCN_*`` 六个方案各绑定其对应癌种（``HGCN_DATASET_BY_SCHEME``），**禁止**跑其他队列；
 - 泛癌种四方案（MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN）暂按全部 33 TCGA（未解决问题 U2）；
@@ -33,8 +36,11 @@
 
 产物
 ----
-``results/Test_2a_leak_audit/{dataset}/{scheme}.json`` 逐字段明细；
-``results/Test_2a_leak_audit/leak_audit_summary.csv`` (dataset, scheme) 级聚合 + 并列 n_event/event_rate。
+- ``results/Test_2a_leak_audit/{dataset}/{scheme}.json``：138 个方案级逐字段明细；
+- ``results/Test_2a_leak_audit/leak_audit_summary.csv``：(dataset, scheme) 级聚合 + n_event/event_rate；
+- ``results/Test_2a_leak_audit/{dataset}/G1_{md5(field_idx)}.json``：Test_1a 消费的逐字段审计
+  （33 数据集 × 各自 landmark_0 kept 字段；scheme 名 = ``greedy.embeddings.subset_scheme_name``）。
+  产物不含时间戳（保证同命令重跑逐字节一致）。
 """
 
 from __future__ import annotations
@@ -42,7 +48,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from datetime import datetime, timezone
+import re
 from pathlib import Path
 
 from common.datasets import (
@@ -51,11 +57,11 @@ from common.datasets import (
     load_dataset_configs,
     resolve_dataset_names,
 )
-from common.fields import field_gdc_path
 from common.paths import DEFAULT_DATASETS_CONFIG, PROJECT_ROOT, test_results_dir
-from discovery.field_bank import extract_field_bank_raw_values, load_kept_fields
-from discovery.landmark import patient_landmark, timed_family_for_field
-from discovery.longitudinal import SOURCE_FIELDS, is_derived_field
+from discovery.field_bank import load_kept_fields
+
+from . import provenance
+from .provenance import case_contexts, field_provenance
 
 
 # spec §2.4：A_pipeline 的 10 个论文方案（与 results_display/scripts/FigA_Other_Paper_Works.py 一致）
@@ -106,24 +112,11 @@ DEFAULT_OUTPUT_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_EVENT_SUMMARY = PROJECT_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 SUMMARY_FILENAME = "leak_audit_summary.csv"
 
-# 主时间点 t0（spec §2.5）
+# 主时间点 t0（spec §2.5）；本口径下只作为报告的参照时点，不再参与 t0/tN 两次抽取比较
 LANDMARK_T0 = 0
 
-COORDINATE_FIELD = "project.project_id"
-
-MODE_PLAIN = "plain"
-MODE_CONSTANT = "constant"
-MODE_DERIVED_SLOT = "derived_slot"
-MODE_LONGITUDINAL_DERIVED = "longitudinal_derived"
-
-FIELD_KEYS = [
-    "field",
-    "family",
-    "n_valid_none",
-    "n_valid_t0",
-    "leak_rate",
-    "not_in_bank",
-]
+# 产物审计口径标签（确定性；不写时间戳以保证重跑逐字节一致）
+AUDIT_VERSION = "S2c: value provenance by source-slot t_hi"
 
 SUMMARY_COLUMNS = [
     "dataset",
@@ -132,11 +125,41 @@ SUMMARY_COLUMNS = [
     "n_leaky",
     "leaky_ratio",
     "mean_leak_rate",
+    "n_leak_total",
+    "n_valid_total",
+    "n_t0_blocked_total",
+    "n_fields_a_pipeline",
+    "n_fields_field_bank",
     "n_not_in_bank",
     "n_leak_rate_undefined",
     "n_event",
     "event_rate",
 ]
+
+FIELD_KEYS = [
+    "field",
+    "family",
+    "audited_path",
+    "audit_mode",
+    "placeholder",
+    "n_patients",
+    "n_valid",
+    "n_leak",
+    "leak_rate",
+    "leak_rate_undefined",
+    "n_lo_only_source",
+    "n_unlocated_source",
+    "n_untimed_source",
+    "n_no_source",
+    "n_t0_blocked",
+    "n_future_sources",
+    "source_slot_families",
+    "source_slot_statuses",
+    "max_source_t_hi",
+    "not_in_bank",
+]
+
+G1_SCHEME_RE = re.compile(r"^G1_[0-9a-f]{10}\.json$")
 
 
 def tcga_dataset_names(dataset_names) -> list[str]:
@@ -185,15 +208,30 @@ def build_audit_plan(
     schemes,
     *,
     binding: str = BINDING_SPEC,
+    registry=None,
 ) -> list[tuple[str, str]]:
     """(dataset, scheme) 执行计划，按 §2.4 绑定过滤；``binding=all`` 只放宽方案绑定。
+
+    ``dataset_names`` = 本次选中的数据集；``registry`` = 数据集注册表全表
+    （datasets.json 的键）。绑定关系（HGCN_* 对应癌种）按**注册表全表**解析，
+    否则单队列运行（``--dataset TCGA-BRCA``）会因「绑定的队列不在注册表中」误报。
+    不传 ``registry`` 时退回用 ``dataset_names``（向后兼容，等价于全表运行）。
 
     外部数据集（CPTAC/MMRF）在两种模式下都剔除——数据集范围由 §2.4 锁定，不随绑定模式变化。
     """
     if binding not in (BINDING_SPEC, BINDING_ALL):
         raise ValueError(f"未知 binding: {binding}（可用 {BINDING_SPEC}/{BINDING_ALL}）")
-    registry = [str(item).strip() for item in (dataset_names or ()) if str(item).strip()]
-    tcga = tcga_dataset_names(registry)
+    registry = [
+        str(item).strip()
+        for item in (registry if registry is not None else dataset_names) or ()
+        if str(item).strip()
+    ]
+    selected = [
+        str(item).strip() for item in (dataset_names or ()) if str(item).strip()
+    ]
+    tcga_registry = set(tcga_dataset_names(registry))
+    # 本阶段范围 = 选中的 TCGA 队列（顺序按 dataset_names，且必须在注册表全表内）
+    tcga = [name for name in selected if name in tcga_registry]
     scheme_names = [str(item).strip() for item in (schemes or ()) if str(item).strip()]
     allowed: dict[str, list[str]] = {}
     for scheme in scheme_names:
@@ -252,77 +290,81 @@ def load_scheme_fields(scheme: str, templates_root: Path | str = DEFAULT_TEMPLAT
     return ordered
 
 
-def resolve_audited_path(field_path: str) -> tuple[str, str]:
-    """把方案字段解析为审计对象：返回 (实际审计的字段路径, 模式)。"""
-    field_path = str(field_path or "").strip()
-    if field_path == COORDINATE_FIELD:
-        return field_path, MODE_CONSTANT
-    if is_derived_field(field_path):
-        return str(SOURCE_FIELDS.get(field_path) or field_path), MODE_LONGITUDINAL_DERIVED
-    if field_path.startswith("derived."):
-        return str(field_gdc_path(field_path)), MODE_DERIVED_SLOT
-    return field_path, MODE_PLAIN
+# ---------------------------------------------------------------------------
+# 逐字段审计（新口径）
+# ---------------------------------------------------------------------------
+def audit_field(contexts: list, field_path: str) -> dict:
+    """审计单个 (dataset, field)：值来源槽位 ``t_hi > 0`` 的患者比例。
 
+    ``contexts`` = ``provenance.case_contexts(cases)``（含 A_pipeline 管线取值）。
+    """
+    field = str(field_path or "").strip()
+    audited_path = provenance.audited_slot_path(field)
+    family, _ = provenance.field_family(field)
+    spec = provenance.a_pipeline_spec(field)
+    mode = provenance.MODE_A_PIPELINE if spec is not None else provenance.MODE_FIELD_BANK
+    placeholder = spec.placeholder if spec is not None else "not reported"
 
-def patient_landmark_states(cases: list[dict], landmark_time: int = LANDMARK_T0) -> list[dict]:
-    """逐患者算一次 landmark 记录，供所有字段复用（等价于 landmark=True + landmark_time）。"""
-    return [patient_landmark(case, landmark_time) for case in cases]
+    n_valid = 0
+    n_leak = 0
+    n_lo_only = 0
+    n_unlocated = 0
+    n_untimed = 0
+    n_no_source = 0
+    n_t0_blocked = 0
+    n_future_sources = 0
+    future_families: set[str] = set()
+    future_statuses: set[str] = set()
+    max_hi: float | None = None
+    for ctx in contexts:
+        item = field_provenance(field, ctx)
+        if not item.valid:
+            continue
+        n_valid += 1
+        if item.has_future_source:
+            n_leak += 1
+            for source in item.sources:
+                if not source.is_future:
+                    continue
+                n_future_sources += 1
+                if source.family:
+                    future_families.add(str(source.family))
+                if source.status:
+                    future_statuses.add(str(source.status))
+                if source.t_hi is not None and (max_hi is None or source.t_hi > max_hi):
+                    max_hi = float(source.t_hi)
+        if item.has_lo_only_source:
+            n_lo_only += 1
+        if item.has_unlocated_source:
+            n_unlocated += 1
+        if item.has_future_source or item.has_unlocated_source:
+            n_t0_blocked += 1
+        if item.has_untimed_source:
+            n_untimed += 1
+        if not item.sources:
+            n_no_source += 1
 
-
-def count_valid_patients(
-    cases: list[dict],
-    states: list[dict],
-    field_path: str,
-    *,
-    masked: bool,
-) -> tuple[int, int]:
-    """返回 (取到有效值的患者数, 有效值条数)。masked=True 时用 landmark_0 记录。"""
-    n_patients = 0
-    n_values = 0
-    for case, state in zip(cases, states):
-        landmark_arg = state if masked else False
-        values = extract_field_bank_raw_values(
-            case, field_path, landmark=landmark_arg, landmark_time=LANDMARK_T0
-        )
-        if values:
-            n_patients += 1
-            n_values += len(values)
-    return n_patients, n_values
-
-
-def _leak_rate(n_valid_none: int, n_valid_t0: int) -> float:
-    if n_valid_none <= 0:
-        return float("nan")
-    return 1.0 - (float(n_valid_t0) / float(n_valid_none))
-
-
-def audit_field(cases: list[dict], states: list[dict], field_path: str) -> dict:
-    """审计单个 (dataset, field)：返回 spec §5.3 要求的逐字段记录。"""
-    audited_path, mode = resolve_audited_path(field_path)
-    family, _ = timed_family_for_field(audited_path)
-    n_none, v_none = count_valid_patients(cases, states, audited_path, masked=False)
-
-    mask_applicable = True
-    if mode == MODE_CONSTANT or family is None:
-        # 常数 / 无时点家族：t0 mask 不作用于该字段的底层槽位，信息不会因 t0 丢失。
-        n_t0, v_t0 = n_none, v_none
-        mask_applicable = False
-    else:
-        n_t0, v_t0 = count_valid_patients(cases, states, audited_path, masked=True)
-
-    rate = _leak_rate(n_none, n_t0)
+    rate = float("nan") if n_valid == 0 else (float(n_leak) / float(n_valid))
     return {
-        "field": str(field_path),
+        "field": field,
         "family": family,
-        "n_valid_none": int(n_none),
-        "n_valid_t0": int(n_t0),
-        "leak_rate": rate,
-        "leak_rate_undefined": bool(math.isnan(rate)),
         "audited_path": audited_path,
         "audit_mode": mode,
-        "mask_applicable": bool(mask_applicable),
-        "n_values_none": int(v_none),
-        "n_values_t0": int(v_t0),
+        "placeholder": placeholder,
+        "n_patients": int(len(contexts)),
+        "n_valid": int(n_valid),
+        "n_leak": int(n_leak),
+        "leak_rate": rate,
+        "leak_rate_undefined": bool(n_valid == 0),
+        "n_lo_only_source": int(n_lo_only),
+        "n_unlocated_source": int(n_unlocated),
+        "n_untimed_source": int(n_untimed),
+        "n_no_source": int(n_no_source),
+        "n_t0_blocked": int(n_t0_blocked),
+        "n_future_sources": int(n_future_sources),
+        "source_slot_families": sorted(future_families),
+        "source_slot_statuses": sorted(future_statuses),
+        "max_source_t_hi": max_hi,
         "not_in_bank": False,
     }
 
@@ -335,6 +377,17 @@ def summarize_fields(field_rows: list[dict]) -> dict:
         "n_leaky": int(n_leaky),
         "leaky_ratio": (float(n_leaky) / float(len(field_rows))) if field_rows else float("nan"),
         "mean_leak_rate": (sum(rates) / float(len(rates))) if rates else float("nan"),
+        "n_leak_total": int(sum(int(row.get("n_leak") or 0) for row in field_rows)),
+        "n_valid_total": int(sum(int(row.get("n_valid") or 0) for row in field_rows)),
+        "n_t0_blocked_total": int(
+            sum(int(row.get("n_t0_blocked") or 0) for row in field_rows)
+        ),
+        "n_fields_a_pipeline": int(
+            sum(1 for row in field_rows if row.get("audit_mode") == provenance.MODE_A_PIPELINE)
+        ),
+        "n_fields_field_bank": int(
+            sum(1 for row in field_rows if row.get("audit_mode") == provenance.MODE_FIELD_BANK)
+        ),
         "n_not_in_bank": int(sum(1 for row in field_rows if row.get("not_in_bank"))),
         "n_leak_rate_undefined": int(
             sum(1 for row in field_rows if row.get("leak_rate_undefined"))
@@ -364,7 +417,8 @@ def build_scheme_payload(
         "n_patients": int(n_patients),
         "kept_fields_available": bool(kept_fields is not None),
         "value_unit": "patients_with_valid_value",
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "leak_definition": "value_provenance: source slot t_hi > 0",
+        "audit_version": AUDIT_VERSION,
     }
     if binding is not None:
         # spec §2.4：该方案被允许的队列（HGCN_* 只允许其癌种）
@@ -375,8 +429,8 @@ def build_scheme_payload(
     return payload
 
 
-def load_kept_fields_set(dataset_name: str) -> set[str] | None:
-    """读 rawdata_stats/{dataset}/landmark_0/kept_fields.json；缺失返回 None。"""
+def load_kept_fields_list(dataset_name: str) -> list[str] | None:
+    """读 rawdata_stats/{dataset}/landmark_0/kept_fields.json 的字段有序表；缺失返回 None。"""
     try:
         payload = load_kept_fields(dataset_name=dataset_name, landmark_tag="landmark_0")
     except FileNotFoundError:
@@ -385,7 +439,66 @@ def load_kept_fields_set(dataset_name: str) -> set[str] | None:
     fields = entry.get("fields") if isinstance(entry, dict) else None
     if not isinstance(fields, list):
         return None
-    return {str(item) for item in fields}
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in fields:
+        name = str(item or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        ordered.append(name)
+    return ordered
+
+
+def load_kept_fields_set(dataset_name: str) -> set[str] | None:
+    """读 rawdata_stats/{dataset}/landmark_0/kept_fields.json；缺失返回 None。"""
+    ordered = load_kept_fields_list(dataset_name)
+    if ordered is None:
+        return None
+    return set(ordered)
+
+
+def g1_scheme_name(field_idx: int) -> str:
+    """Test_1a 消费的单字段方案名：``greedy.embeddings.subset_scheme_name([idx])``。"""
+    from greedy.embeddings import subset_scheme_name
+
+    return subset_scheme_name([int(field_idx)])
+
+
+def build_g1_payload(
+    dataset_name: str,
+    field_idx: int,
+    row: dict,
+    *,
+    n_patients: int,
+) -> dict:
+    """Test_1a 逐字段审计产物（schema 对齐 ``Test_1a_field_level.py::load_leak_rates``）。"""
+    payload = {
+        "dataset": dataset_name,
+        "scheme": g1_scheme_name(field_idx),
+        "scope": "test_1a_kept_field",
+        "field_idx": int(field_idx),
+        "field": str(row["field"]),
+        "landmark_time": LANDMARK_T0,
+        "n_patients": int(n_patients),
+        "value_unit": "patients_with_valid_value",
+        "leak_definition": "value_provenance: source slot t_hi > 0",
+        "audit_version": AUDIT_VERSION,
+        "n_fields": 1,
+        "n_leaky": int(1 if (not row.get("leak_rate_undefined") and row.get("n_leak")) else 0),
+        "n_leak_total": int(row.get("n_leak") or 0),
+        "n_valid_total": int(row.get("n_valid") or 0),
+        "n_t0_blocked_total": int(row.get("n_t0_blocked") or 0),
+        "leak_rate": row.get("leak_rate"),
+        "leak_rate_undefined": bool(row.get("leak_rate_undefined")),
+        "n_valid": int(row.get("n_valid") or 0),
+        "n_leak": int(row.get("n_leak") or 0),
+        "family": row.get("family"),
+        "audited_path": row.get("audited_path"),
+        "audit_mode": row.get("audit_mode"),
+    }
+    payload["fields"] = [dict(row)]
+    return payload
 
 
 def _json_dump(path: Path, payload: dict) -> None:
@@ -401,24 +514,27 @@ def audit_dataset(
     schemes: list[str],
     fields_by_scheme: dict[str, list[str]],
     *,
-    kept_fields: set[str] | None = None,
-    landmark_time: int = LANDMARK_T0,
+    kept_field_list: list[str] | None = None,
     bindings: dict[str, dict] | None = None,
-) -> list[dict]:
-    """审计一个数据集上被绑定的方案，返回 JSON payload 列表（不写盘）。
+) -> tuple[list[dict], list[dict]]:
+    """审计一个数据集上被绑定的方案（不写盘）。
 
-    ``schemes`` 必须已经是该数据集按 §2.4 绑定过滤后的方案列表（见 ``build_audit_plan``）。
+    返回 ``(scheme_payloads, g1_payloads)``；``schemes`` 必须已按 §2.4 绑定过滤
+    （见 ``build_audit_plan``）。
     """
-    # 方案间字段大量重复：按字段去重只算一次双臂计数
-    states = patient_landmark_states(cases, landmark_time)
+    contexts = case_contexts(cases)
+    # 方案间 / 方案与 kept 字段间大量重复：按字段去重各算一次
     cache: dict[str, dict] = {}
+
+    def row_for(field_path: str) -> dict:
+        if field_path not in cache:
+            cache[field_path] = audit_field(contexts, field_path)
+        return cache[field_path]
+
+    kept_fields = set(kept_field_list) if kept_field_list is not None else None
     payloads = []
     for scheme in schemes:
-        rows = []
-        for field_path in fields_by_scheme[scheme]:
-            if field_path not in cache:
-                cache[field_path] = audit_field(cases, states, field_path)
-            rows.append(cache[field_path])
+        rows = [row_for(field_path) for field_path in fields_by_scheme[scheme]]
         payloads.append(
             build_scheme_payload(
                 dataset_name,
@@ -429,7 +545,16 @@ def audit_dataset(
                 binding=(bindings or {}).get(scheme),
             )
         )
-    return payloads
+
+    g1_payloads: list[dict] = []
+    if kept_field_list is not None:
+        for idx, field_path in enumerate(kept_field_list):
+            g1_payloads.append(
+                build_g1_payload(
+                    dataset_name, idx, row_for(field_path), n_patients=len(cases)
+                )
+            )
+    return payloads, g1_payloads
 
 
 def load_event_summary(path: Path | str = DEFAULT_EVENT_SUMMARY) -> dict[str, dict]:
@@ -474,6 +599,11 @@ def summary_rows(
                 "n_leaky": payload["n_leaky"],
                 "leaky_ratio": _fmt_rate(payload["leaky_ratio"]),
                 "mean_leak_rate": _fmt_rate(payload["mean_leak_rate"]),
+                "n_leak_total": payload["n_leak_total"],
+                "n_valid_total": payload["n_valid_total"],
+                "n_t0_blocked_total": payload["n_t0_blocked_total"],
+                "n_fields_a_pipeline": payload["n_fields_a_pipeline"],
+                "n_fields_field_bank": payload["n_fields_field_bank"],
                 "n_not_in_bank": payload["n_not_in_bank"],
                 "n_leak_rate_undefined": payload["n_leak_rate_undefined"],
                 "n_event": event.get("n_event", ""),
@@ -501,8 +631,9 @@ def prune_stale_outputs(
 ) -> list[str]:
     """删掉不在计划内的 ``{dataset}/{scheme}.json`` 与因此空掉的队列目录。
 
-    绑定变更后（S2b）旧产物必须清干净，否则 CPTAC/MMRF 与 HGCN_* 跨癌种文件会留在盘上。
-    只删本模块自己写出的 ``*.json``（两层的 ``{dataset}/{scheme}.json``）；返回被删的相对路径。
+    绑定变更后（S2b/S2c）旧产物必须清干净，否则 CPTAC/MMRF 与 HGCN_* 跨癌种文件会留在盘上。
+    ``G1_*.json``（Test_1a 逐字段审计）不在方案的清除范围内，单独保留。
+    只删本模块自己写出的 ``*.json``；返回被删的相对路径。
     """
     out_root = Path(out_dir)
     if not out_root.exists():
@@ -511,9 +642,10 @@ def prune_stale_outputs(
     removed: list[str] = []
     for path in sorted(out_root.glob("*/*.json")):
         rel = f"{path.parent.name}/{path.name}"
-        if rel not in planned:
-            path.unlink()
-            removed.append(rel)
+        if rel in planned or G1_SCHEME_RE.match(path.name):
+            continue
+        path.unlink()
+        removed.append(rel)
     for child in sorted(item for item in out_root.iterdir() if item.is_dir()):
         try:
             child.rmdir()  # 只删空目录
@@ -531,14 +663,15 @@ def run_audit(
     templates_root: Path | str = DEFAULT_TEMPLATES_ROOT,
     out_dir: Path | str = DEFAULT_OUTPUT_ROOT,
     event_summary: Path | str = DEFAULT_EVENT_SUMMARY,
-    landmark_time: int = LANDMARK_T0,
     binding: str = BINDING_SPEC,
     prune: bool = False,
+    g1: bool = True,
     quiet: bool = False,
 ) -> dict:
-    """跑 Test_1a 审计（按 §2.4 绑定）并落盘。
+    """跑 Test_2a 泄露审计（新口径，按 §2.4 绑定）并落盘。
 
-    返回 {"out_dir", "summary_csv", "n_datasets", "n_payloads", "n_schemes", "n_pairs", "binding"}。
+    返回 {"out_dir", "summary_csv", "n_datasets", "n_payloads", "n_g1_payloads",
+    "n_schemes", "n_pairs", "binding"}。
     """
     from common.clinical_io import load_clinical_cases
 
@@ -546,9 +679,10 @@ def run_audit(
     configs = load_dataset_configs(str(datasets_config))
     names = resolve_dataset_names(dataset, configs)
     if not names:
-        raise ValueError("Test_1a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
+        raise ValueError("Test_2a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
 
-    plan = build_audit_plan(names, scheme_names, binding=binding)
+    registry_all = resolve_dataset_names("all", configs)
+    plan = build_audit_plan(names, scheme_names, binding=binding, registry=registry_all)
     if not plan:
         raise ValueError(
             "空审计计划：所选数据集均不在本阶段范围（spec §2.4：仅 33 TCGA，"
@@ -557,7 +691,8 @@ def run_audit(
     plan_names = plan_datasets(plan)
     plan_scheme_names = plan_schemes(plan)
     bindings = {
-        scheme: scheme_dataset_binding(scheme, names) for scheme in plan_scheme_names
+        scheme: scheme_dataset_binding(scheme, registry_all)
+        for scheme in plan_scheme_names
     }
     fields_by_scheme = {
         scheme: load_scheme_fields(scheme, templates_root) for scheme in plan_scheme_names
@@ -569,6 +704,7 @@ def run_audit(
             print(f"清理旧产物 {len(removed)} 项: {', '.join(removed[:8])}"
                   + (" …" if len(removed) > 8 else ""))
     payloads: list[dict] = []
+    n_g1 = 0
     for name in plan_names:
         dataset_schemes = [scheme for item, scheme in plan if item == name]
         if not quiet:
@@ -577,14 +713,13 @@ def run_audit(
             get_dataset_clinic_files(name, configs),
             project_ids=get_dataset_project_ids(name, configs),
         )
-        kept_fields = load_kept_fields_set(name)
-        dataset_payloads = audit_dataset(
+        kept_field_list = load_kept_fields_list(name)
+        dataset_payloads, g1_payloads = audit_dataset(
             name,
             cases,
             dataset_schemes,
             fields_by_scheme,
-            kept_fields=kept_fields,
-            landmark_time=landmark_time,
+            kept_field_list=kept_field_list if g1 else None,
             bindings=bindings,
         )
         for payload in dataset_payloads:
@@ -604,6 +739,11 @@ def run_audit(
                         ),
                     )
                 )
+        for payload in g1_payloads:
+            _json_dump(out_root / name / f"{payload['scheme']}.json", payload)
+        n_g1 += len(g1_payloads)
+        if not quiet:
+            print(f"  kept 字段逐字段审计: {len(kept_field_list or [])} 个 G1_*.json")
         payloads.extend(dataset_payloads)
 
     events = load_event_summary(event_summary)
@@ -611,12 +751,14 @@ def run_audit(
     summary_path = write_summary_csv(out_root / SUMMARY_FILENAME, rows)
     if not quiet:
         print(f"\n✅ 逐字段明细: {out_root}/{{dataset}}/{{scheme}}.json  ({len(payloads)} 个文件)")
+        print(f"✅ Test_1a 逐字段审计: {n_g1} 个 G1_*.json")
         print(f"✅ 汇总: {summary_path}  ({len(rows)} 行)")
     return {
         "out_dir": out_root,
         "summary_csv": summary_path,
         "n_datasets": len(plan_names),
         "n_payloads": len(payloads),
+        "n_g1_payloads": n_g1,
         "n_schemes": len(plan_scheme_names),
         "n_pairs": len(plan),
         "binding": binding,

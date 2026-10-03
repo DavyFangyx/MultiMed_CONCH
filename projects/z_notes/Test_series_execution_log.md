@@ -750,9 +750,9 @@
 | 实验 | 实验内容 | 论证的命题 | 状态 | 产物位置 |
 |---|---|---|---|---|
 | **Test_0** 可用数据集评估 | 按事件数/删失对 33 TCGA 分层（协议 A 四档） | 哪些数据集在统计上支撑定量结论（n_event 是评估方差下限；低事件集只能定性讨论）——两链共同的准入前提 | ✅ 完成，分层规则执行中 | `results/Test_0_dataset_availability/`、`scripts/run_Test_0_availability.py` |
-| **Test_1a** 单字段泄露对照（时间轴链动机） | per-field c(mask off) vs c(t0)，与 Test_2a 的 leak_rate 交叉 | TCGA clinical 记录自带时间，同一字段在有无 t0 口径下 c-index 会实质变化——对 clinic 生存分析，按协议做字段时间处理是**应该的**（之前的工作都没做）；兼作 Test_2b"为何泄露未转为组合高估"的机制解释 | ✅ 完成（15 主集两臂，Δc 报表 22:10 重出；leak_rate 列待 Test_2a 审计） | `results_display/Test_1a_field_level/` |
+| **Test_1a** 单字段泄露对照（时间轴链动机） | per-field c(mask off) vs c(t0)，与 Test_2a 的 leak_rate 交叉 | TCGA clinical 记录自带时间，同一字段在有无 t0 口径下 c-index 会实质变化——对 clinic 生存分析，按协议做字段时间处理是**应该的**（之前的工作都没做）；兼作 Test_2b"为何泄露未转为组合高估"的机制解释 | ✅ 完成（15 主集两臂，Δc 报表 22:10 重出；leak_rate 列已由 S2c 补齐 468/468） | `results_display/Test_1a_field_level/` |
 | **Test_1b** 各数据集 Cindex 情况（字段轴链动机） | 单字段 c-index：各数据集分布 + 跨数据集字段分布 + top-k 重叠度 | 字段能力随数据集而异，每个数据集理论上有各自最优字段组合——针对数据集选字段是**应该的** | 🔧 执行中（数据源 S5 已齐） | `results_display/Test_1b_dataset_cindex/`（原 E1 Fig2 升级） |
-| **Test_2a** 泄露审计（时间轴链主体） | 对每个论文方案，**不进行时间处理**，追溯每个患者实际进入模型的值来自哪个时间槽 | 论文方案在无时点约束下，模型输入里混入了多少预测时点之后才产生的信息（泄露：值来自 t_hi > 0 的槽位） | ⚠️ 完成一版，但指标口径有误（t0 完全缺失比例 ≠ 混入未来信息比例），纠错已由用户接手 | `src/leak/`、`results/leak_audit/`（旧口径数字作废） |
+| **Test_2a** 泄露审计（时间轴链主体） | 对每个论文方案，**不进行时间处理**，追溯每个患者实际进入模型的值来自哪个时间槽 | 论文方案在无时点约束下，模型输入里混入了多少预测时点之后才产生的信息（泄露：值来自 t_hi > 0 的槽位） | ✅ 完成（S2c 新口径重跑：138 组合 = 33 TCGA × 10 方案，仅 4 个方案字段泄露） | `src/leak/`、`results/Test_2a_leak_audit/` |
 | **Test_2b** 去泄露对照（时间轴链主体） | 同一字段集两臂：臂A 含泄露 vs 臂B landmark_0，唯一差异 = mask，Δc = A−B | 泄露信息确实抬高了临床模态的预后表现（高估：含泄露的 c-index 被人为抬高、超过规范时间处理后的真实能力） | ✅ 完成（552 confs，33 TCGA×两臂×Cox/MLP），Δc 报表已出：无数据集级系统性高估，MULTISURV×Cox 方向一致率最高 10/15 | `results/A_manual_landmark/`、`results_display/Test_2b_delta/` |
 | **Test_3** 贪婪搜索对照（字段轴链主体） | A2 前向贪婪 + sig_stop 0.005 在 landmark_0 池找最优组合，vs 各工作去泄露组合（三臂 Δc、遗漏字段清单） | 各工作的字段组合在去泄露池上是**次优**的（低估：无依据的字段选择漏掉了本可带来额外预测力的有效字段）——**收回** Test_1b 的"各数据集有各自最优组合" | ⏸ 提前终止（2026-10-02 用户指令）：搜索 9/15 进行中被叫停，B′ 617 confs 完成，C 未开始；结果留盘可续跑 | `scripts/Test_3_custom_scheme.py`、`scripts/Test_3_compare.py`、`results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**（非实验） | 报告值 / 去泄露值 / 可达值 | 两链收口：报告值−去泄露值 = 时间轴链收口（高估量）；去泄露值−可达值 = 字段轴链收口（低估量） | ⏸ 前两档数据已齐（Test_2b），可达值待 Test_3 | 未生成 |
@@ -1155,3 +1155,114 @@ python3 results_display/scripts/Test_2b_delta_report.py --audit
 - 完成：三脚本输出名 / 输入路径 / docstring 产物清单 / 清单核对全量同步；三个目录重跑 diff=0（50/50 改名文件逐字节一致 + 新表生成）；旧名遗留清零。
 - 本步提交（**本地提交，不 push**）：`results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report}.py`、`results_display/README.md`（Test 系列索引，含新表入口）、本日志条目。
 - 遗留：① 上述 +0.061 数字待用户裁定；② Test_2a 逐字段审计出数后重跑 Test_1a 脚本即自动补 `leak_rate` 列 + `Appx_leak_vs_delta.png`（无需改代码）。
+
+---
+
+## S2c: Test_2a 泄露审计按新口径重跑（值来源槽位 t_hi 判定）（2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude（S2c 执行 agent，用户指令）。
+- **交接记录**（R9 → 用户 → 本步）：R9（2026-09-30）记录的旧口径纠错当时"已写入 spec §2.1，S2c 待执行"，并注明纠错由用户接手；本次用户下达执行指令 = 交接完成，本步即 S2c 落地。上述"遗留 ②"（Test_1a leak_rate 列待 Test_2a 出数）在本步一并关闭。
+
+### 新口径（唯一依据 = spec §2.1，§5.2 已重写）
+
+- `leak_rate(f, D) = #(实际进入模型的值来自 t_hi > 0 槽位的患者) / #(管线产出有效值的患者)`；无人工阈值；**泄露字段 = leak_rate > 0**。
+- 旧口径 `1 − n_valid_t0/n_valid_none`（"t0 完全缺失比例"）作废，**S2b 旧数字作废**（S2b 产物本身未动，仅其"泄露率"交叉数值作废）。
+- 取值 = 论文管线本身（`A_pipeline/src/extract.py::extract_values(case, landmark_time=None)`，无任何泄露处理），**不是** Field Bank 提取逻辑；来源槽位时点 = `src/time_stats.py` 的 t_hi（与 Test_2b landmark 三要件同机制）。
+- 状态处理按 `z_notes/time_axis/time_axis.md` §4.1：`point`/`bounded` 有限 t_hi > 0 → 泄露；`lo_only`（t_hi = +∞，"任何有限 T 都不放行"）→ 泄露；`unlocated`/`non_informative`（无 t_hi）→ **不判泄露**，单列 `n_unlocated_source`；另报 `n_t0_blocked` = 泄露 ∪ 未定位（与旧口径对照用）。无时点家族（demographic/exposures/family_histories/project）恒不泄露。
+
+### 实现（工作区改动审查结论）
+
+- 用户工作区唯一的源码改动是 `results_display/Test_2a_leak_audit/scripts/audit_leak.py`（非 `src/leak/`）：† 脚注澄清"不在 Field Bank ≠ 不进模型"——**采纳**（与 spec 一致，保留进本步提交）；同文件其余部分仍是旧口径（读 `n_valid_none`/`n_valid_t0`/`mask_applicable`、脚注写 `1 − n_valid_t0/n_valid_none`）——**照新口径改写**：逐字段行改读 `n_valid`/`n_leak`/`n_t0_blocked`/`max_source_t_hi`/`audit_mode`（新增 `n_a_pipeline` 聚合列替换 `n_masked`），脚注/图题改为新定义文本，并加"非新口径产物即报错"守卫（缺 `n_leak_total`/`n_valid_total` 列时提示先 `--prune` 重跑）；两张图与两张聚合表已按新口径重出。
+- `src/leak/`：新增 `provenance.py`（值来源追溯引擎：A_pipeline 取值镜像 + 逐患者比对不一致即报错；来源实体 → 槽位；`derived.*` 按 A_pipeline 自身派生逻辑追底层槽位；Field Bank 模式复用 `extract_field_bank_value(landmark=False)` + 同规则追溯）；`audit.py` 重写为新口径逐字段统计 + 每数据集共享用例缓存 + G1 逐字段产物；`cli.py` 去 `--landmark_time`、加 `--no_g1`。只读复用 A_pipeline / discovery / time_stats，未改其实现。
+- 取值模式（`audit_mode` 列）：字段在 A_pipeline `extract_values` 表内 → `a_pipeline`（本规格要求）；只在 Field Bank 宇宙（Test_1a kept 字段）→ `field_bank`（`landmark=False`，与 Test_1a off 臂同源）。
+
+### 产物（138 + 1083）
+
+- `results/Test_2a_leak_audit/{dataset}/{scheme}.json` **138 个**（33 TCGA × 10 方案，§2.4 绑定：HGCN_* 仅其癌种、泛癌种 × 33，剔除 CPTAC/MMRF；数据集名单来自 `datasets.json`，无硬编码）+ `leak_audit_summary.csv` **138 行**；Test_1a 消费的 `{dataset}/G1_{md5(field_idx)}.json` **1083 个**（33 数据集 × 各自 landmark_0 kept 字段）。
+- 旧口径产物用 `--prune` 清理后重出；产物无时间戳（`audit_version` 常量），同命令重跑 `diff -r` = **0**（已产出的真实根目录上核对）。
+- 全量数字：`n_leak_total` 合计 1020 / `n_valid_total` 合计 247538（合计率 0.41%）；仅 4 个方案字段泄露：`diagnoses[].prior_treatment`（跨队列 mean 0.0219，max 0.7232 = SKCM 337/466）、`diagnoses[].primary_diagnosis`（mean 0.0205，max 0.7170 = SKCM 337/470）、`derived.radiation_therapy`（mean 0.0198，max 0.1871）、`derived.pharmaceutical_therapy`（mean 0.0193，max 0.1899）；138 组合中 34 个 ≥ 1 个泄露字段（MULTISURV 33 队列里 15 个有，HGCN 6 个各 1–3 个，SURVPGC 1 个，MMSURV/INTEGRATIVE_DNN 为 0）。
+
+### 验证
+
+- **独立抽查 5 组**（`/tmp/s2c_spotcheck.py`，**不 import `src/leak`**：自读 clinic JSON + 自写字段级规则与槽位映射计数，取值另与 A_pipeline / Field Bank 官方函数逐病例交叉验证）：全部 PASS——①SKCM/SURVPGC/`diagnoses[].primary_diagnosis` 337/470=0.717021；②SKCM/MULTISURV/`diagnoses[].prior_treatment` 337/466=0.723176（含 unlocated 来源病例）；③BRCA/MULTISURV/`derived.pharmaceutical_therapy` 14/333=0.042042；④BRCA/G1_4e732ced34/`diagnoses[].treatments[].therapeutic_agents` 756/774=0.976744（field_bank 模式）；⑤SKCM/MULTISURV/`demographic.race` 0/460（无时点家族恒不泄露）。①另用完全不依赖 time_stats 的 raw 判据（`days_to_diagnosis > 0`）复核：337 = 337，逐病例 0 例分歧；旁证中发现 `days_to_diagnosis = −2` 的点病例（TCGA-EB-A4OY，t_hi = −2 ≤ 0 不判泄露），佐证"判据用 t_hi 而非原值非缺失"的必要性。
+- **重跑 diff=0**：真实根目录同命令重跑并 `diff -r` = 0（已述）；`tests/test_leak_audit.py` 重写为 29 个用例（含 future-slot → 泄露、t_hi ≤ 0 → 不泄露、lo_only → 泄露、unlocated → 不泄露但计数、无时点家族恒不泄露、derived 追底层槽位、G1 schema 对齐 Test_1a 消费端、重跑逐字节一致、CLI 产物/`--no_g1` 等）。
+- **全量 pytest 无回归**：`python3 -m pytest tests/ -q` = **198 passed, 6 skipped**（提交前基线 17 个旧用例已被新用例集替换并扩充）。
+- 已知口径怪癖（记录不改）：A_pipeline 的 `clean_value` 只认 5 个占位符（含 "not reported"），raw 的 "not evaluated" 等会被当作有效值 → 这些患者计入分母。
+
+### Test_1a 联动（关闭遗留 ②）
+
+- 重跑 `python3 results_display/scripts/Test_1a_field_level.py`：`leak_rate` 列 **468/468 全部填充**（`leak_rate_status = ok`，此前全为 `pending_test_2a`）；`Appx_influential_fields.csv` 由空表 → **97 行**；`Appx_leak_vs_delta.png` 新生成；`Meta_metrics.json` 的 `n_leak_available=468 / leak_scatter_plotted=true`。
+- **未受影响产物逐字节一致**（8 个：`Appx_dataset_summary.csv`、`Appx_delta_by_dataset.png`、`Appx_delta_distribution.png`、`Appx_{off_vs_t0}.png`、`Main_field_ranking.csv`、`Main_mask_group_delta.png`、`Raw_delta_matrix.csv`、`Meta_audit.json`）；仅 3 个 leak 相关产物变化（`Appx_field_delta.csv`、`Appx_influential_fields.csv`、`Meta_metrics.json`）+ 1 个新增（`Appx_leak_vs_delta.png`）——符合预期。
+- 新列样例（`Appx_field_delta.csv`）：`TCGA-OV / diagnoses[].treatments[].treatment_dose / leak_rate=1.000000, Δc=+0.081860`；`TCGA-HNSC / number_of_fractions / 1.000000, +0.062431`；`TCGA-LGG / clinical_trial_indicator / 1.000000, +0.024600`；清单里高 leak 字段基本全为 `diagnoses[].treatments[].*`（field_bank 模式，治疗槽位晚于 t0）。
+
+### 决策点
+
+- ① 泄露判据按 spec §2.1 取 `t_hi > 0`；`lo_only` 按 time_axis.md §4.1 判泄露（当前数据 0 例），`unlocated`/`non_informative` 不判泄露但单列计数——三者不混入 `leak_rate`。
+- ② `n_leak_total/n_valid_total` 为字段级分子分母的**直接求和**（非率平均），供对照审计口径。
+- ③ Test_1a kept 字段中不在 A_pipeline 取值表的（1083 个条目的 648 个）走 `field_bank` 模式并在行内记 `audit_mode`——spec §5.2 第 5 条；A_pipeline 宇宙内字段一律 `a_pipeline`。
+- ④ Test_2a 展示脚本的 † 脚注按用户改动保留（"不在 Field Bank ≠ 不进模型"）。
+- ⑤ 每个方案字段的 `not_in_bank`（多数为 True）只作"无依据"证据，不代表不进模型。
+
+### 状态
+
+- 完成：spec §5.2/§5.3 重写、新口径实现（`src/leak/provenance.py` + audit/cli）、138 + 1083 产物重出（prune + diff=0）、5 组独立抽查 PASS、全量 pytest 198 passed、Test_1a 联动补齐（468/468）与未受影响产物 byte 一致核对、Test_2a 展示脚本与图按新口径重出。
+- 本步提交：`src/leak/{provenance.py,audit.py,cli.py}`、`tests/test_leak_audit.py`、`z_notes/Test_series_spec.md`、`results_display/Test_2a_leak_audit/scripts/audit_leak.py`、本日志条目；`scripts/run_leak_audit.py` 无改动（薄封装）。提交后 push origin main（用户明确要求）。
+- 遗留：① S5d 记的 `Test_1a_field_level/README.md` "+0.061" 数字仍待用户裁定（本步未动）；② Test_1a 目录内 README 仍不入库（gitignore）。
+
+---
+
+## S6 续跑：Test_3 搜索与臂 C 链恢复（2026-10-03）
+
+- 时间 / 执行者：2026-10-03 14:00–14:40 / Claude（S6 续跑执行 agent，用户指令"续跑"）
+- 目标：按"R13 / S6 提前终止与归档"条目给出的续跑方法恢复 Test_3 批跑——① 现场核实队列与搜索中间态；② 重启搜索 watch + drainer（自愈：drainer 死后拉起 / failed 限次重试 / running 回收 / 全 done 自动 report 退出）；③ 重启臂 C 接力链（result.json 落盘即 generate→encode→enqueue，15/15 就绪后自动 drain + summarize bp/ksig + `Test_3_compare.py --all`）；④ 验证与进度估计。
+- 输入：`z_notes/Test_series_spec.md` §7/§9/§10、本日志 R13 与 S6 提前终止条目、`z_notes/experiment_list/naming_convention.md`（目录已迁移新名）。
+
+### 现场核实（开工快照，与指令描述一致）
+
+- 搜索队列 `Clinic_Analyzer/configs/Test_3_search/`：queue 9 / running 0 / done 0 / failed 0 + **missing 6**（LUSC、OV、PAAD、SKCM、STAD、TCGA_LIHC 从未投放）。9 个 queue conf 仍带上次的 `claimed_*` 字段（claimed_pid 全为已死进程）；`recover` 只扫 running 桶，但 claim 迁移时会重写这些字段，不影响续跑。
+- 搜索中间产物：9/15 数据集有 `search/{ds}/mlp_clinic_flatten/seed_0/evaluations.jsonl`（19–106 evals，LAML 最远到 k=6）与 `clinic/jobs/G1_*.json`；0 个 result.json；E2 评估缓存 `results/Test_3_search/cache.sqlite` 424 条。
+- 臂 B′：`configs/Test_3_arms/` done 64 / queue 0 / running 0 / failed 0（64 = 15 主集 §2.4 绑定，KIRC/LIHC/LUAD/LUSC 各 +1 HGCN）；但 LUSC/OV/PAAD/SKCM/STAD 的 arm_B 汇总表缺 Test_3_* 行（上次 drain 结束后未 summarize）。
+- 臂 C：未开始（`three_arm.csv` 仅表头）。脚本名与路径与指令一致（`scripts/Test_3_queue.sh`、`scripts/Test_3_arm_c_chain.sh`）。
+
+### 命令与参数
+
+```bash
+bash scripts/Test_3_queue.sh search_enqueue      # created=6 existing=9 → queue 15
+T3_SEARCH_GPUS="0,2,3,4,5,6,0,2,3,4,5,6,0,2,3" T3_INTERVAL=60 \
+  setsid bash scripts/Test_3_queue.sh search_watch            # 15 槽；log results/Test_3_greedy_vs_works/logs/watch.log
+python3 scripts/Test_3_arms.py summarize --arm bp             # 补 5 数据集 B′ 行（64/64）
+T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
+  setsid nohup bash scripts/Test_3_arm_c_chain.sh >> results/Test_3_greedy_vs_works/logs/arm_c_chain.log 2>&1 &
+```
+
+- GPU 现场自察：8 卡全部空闲（他人 S5b 进程已结束，GPU 7 不再被占）；按"勿动他人进程"留 GPU 1 给编码 + 臂 C drain（8 workers）、GPU 7 作余量，搜索用 0,2,3,4,5,6（15 槽 = 0/2/3 各 3、4/5/6 各 2；每 drainer 实测 1.1–1.8 GB 显存，卡利用率 60–96%）。
+
+### 审计（抽查与核验）
+
+- 15/15 搜索 drainer 起跑（queue 15→running 15，0 failed）；watch 每 60 s 记 done/running/queue/failed。
+- **恢复语义**：重跑的 evaluations.jsonl 先追加上次结果的 cache 命中行（`physical_cache_hit=true`），LAML 106→212 行，未重算（缓存 424 条命中）。
+- 臂 B′ 汇总补齐：LUSC/OV/PAAD/SKCM/STAD 各 4–5 行，15/15 主集齐（64 行）。
+- **折文件手算抽查**：全部 64 条 B′ 行 vs `results/Test_2b/arm_B/runs/{study}__{scheme}__landmark_0/mlp_clinic_flatten/val_result_fold{0..4}.csv` 末行均值 —— **64/64 逐位一致**（含 std，1e-12 级）。示例：TCGA-BLCA MULTISURV B′ = 0.6525292609427339（std 0.05422664486967521）、TCGA-LAML MULTISURV B′ = 0.599741142836137（std 0.07432604899992913）。
+- **修复 1 行 B′ 陈旧值（LUAD × MULTISURV）**：表内 0.6647328174441 = 仅前 4 折均值（std 0.0546046），实测 5 折 = 0.6781159771803179。根因 = summarize 与该 run 末折并发（fold4 落盘 20:41:28 前后读取）；`_merge_cindex_rows` 只保留既有行不刷新，且表由 `run_config.json` 的 rows 重建（只改 CSV 会被覆盖）。处置：从 `run_config.json` rows 摘除该行 → 重跑 `summarize --arm bp --datasets TCGA-LUAD` 重新 derive → 复核 5 行全一致（旧 run_config 备份 `/tmp/Test_3_luad_run_config.json.bak`；只重写该表的 Test_3 行，臂 B 行未动）。
+- **附带发现（未改，上报）**：Test_2b arm_B 汇总表 `results/Test_2b/arm_B/{ds}[gdc]/cindex.csv` 的 `*__landmark_0 × mlp_clinic_flatten` 行 **32/64 与折文件不符**（同一读竞态，如 LAML MULTISURV = 前 4 折、LAML SURVPGC = 前 2 折、KIRC HGCN_KIRC = 仅 fold0 且 std=0.0）。这些行是 Test_4「去泄露值」档与 Test_3 表 `delta_C_minus_B` 交叉列的数据源，且 `_merge_cindex_rows` 永不自愈。修复需删 stale 行（CSV + `run_config.json`）后重跑对应 `summarize`——会改动 Test_2b 产物与既有展示层，**未擅自执行，待用户裁定**。
+
+### 进度与预计（14:12 快照）
+
+- 每 eval ≈ 106 s（5 折 MLP，数据集内串行）；15 数据集并行。各集已评估数：LAML 108（k=6 收尾）、KIRC 59、BLCA 54、COAD 48、LGG 40、LUAD 39、GBM 34、HNSC 26、BRCA 19、PAAD 2、LIHC 1，LUSC/OV/SKCM/STAD 起步中（0）。
+- 池规模 19–45 字段；按 sig_stop 早停推测单集需 ~150–250 evals → 4.5–7.5 h；**首个 result.json 预计由 LAML 出**（k=4/5/6 增益均 <0.005，三连无改进即停），随后臂 C 链自动接力；三臂总表预计当晚（14:08 起算 5–8 h）。
+- 查进度 / 续跑命令：`bash scripts/Test_3_queue.sh all_status`；`tail -f results/Test_3_greedy_vs_works/logs/{watch,arm_c_chain}.log`；搜索 drainer 死后由 watch 自动拉起，watch 本身若被 kill 则重跑本条 `search_watch`（幂等，会从 running 桶恢复在跑任务）。
+
+### 偏差与原因
+
+- 无脚本/路径口径偏差（现场与指令一致）；搜索并发从上次 9 槽提至 15 槽（GPU 全空闲，加快补齐 6 个未投放数据集）。
+- 未触碰 GPU 7 上他人的任何进程；未删任何中间产物或队列 conf。
+
+### 决策点
+
+- 无新增。**待用户裁定**：Test_2b arm_B 表 32/64 行陈旧（影响 Test_4 去泄露值档与 Test_3 的 C−B 交叉列），是否按上述方案修复。
+
+### 状态
+
+- 进行中：搜索 15/15 running（0 done / 0 failed）；臂 C 接力链已挂后台轮询等待首个 result.json。三条自愈链路（搜索 watch、臂 C 接力链、队列 recover/retry）均已部署。
+- 提交：本条目入库（无脚本改动）。
+

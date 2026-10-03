@@ -136,29 +136,69 @@ results/Test_0_dataset_availability/
 - 数据集：**33 个 TCGA**；方案 × 数据集按 §2.4 绑定（HGCN_* 仅其对应癌种，泛癌种暂按 33 TCGA）。CPTAC/MMRF 不纳入（已产出的描述性记录保留磁盘，但不进汇总与图表）。
 - 无训练，纯描述性统计。
 
-### 5.2 计算
+### 5.2 计算（新口径，S2c 重写；S2b 旧数作废）
 
-对每个 (dataset, scheme, field)：
+对每个 (dataset, scheme, field)，**逐患者**追溯"实际进入模型的值"的来源槽位时点：
 
-1. 用 `src/discovery/field_bank.py::extract_field_bank_raw_values(case, field_path, landmark=True/False, landmark_time=0)` 逐患者提取；
-2. `n_valid_none` = 取值 mask **关闭**时的有效值数（即取值全集，不是 static_only 变体）；`n_valid_t0` = landmark_0 下保留的有效值数；`leak_rate = 1 − n_valid_t0/n_valid_none`；
-3. `family` = `src/discovery/landmark.py::timed_family_for_field(field_path)`；
-4. 特判：
-   - `derived.*` 字段：landmark 作用于其**底层槽位**（现有 `extract_derived_raw_values` 已支持 `landmark` 参数）；
-   - `project.project_id`：常数，leak_rate = 0；
-   - 不在 `rawdata_stats/{dataset}/landmark_0/kept_fields.json` 的字段：标记 `not_in_bank`（是"无依据"问题的证据之一，**不影响 Test_2b 中该字段的完整性**）。
-5. 聚合：每方案每数据集：字段数、泄露字段数（rate>0）、泄露字段占比、平均 leak_rate；跨数据集聚合时并列 n_event。
+1. **取值 = 论文管线本身**：调用 `A_pipeline/src/extract.py::extract_values(case, landmark_time=None)`
+   （`landmark_time=None` = 无任何泄露处理），得到该患者该字段实际进入模型的值；
+   实现上另有一份**镜像追溯**给出该值的来源实体，逐患者与管线取值比对，不一致即报错
+   （`src/leak/provenance.py::a_pipeline_provenance`）。**不再**用
+   `extract_field_bank_raw_values(landmark=True/False)` 做 t0/tN 两次计数。
+2. **来源槽位时点**：来源实体映射到 `src/time_stats.py` 的时间槽
+   （`extract_patient_time_record(case)["_slots"]`，按对象身份 id 索引），取该槽位的
+   `record_hi` = `t_hi` 与 `record_status`。判据与 §2.5 的槽位口径、与
+   `discovery.landmark.slot_passes_landmark`（`t_hi ≤ T` 才保留）同源；状态按
+   `z_notes/time_axis/time_axis.md` §4.1 逐条处理：
+   `point`/`bounded` 有限 `t_hi > 0` → 泄露；`lo_only`（`t_hi = +∞`，"任何有限 T 都不放行"）→ 泄露；
+   `unlocated`/`non_informative`（无 `t_hi`，无法断言属于未来）**不判泄露**，单列
+   `n_unlocated_source`，并给出 `n_t0_blocked` = 泄露 ∪ 未定位（该值在 t0 门控下会被丢弃的患者数，
+   供与旧口径对照）。
+3. **逐患者判定**：值 **有效**（≠ 该字段缺失占位符）时——任一来历槽位按上条判为"未来" → 该患者计入
+   分子 `n_leak`；全部来历槽位 `t_hi ≤ 0` / 无时点家族 / 未定位 → 不泄露。
+   无效值的患者不计入分母（`n_valid` = 管线产出有效值的患者数）；`n_valid = 0` 时
+   `leak_rate = NaN` 且 `leak_rate_undefined = true`。
+   **`leak_rate = n_leak / n_valid`**（无人工阈值）。
+4. **family** = `src/discovery/landmark.py::timed_family_for_field(field_path)`；无时点家族
+   （demographic / exposures / family_histories / project）恒不泄露。逐字段并报
+   `source_slot_families`（泄露患者的来源槽位家族）与 `max_source_t_hi`（如 `3801.0`）。
+5. **特判**：
+   - `derived.*` 字段：按 A_pipeline 自身的派生逻辑追到底层槽位
+     （`derived.pharmaceutical_therapy` / `derived.radiation_therapy` → `diagnoses[].treatments[]`，
+     `derived.years_smoked` → `exposures[]`（`year_of_diagnosis` 分支另计诊断槽位）），
+     **不是**旧实现的"源路径 raw 值"近似；`audited_path` 列记底层路径；
+   - `project.project_id`：常数，无来源实体 → `n_no_source = n_valid`，leak_rate = 0；
+   - 取值模式（`audit_mode` 列）：字段在 A_pipeline `extract_values` 取值表内 →
+     `a_pipeline`（本规格要求的口径）；只在 Field Bank 宇宙（如 Test_1a kept 字段、
+     `diagnoses[].tumor_focality`）→ `field_bank`
+     （`extract_field_bank_value(landmark=False)` + 同规则来源追溯；用于 §5bis 的 leak_rate 交叉列，
+     取值 mask 关闭与 Test_1a arm_off 同源）；
+   - 不在 `rawdata_stats/{dataset}/landmark_0/kept_fields.json` 的字段：标记 `not_in_bank`
+     （是"无依据"问题的证据之一，**不影响 Test_2b 中该字段的完整性**）。
+6. 聚合：每方案每数据集：字段数、泄露字段数（`n_leak > 0`）、泄露字段占比、平均 leak_rate、
+   分子/分母合计（`n_leak_total` / `n_valid_total`）；跨数据集聚合时并列 n_event。
 
 ### 5.3 产物
 
 ```text
 results/Test_2a_leak_audit/
-  {dataset}/{scheme}.json          # 逐字段: field, family, n_valid_none, n_valid_t0, leak_rate, not_in_bank
+  {dataset}/{scheme}.json          # 逐字段: field, family, audited_path, audit_mode, n_valid, n_leak,
+                                   #         leak_rate, leak_rate_undefined, n_lo_only_source,
+                                   #         n_unlocated_source, n_untimed_source, n_no_source,
+                                   #         n_t0_blocked, source_slot_families, source_slot_statuses,
+                                   #         max_source_t_hi, not_in_bank
+  {dataset}/G1_{md5(field_idx)}.json  # Test_1a 消费的逐字段审计（§5bis）：33 数据集 × 各自
+                                   #   landmark_0 kept 字段（1083 个）；scheme 名 =
+                                   #   greedy.embeddings.subset_scheme_name([field_idx])，
+                                   #   schema 对齐 results_display/scripts/Test_1a_field_level.py
   leak_audit_summary.csv           # (dataset, scheme) 级聚合 + n_event 并列
-results_display/leak_audit/        # 图: 每工作×癌种泄露占比、逐字段泄露率热图
+results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐字段泄露率热图
 ```
 
-新代码：`src/leak/`（audit.py、cli.py）+ `scripts/run_leak_audit.py` + `tests/test_leak_audit.py`。验收：抽查 3 个 (dataset, scheme, field) 与手工 JSON 核对一致。
+新代码：`src/leak/`（`provenance.py` 值来源追溯引擎、audit.py、cli.py）+
+`scripts/run_leak_audit.py` + `tests/test_leak_audit.py`。
+产物**不含时间戳**（`audit_version` 为常量），同一命令重跑逐字节一致（`diff -r` = 0）。
+验收：抽查 ≥3 个 (dataset, scheme, field) 与手工 JSON 核对一致（独立脚本，不 import `src/leak`）。
 
 ## 5bis. Test_1a 单字段泄露对照（时间轴链动机 + Test_2b 的机制解释）
 

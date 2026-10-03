@@ -1,4 +1,4 @@
-"""CLI for the Test_1a leakage audit (spec §5)."""
+"""CLI for the Test_2a leakage audit (spec §2.1 / §5)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from .audit import (
     DEFAULT_EVENT_SUMMARY,
     DEFAULT_OUTPUT_ROOT,
     DEFAULT_TEMPLATES_ROOT,
-    LANDMARK_T0,
     LEAK_SCHEMES,
     run_audit,
 )
@@ -20,9 +19,11 @@ from .audit import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Test_1a 泄露审计：按 spec §2.4 绑定（HGCN_* 仅其对应癌种、泛癌种 × 33 TCGA、"
-            "剔除 CPTAC/MMRF，共 138 个组合）逐字段量化 t0 时刻不可得的患者比例"
-            "（无训练，纯描述性统计）。"
+            "Test_2a 泄露审计（新口径，spec §2.1）：按 §2.4 绑定（HGCN_* 仅其对应癌种、"
+            "泛癌种 × 33 TCGA、剔除 CPTAC/MMRF，共 138 个组合）逐字段量化"
+            "「实际进入模型的值来自 t_hi > 0 槽位」的患者比例（无训练，纯描述性统计）。"
+            "取值直接走 A_pipeline 的 extract_values（无泄露处理），来源槽位时点用 "
+            "src/time_stats.py 的 t_hi。"
         )
     )
     parser.add_argument("--datasets_config", default=str(DEFAULT_DATASETS_CONFIG))
@@ -48,10 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="队列事件汇总 CSV（用于汇总表并列 n_event/event_rate）",
     )
     parser.add_argument(
-        "--landmark_time",
-        type=int,
-        default=LANDMARK_T0,
-        help="landmark 天数，主口径 t0=0",
+        "--no_g1",
+        action="store_true",
+        help="跳过 Test_1a 消费的逐字段审计（G1_{md5(field_idx)}.json）",
     )
     parser.add_argument(
         "--binding",
@@ -84,15 +84,15 @@ def main(argv=None) -> int:
         templates_root=args.templates_root,
         out_dir=args.out_dir,
         event_summary=args.event_summary,
-        landmark_time=int(args.landmark_time),
         binding=args.binding,
         prune=bool(args.prune),
+        g1=not bool(args.no_g1),
         quiet=bool(args.quiet),
     )
     print(
         f"完成（binding={result['binding']}）：{result['n_datasets']} 个数据集 / "
         f"{result['n_schemes']} 个方案 → {result['n_pairs']} 个绑定组合、"
-        f"{result['n_payloads']} 个明细 JSON"
+        f"{result['n_payloads']} 个明细 JSON、{result['n_g1_payloads']} 个 G1 逐字段 JSON"
     )
     print(f"汇总表: {result['summary_csv']}")
     return 0
