@@ -48,7 +48,8 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--scheme",
         default="all",
-        help="方案组或单方案。所有命令相同：manual=L0-L5，paper=论文方案，all=L0-L5+论文方案。也可指定 L0 / MULTISURV 等单个方案。",
+        help="方案组或单方案。所有命令相同：manual=L0-L5，paper=论文方案，all=L0-L5+论文方案。也可指定 L0 / MULTISURV 等单个方案。"
+        "hgcn_clinic 例外：manual/all 都只展开 L0-L5（保冻结产物树），论文/自定义方案请点名。",
     )
     parser.add_argument(
         "--dataset",
@@ -109,6 +110,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
             "Test_1b landmark 起点（天）：0/365/730/none。不传=旧行为（产物与 cindex 全部走现有目录）；"
             "数字=经典 landmark 三要件：只保留 t_hi <= T 的 timed 槽位、排除 ground_truth_time <= T 的患者、"
             "label 时间改为 gt - T；产物落 outputs/{dataset}/A_manual/{scheme}/landmark_{T}/；"
+            "hgcn_clinic 同样按值级 mask 取字段值，产物落 .../HGCN_clinic/{scheme}/landmark_{T}/；"
             "cindex 传 0/365/730/none 时把该臂写入 results/Test_2b/arm_B/。"
         ),
     )
@@ -121,6 +123,14 @@ def _add_common_args(parser: argparse.ArgumentParser):
             "on=label 时间 gt-T（默认）；off=只做风险集排除、不平移，写独立 run 名 __noshift。"
         ),
     )
+    parser.add_argument(
+        "--hgcn_out_root",
+        default=None,
+        help=(
+            "hgcn_clinic 输出根目录覆盖：默认 outputs，即 outputs/{dataset}/A_manual/HGCN_clinic；"
+            "给定时改写 {root}/{dataset}/A_manual/HGCN_clinic（等价性回归 / 试跑用，不碰 outputs/）。"
+        ),
+    )
 
 
 def main(argv=None):
@@ -129,7 +139,8 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "L0-L5 / D0-D5 / 论文方案 / HGCN_clinic 是独立的人工方案通路，默认读 A_pipeline/datasets.json 中的 lizhe clinical.cart。\n"
-            "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: manual=L0-L5，paper=论文方案，all=两组。encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。hgcn_clinic 只落地 L0-L5。\n"
+            "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: manual=L0-L5，paper=论文方案，all=两组。encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。\n"
+            "hgcn_clinic 默认（manual/all）与旧产物树一致只落 L0-L5；论文方案 / templates 自定义方案显式点名（如 --scheme paper / --scheme MULTISURV）即可编码，节点名用 fields.json 字段路径。\n"
             "每个方案在 templates/{scheme}/fields.json 写 source=lizhe|gdc。L0-L5 / D0-D5 用 lizhe 9 个；paper 绑定全部 33 个 TCGA + GDC raw_json。--dataset all 按方案来源展开。\n"
             "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed}，再由 run.sh 抢活；汇总表写到 results/Test_2b/arm_A。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。"
         ),
@@ -152,8 +163,6 @@ def main(argv=None):
         landmark_setting = parse_landmark_setting(args.landmark_time)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.cmd == "hgcn_clinic" and landmark_setting.provided:
-        parser.error("hgcn_clinic 不支持 --landmark_time；landmark 只作用于 pipeline / json2prompt / encode / baseline / cindex。")
 
     load_custom_schemes(args.template_dir)
     try:
@@ -336,8 +345,10 @@ def main(argv=None):
             if job["name"]:
                 hgcn_out_root = dataset_hgcn_clinic_dir(
                     job["name"],
-                    base_root=args.baseline_out,
+                    base_root=args.hgcn_out_root or args.baseline_out,
                 )
+            elif args.hgcn_out_root:
+                hgcn_out_root = str(Path(args.hgcn_out_root) / "HGCN_clinic")
             else:
                 hgcn_out_root = str(Path(job["out_dir"]) / "HGCN_clinic")
             run_hgcn_clinic(
@@ -349,6 +360,8 @@ def main(argv=None):
                 shared_nominal_mappings=shared_nominal_mappings,
                 mapping_scope=shared_mapping_scope,
                 dataset_name=job["name"],
+                landmark_time=landmark_setting.landmark_time,
+                landmark_subdir=landmark_setting.encode_subdir,
             )
 
 

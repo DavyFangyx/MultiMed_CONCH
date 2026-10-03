@@ -1,4 +1,4 @@
-"""Encode L0-L5 clinic fields as HGCN-style graph nodes."""
+"""Encode L0-L5 / registered-scheme clinic fields as HGCN-style graph nodes."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import json
 import joblib
 import numpy as np
 
-from .config import resolve_scheme_names
+from .config import DEFAULT_TEXT_SCHEMES, resolve_scheme_names
 from .baseline import (
     BASELINE_CONTINUOUS_FIELDS,
+    BASELINE_DICTIONARY_FIELD_TYPES,
     BASELINE_MISSING_TOKEN,
     BASELINE_NOMINAL_FIELDS,
     BASELINE_ORDINAL_FIELDS,
@@ -19,18 +20,31 @@ from .baseline import (
     _aggregate_continuous_value,
     _canonical_nominal_value,
     _encode_ordinal_value,
+    _fit_category_mappings,
     build_patient_rows,
     fit_nominal_mappings,
     global_mapping_dir,
 )
+from .landmark import landmark_dir
 from common.clinical_io import load_clinical_cases, normalize_json_paths
-from common.fields import L5_FIELD_PATH_BY_PLACEHOLDER
+from common.fields import (
+    HUMAN_SCHEME_FIELDS,
+    L5_FIELD_PATH_BY_PLACEHOLDER,
+    L5_PLACEHOLDER_BY_FIELD_PATH,
+)
 
 
 HGCN_PAD_DIM = 1024
 HGCN_MINMAX_NAME = "symmetric_to_unit"
 HGCN_MISSING_POLICY = "keep_none"
 HGCN_NOMINAL_ENCODING = "integer_index_from_d_series_mapping"
+
+# 提取器（extract_values / 32 字段词表）解析不了的方案字段保持缺观测：
+# 对角 0 行、coverage 记 0% observed，不抛错也不造类别 0。
+HGCN_KEEP_NONE_TYPE = "keep_none"
+
+# L0-L5 = 冻结命名空间：产物节点名沿用备份里的占位符（AGE / SEX_AT_BIRTH / …）。
+HGCN_LEGACY_PLACEHOLDER_SCHEMES = tuple(DEFAULT_TEXT_SCHEMES)
 
 HGCN_SCHEME_FIELDS = {}
 
@@ -45,11 +59,17 @@ ORDINAL_ENCODER_NAMES = {
 
 
 def load_hgcn_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> None:
+    """注册全部已加载方案：L0-L5 + 论文方案 + templates 下的自定义方案。
+
+    与 baseline 同一条装载路径（config.load_custom_schemes → SCHEME_FIELDS），
+    字段列表全部来自各方案自己的 fields.json。
+    """
     HGCN_SCHEME_FIELDS.clear()
-    for name in ("L0", "L1", "L2", "L3", "L4", "L5"):
+    for name in HGCN_LEGACY_PLACEHOLDER_SCHEMES:
         if name not in text_scheme_fields:
             raise ValueError(f"缺少文本方案 {name}，无法注册 HGCN clinic 字段")
-        HGCN_SCHEME_FIELDS[name] = list(text_scheme_fields[name])
+    for name, fields in text_scheme_fields.items():
+        HGCN_SCHEME_FIELDS[name] = list(fields)
 
 MISSING_DIAGONAL_NOTE = (
     "x_cli 缺观测的对角位置保持 0.0，含义是这个节点没有写入观测值，"
@@ -58,39 +78,70 @@ MISSING_DIAGONAL_NOTE = (
 
 
 def resolve_hgcn_schemes(scheme: str) -> list[str]:
-    known = list(HGCN_SCHEME_FIELDS.keys())
+    """L0-L5 与今天完全一致；此外接受任意已注册方案（fields.json 驱动）。
+
+    `manual` / `all` 都只展开 L0-L5（`all` 保持旧行为）：既有产物树
+    outputs/{ds}/A_manual/HGCN_clinic/ 属于 L0-L5，论文 / 自定义方案必须显式
+    点名（或 `--scheme paper`），避免默认命令把新方案写进冻结目录。
+    """
+    if scheme in ("manual", "all"):
+        missing = [name for name in HGCN_LEGACY_PLACEHOLDER_SCHEMES if name not in HGCN_SCHEME_FIELDS]
+        if missing:
+            raise ValueError(f"缺少 L0-L5 方案注册: {missing}")
+        return list(HGCN_LEGACY_PLACEHOLDER_SCHEMES)
     names = resolve_scheme_names(scheme)
-    supported = [name for name in names if name in HGCN_SCHEME_FIELDS]
-    if not supported:
-        raise ValueError(
-            f"hgcn_clinic 仅支持 L0-L5。当前方案 {names} 没有可跑的 clinic 图节点编码。"
-        )
-    return supported
+    unsupported = [name for name in names if name not in HGCN_SCHEME_FIELDS]
+    if unsupported:
+        raise ValueError(f"hgcn_clinic 无法编码方案 {unsupported}: 缺少字段注册")
+    return names
+
+
+def artifact_field_name(scheme: str, field: str) -> str:
+    """节点在产物里的名字（coverage / encoding_table / field_schema / summary）。
+
+    L0-L5 = 冻结命名空间：沿用备份产物的占位符（AGE / SEX_AT_BIRTH / …），与
+    outputs/{ds}/A_manual/HGCN_clinic/L{0-5}/ 的冻结产物逐字一致；
+    其余方案 = 新命名空间：直接用 fields.json 的字段路径。
+    """
+    if scheme in HGCN_LEGACY_PLACEHOLDER_SCHEMES:
+        return L5_PLACEHOLDER_BY_FIELD_PATH.get(field, field)
+    return field
 
 
 def field_type_name(field: str) -> str:
+    """节点类型：冻结三分法优先，其余按 D 向量同一套 GDC 字典结论，无法解析 → keep_none。"""
     if field in BASELINE_CONTINUOUS_FIELDS:
         return "continuous"
     if field in BASELINE_ORDINAL_FIELDS:
         return "ordinal"
     if field in BASELINE_NOMINAL_FIELDS:
         return "nominal"
-    raise KeyError(f"未知 HGCN clinic 字段: {field}")
+    if field in HUMAN_SCHEME_FIELDS:
+        # 提取器能解析、但不在冻结三分法里的字段（project.project_id / derived.* 等）：
+        # 复用 baseline 对同一份 GDC dictionary 的分类（enum/boolean→nominal，integer/number→continuous）。
+        return BASELINE_DICTIONARY_FIELD_TYPES[field]
+    # 提取器解析不了（例如 Test_3 字段银行的 diagnoses[].calgb_risk_group）：keep_none，不抛错。
+    return HGCN_KEEP_NONE_TYPE
 
 
 def encode_raw_row(row: dict, fields: list[str], nominal_mappings: dict) -> list[float | None]:
     encoded: list[float | None] = []
     for field in fields:
         raw_value = row.get(field)
-        if field in BASELINE_CONTINUOUS_FIELDS:
+        kind = field_type_name(field)
+        if kind == HGCN_KEEP_NONE_TYPE:
+            # 提取器解析不了的字段：无论 row 里有没有同名键，都按缺观测处理。
+            encoded.append(None)
+            continue
+        if kind == "continuous":
             value = _aggregate_continuous_value(field, raw_value)
             encoded.append(float(value) if value is not None else None)
             continue
-        if field in BASELINE_ORDINAL_FIELDS:
+        if kind == "ordinal":
             code = _encode_ordinal_value(field, raw_value)
             encoded.append(float(code) if code > 0 else None)
             continue
-        if field in BASELINE_NOMINAL_FIELDS:
+        if kind == "nominal":
             value = _canonical_nominal_value(raw_value)
             if value == BASELINE_MISSING_TOKEN:
                 encoded.append(None)
@@ -98,7 +149,7 @@ def encode_raw_row(row: dict, fields: list[str], nominal_mappings: dict) -> list
                 mapping = nominal_mappings[field]
                 encoded.append(float(mapping.get(value, mapping[BASELINE_OTHER_TOKEN])))
             continue
-        raise KeyError(f"未知 HGCN clinic 字段: {field}")
+        raise KeyError(f"未知 HGCN clinic 字段类型: {field} -> {kind}")
     return encoded
 
 
@@ -218,7 +269,7 @@ def _scheme_nominal_mappings(fields: list[str], nominal_mappings: dict) -> dict:
     return {
         field: dict(nominal_mappings[field])
         for field in fields
-        if field in BASELINE_NOMINAL_FIELDS
+        if field_type_name(field) == "nominal" and field in nominal_mappings
     }
 
 
@@ -228,6 +279,28 @@ def _scheme_ordinal_encoders(fields: list[str]) -> dict:
         for field in fields
         if field in BASELINE_ORDINAL_FIELDS
     }
+
+
+def _scheme_extra_nominal_mappings(
+    patient_rows: list[dict],
+    fields: list[str],
+    nominal_mappings: dict,
+    min_count: int,
+) -> dict:
+    """方案里不在共享/冻结词表内的 nominal 字段：按当前患者拟合（与 D 向量同一口径）。"""
+    extras = [
+        field
+        for field in fields
+        if field_type_name(field) == "nominal" and field not in nominal_mappings
+    ]
+    if not extras:
+        return {}
+    return _fit_category_mappings(patient_rows, extras, min_count=min_count, collapse_rare=True)
+
+
+def _artifact_named_mapping(mapping: dict, scheme: str) -> dict:
+    """把映射键换成产物节点名（L0-L5 → 占位符；其余 → 字段路径），保持插入顺序。"""
+    return {artifact_field_name(scheme, key): value for key, value in mapping.items()}
 
 
 def _coverage_from_raw(values_by_patient: dict[str, list[float | None]], fields: list[str]) -> dict:
@@ -258,8 +331,10 @@ def _write_summary(
     n_cli: int,
     n_patients: int,
     fields: list[str],
+    display_fields: list[str],
     coverage: dict,
     scheme_dir: Path,
+    landmark_time=None,
 ) -> None:
     lines = [
         f"# HGCN clinic {scheme}",
@@ -273,16 +348,22 @@ def _write_summary(
         f"- missing_policy: {HGCN_MISSING_POLICY}",
         f"- nominal_encoding: {HGCN_NOMINAL_ENCODING}",
         f"- output: {scheme_dir}",
-        "",
-        "## Fields",
-        "",
-        "| field | type | n_observed | n_missing | percent_observed |",
-        "|---|---|---:|---:|---:|",
     ]
-    for field in fields:
-        cov = coverage[field]
+    if landmark_time is not None:
+        lines.append(f"- landmark: t_hi <= {int(landmark_time)} days")
+    lines.extend(
+        [
+            "",
+            "## Fields",
+            "",
+            "| field | type | n_observed | n_missing | percent_observed |",
+            "|---|---|---:|---:|---:|",
+        ]
+    )
+    for display_field, field in zip(display_fields, fields):
+        cov = coverage[display_field]
         lines.append(
-            f"| {field} | {field_type_name(field)} | {cov['n_observed']} | "
+            f"| {display_field} | {field_type_name(field)} | {cov['n_observed']} | "
             f"{cov['n_missing']} | {cov['percent_observed']:.2f} |"
         )
     lines.extend(
@@ -307,6 +388,8 @@ def run_hgcn_clinic(
     shared_nominal_mappings: dict | None = None,
     mapping_scope: dict | None = None,
     dataset_name: str | None = None,
+    landmark_time=None,
+    landmark_subdir: str = "",
 ):
     dataset_label = dataset_name or "custom"
     print(f"\n{'=' * 55}")
@@ -315,11 +398,18 @@ def run_hgcn_clinic(
     print(f"  JSON     : {normalize_json_paths(json_paths)}")
     print(f"  方案     : {schemes}")
     print(f"  输出根目录 : {out_root}")
+    if landmark_time is not None:
+        print(f"  landmark : t_hi <= {int(landmark_time)} days  -> {landmark_subdir or 'landmark'}")
     print(f"{'=' * 55}")
 
     print("\n[1/3] 读取 JSON ...")
     cases = load_clinical_cases(json_paths, project_ids=project_ids)
-    patient_rows = build_patient_rows(cases)
+    # landmark 与 prompt / baseline 同一条：值级 mask（t_hi <= T）后再取字段值。
+    patient_rows = build_patient_rows(
+        cases,
+        landmark_time=landmark_time,
+        dataset_name=dataset_name,
+    )
     print(f"      患者数: {len(patient_rows)}")
 
     if shared_nominal_mappings is not None:
@@ -348,58 +438,75 @@ def run_hgcn_clinic(
     out_root_path = Path(out_root)
     for scheme in schemes:
         fields = list(HGCN_SCHEME_FIELDS[scheme])
+        display_fields = [artifact_field_name(scheme, field) for field in fields]
         n_cli = len(fields)
-        scheme_dir = out_root_path / scheme
+        # landmark 臂落 {scheme}/landmark_{T}/；不传 landmark 时与旧布局逐字一致。
+        scheme_dir = landmark_dir(out_root_path / scheme, landmark_subdir)
         scheme_dir.mkdir(parents=True, exist_ok=True)
+
+        # 方案里不在共享/冻结词表内的 nominal 字段：按当前患者补拟合（L0-L5 恒为空）。
+        extra_mappings = _scheme_extra_nominal_mappings(
+            patient_rows, fields, nominal_mappings, nominal_min_count
+        )
+        scheme_mappings = {**nominal_mappings, **extra_mappings} if extra_mappings else nominal_mappings
 
         ttt_cli_feas = {}
         for row in patient_rows:
-            ttt_cli_feas[row["patient_id"]] = encode_raw_row(row, fields, nominal_mappings)
+            ttt_cli_feas[row["patient_id"]] = encode_raw_row(row, fields, scheme_mappings)
         t_cli_feas = minmax_symmetric(ttt_cli_feas, n_cli)
         x_cli = {
             patient_id: diagonal_pad(values, dim=HGCN_PAD_DIM)
             for patient_id, values in t_cli_feas.items()
         }
         edge_index_cli = full_connect_edges(n_cli)
-        coverage = _coverage_from_raw(ttt_cli_feas, fields)
-        scheme_nominal = _scheme_nominal_mappings(fields, nominal_mappings)
-        scheme_ordinal = _scheme_ordinal_encoders(fields)
+        coverage = _coverage_from_raw(ttt_cli_feas, display_fields)
+        scheme_nominal = _artifact_named_mapping(
+            _scheme_nominal_mappings(fields, scheme_mappings), scheme
+        )
+        scheme_ordinal = _artifact_named_mapping(_scheme_ordinal_encoders(fields), scheme)
 
         joblib.dump(ttt_cli_feas, scheme_dir / "ttt_cli_feas.pkl")
         joblib.dump(t_cli_feas, scheme_dir / "t_cli_feas.pkl")
         joblib.dump(x_cli, scheme_dir / "x_cli.pkl")
         joblib.dump(edge_index_cli, scheme_dir / "edge_index_cli.pkl")
 
-        _write_json(
-            scheme_dir / "encoding_table.json",
-            {
-                "scheme": scheme,
-                "nominal_encoding": HGCN_NOMINAL_ENCODING,
-                "missing_token": BASELINE_MISSING_TOKEN,
-                "other_token": BASELINE_OTHER_TOKEN,
-                "mapping_scope": mapping_source,
-                "nominal_mappings": scheme_nominal,
-                "ordinal_encoders": scheme_ordinal,
-            },
-        )
+        encoding_table = {
+            "scheme": scheme,
+            "nominal_encoding": HGCN_NOMINAL_ENCODING,
+            "missing_token": BASELINE_MISSING_TOKEN,
+            "other_token": BASELINE_OTHER_TOKEN,
+            "mapping_scope": mapping_source,
+            "nominal_mappings": scheme_nominal,
+            "ordinal_encoders": scheme_ordinal,
+        }
+        if extra_mappings:
+            encoding_table["extra_nominal_mappings"] = {
+                "type": "fit_current_patients",
+                "fields": [artifact_field_name(scheme, field) for field in extra_mappings],
+                "nominal_min_count": nominal_min_count,
+            }
+        _write_json(scheme_dir / "encoding_table.json", encoding_table)
         _write_json(scheme_dir / "coverage.json", coverage)
-        _write_json(
-            scheme_dir / "field_schema.json",
-            {
-                "dataset": dataset_label,
-                "scheme": scheme,
-                "n_cli": n_cli,
-                "fields": fields,
-                "field_types": {field: field_type_name(field) for field in fields},
-                "pad_dim": HGCN_PAD_DIM,
-                "minmax": HGCN_MINMAX_NAME,
-                "missing_policy": HGCN_MISSING_POLICY,
-                "nominal_encoding": HGCN_NOMINAL_ENCODING,
-                "patient_id_field": "submitter_id",
-                "n_patients": len(patient_rows),
-                "missing_note": MISSING_DIAGONAL_NOTE,
+        field_schema = {
+            "dataset": dataset_label,
+            "scheme": scheme,
+            "n_cli": n_cli,
+            "fields": display_fields,
+            "field_types": {
+                display_field: field_type_name(field)
+                for display_field, field in zip(display_fields, fields)
             },
-        )
+            "pad_dim": HGCN_PAD_DIM,
+            "minmax": HGCN_MINMAX_NAME,
+            "missing_policy": HGCN_MISSING_POLICY,
+            "nominal_encoding": HGCN_NOMINAL_ENCODING,
+            "patient_id_field": "submitter_id",
+            "n_patients": len(patient_rows),
+            "missing_note": MISSING_DIAGONAL_NOTE,
+        }
+        if landmark_time is not None:
+            field_schema["landmark_time"] = int(landmark_time)
+        _write_json(scheme_dir / "field_schema.json", field_schema)
         _write_summary(
             scheme_dir / "summary.md",
             dataset_name=dataset_label,
@@ -407,17 +514,19 @@ def run_hgcn_clinic(
             n_cli=n_cli,
             n_patients=len(patient_rows),
             fields=fields,
+            display_fields=display_fields,
             coverage=coverage,
             scheme_dir=scheme_dir,
+            landmark_time=landmark_time,
         )
 
         print(f"\n      {scheme}: 病人数={len(patient_rows)}  N_cli={n_cli}")
         print(f"        输出目录: {scheme_dir}")
-        for field in fields:
-            percent = coverage[field]["percent_observed"]
+        for display_field in display_fields:
+            percent = coverage[display_field]["percent_observed"]
             print(
-                f"        {field}: {percent:.1f}% observed "
-                f"({coverage[field]['n_observed']}/{len(patient_rows)})"
+                f"        {display_field}: {percent:.1f}% observed "
+                f"({coverage[display_field]['n_observed']}/{len(patient_rows)})"
             )
 
     print("\n[3/3] 完成")

@@ -52,6 +52,7 @@ from src.cindex import (  # noqa: E402
     scheme_output_dir,
     summarize_dataset,
 )
+from src import cli as cli_mod  # noqa: E402
 from src.cli import main as a_pipeline_main  # noqa: E402
 from src.config import SCHEME_FIELDS, load_custom_schemes, reset_scheme_registry  # noqa: E402
 from src.extract import extract_values  # noqa: E402
@@ -665,11 +666,79 @@ def test_landmark_label_path_is_under_own_subtree(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_cli_rejects_landmark_time_for_hgcn_clinic(capsys):
-    with pytest.raises(SystemExit) as exc:
-        a_pipeline_main(["hgcn_clinic", "--dataset", "TCGA-READ", "--scheme", "L0", "--landmark_time", "0"])
-    assert exc.value.code == 2
-    assert "hgcn_clinic 不支持 --landmark_time" in capsys.readouterr().err
+def test_cli_hgcn_clinic_landmark_and_out_root_routing(tmp_path, monkeypatch):
+    """S11: hgcn_clinic 接 --landmark_time / --hgcn_out_root，默认行为逐字不变。
+
+    run_hgcn_clinic / prepare_hgcn_nominal_mappings 都被替换成记录调用的假实现，
+    所以这里不读临床 JSON、不写任何产物目录。
+    """
+    _load_scheme_fields()
+    calls = []
+
+    def fake_prepare(jobs, min_count=5):
+        return None, None
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(cli_mod, "prepare_hgcn_nominal_mappings", fake_prepare)
+    monkeypatch.setattr(cli_mod, "run_hgcn_clinic", fake_run)
+
+    base = tmp_path / "outputs"
+    legacy_root = str(base / "TCGA-READ" / "A_manual" / "HGCN_clinic")
+
+    # 1) 旧行为：不传 landmark -> 旧目录、无 landmark 子目录标记
+    a_pipeline_main(
+        ["hgcn_clinic", "--dataset", "TCGA-READ", "--scheme", "L0", "--baseline_out", str(base)]
+    )
+    assert calls[-1]["out_root"] == legacy_root
+    assert calls[-1]["schemes"] == ["L0"]
+    assert calls[-1]["dataset_name"] == "TCGA-READ"
+    assert calls[-1]["landmark_time"] is None
+    assert calls[-1]["landmark_subdir"] == ""
+
+    # 2) L0-L5 + --landmark_time 0 -> 同一方案目录下的 landmark_0 子目录（与旧目录不冲突）
+    a_pipeline_main(
+        [
+            "hgcn_clinic", "--dataset", "TCGA-READ", "--scheme", "L0",
+            "--baseline_out", str(base), "--landmark_time", "0",
+        ]
+    )
+    assert calls[-1]["out_root"] == legacy_root
+    assert calls[-1]["landmark_time"] == 0
+    assert calls[-1]["landmark_subdir"] == "landmark_0"
+
+    # 3) --hgcn_out_root 覆盖输出根（回归/试跑用，不碰 outputs/）
+    regress_root = tmp_path / "s11_hgcn_regress"
+    a_pipeline_main(
+        [
+            "hgcn_clinic", "--dataset", "TCGA-READ", "--scheme", "L5",
+            "--hgcn_out_root", str(regress_root), "--landmark_time", "730",
+        ]
+    )
+    assert calls[-1]["out_root"] == str(regress_root / "TCGA-READ" / "A_manual" / "HGCN_clinic")
+    assert calls[-1]["schemes"] == ["L5"]
+    assert calls[-1]["landmark_subdir"] == "landmark_730"
+
+    # 4) 单 JSON 模式 + --hgcn_out_root -> {root}/HGCN_clinic
+    a_pipeline_main(
+        [
+            "hgcn_clinic", "--json_path", str(_write_json_dir(tmp_path)), "--scheme", "L0",
+            "--hgcn_out_root", str(regress_root),
+        ]
+    )
+    assert calls[-1]["out_root"] == str(regress_root / "HGCN_clinic")
+    assert calls[-1]["dataset_name"] is None
+    assert calls[-1]["landmark_subdir"] == ""
+
+    # 5) 论文方案显式点名：hgcn_clinic 走同一套方案装载
+    a_pipeline_main(
+        [
+            "hgcn_clinic", "--dataset", "TCGA-READ", "--scheme", "MULTISURV",
+            "--baseline_out", str(base),
+        ]
+    )
+    assert calls[-1]["schemes"] == ["MULTISURV"]
 
 
 def test_cli_rejects_bad_landmark_time(capsys):

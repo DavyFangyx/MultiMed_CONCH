@@ -438,11 +438,15 @@ def test_hgcn_keeps_old_field_types_and_cli():
     }
     assert resolve_hgcn_schemes("all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
     assert resolve_hgcn_schemes("manual") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    # S11：论文 / templates 自定义方案显式点名可编码（节点名 = fields.json 字段路径）
+    assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
+    assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
+    assert resolve_hgcn_schemes("Test_3_greedy_TCGA-LAML") == ["Test_3_greedy_TCGA-LAML"]
     try:
-        resolve_hgcn_schemes("paper")
-        raise AssertionError("hgcn paper should be rejected")
+        resolve_hgcn_schemes("NOT_A_SCHEME")
+        raise AssertionError("unknown scheme should be rejected")
     except ValueError as exc:
-        assert "L0-L5" in str(exc)
+        assert "NOT_A_SCHEME" in str(exc)
     try:
         a_pipeline_main(["hgcn_clinic", "--help"])
     except SystemExit as exc:

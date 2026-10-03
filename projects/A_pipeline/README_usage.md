@@ -18,7 +18,9 @@
 L0-L5 / D0-D5 的 9 个 dataset：`TCGA-BRCA`、`TCGA_LIHC`、`TCGA-COAD`、`TCGA-PRAD`、`TCGA-READ`、`TCGA-STAD`、`TCGA-KICH`、`TCGA-KIRC`、`TCGA-KIRP`。
 论文方案的 dataset：官方 33 个 TCGA 队列。
 
-`hgcn_clinic` 只接 L0-L5。L0-L5 的 `source` 是 lizhe，论文方案是 gdc。`--dataset all` 按方案来源展开：lizhe 跑上面 9 个；论文方案跑官方 GDC JSON，并绑定全部 33 个 TCGA。不必再传 `--datasets_config`。
+L0-L5 的 `source` 是 lizhe，论文方案是 gdc。`--dataset all` 按方案来源展开：lizhe 跑上面 9 个；论文方案跑官方 GDC JSON，并绑定全部 33 个 TCGA。不必再传 `--datasets_config`。
+
+`hgcn_clinic` 与其它命令同一个方案装载路径：`manual` / `all` 只展开 L0-L5（旧产物树不变），论文方案与 `templates/{scheme}` 自定义方案（如 `--scheme MULTISURV` / `--scheme Test_3_greedy_TCGA-LAML`）显式点名即可编码。节点类型先查 L0-L5 冻结三分法，其余字段按 D 向量同一份 GDC dictionary 分类（enum/boolean→nominal，integer/number→continuous）；提取器没有值的字段记 `keep_none`（对角 0 行、coverage 0%），不报错。L0-L5 产物节点名沿用占位符（`AGE`/`SEX_AT_BIRTH`/…），其它方案用 `fields.json` 的字段路径。
 
 ## 编码
 
@@ -33,9 +35,21 @@ python A_pipeline/run.py pipeline --dataset all --scheme paper
 
 # HCGN的pkl数据
 python A_pipeline/run.py hgcn_clinic --dataset all --scheme manual
+
+# HCGN 图节点：论文方案 / 自定义方案
+python A_pipeline/run.py hgcn_clinic --dataset TCGA-LAML --scheme MULTISURV
+python A_pipeline/run.py hgcn_clinic --dataset TCGA-LAML --scheme Test_3_greedy_TCGA-LAML
+
+# HCGN 图节点 + landmark（值级 mask 与 prompt / baseline 一致）
+python A_pipeline/run.py hgcn_clinic --dataset all --scheme manual --landmark_time 0
+
+# 试跑 / 等价性回归：输出根目录改到别处，不碰 outputs/
+python A_pipeline/run.py hgcn_clinic --dataset TCGA-KICH --scheme manual --hgcn_out_root /tmp/s11_hgcn_regress
 ```
 
 `pipeline` 是 json2prompt + encode。只出句子或只编码时分别用 `json2prompt` / `encode`。
+
+`hgcn_clinic` 专用 flag：`--landmark_time {0,365,730}`（不传=旧布局；传了落 `{scheme}/landmark_{T}/`）与 `--hgcn_out_root`（默认 `outputs`，即 `{root}/{dataset}/A_manual/HGCN_clinic`）。
 
 ## 评估
 
@@ -61,6 +75,11 @@ outputs/{dataset}/A_manual/D{0-5}/
 # 实际论文中字段组合复现
 outputs/{dataset}/A_manual/{paper_scheme}/
 outputs/{dataset}/A_manual/baseline/{paper_scheme}/
+
+# HGCN 图节点：L0-L5 与其它方案同一个根目录；landmark 臂多一层 landmark_{T}
+outputs/{dataset}/A_manual/HGCN_clinic/L{0-5}/
+outputs/{dataset}/A_manual/HGCN_clinic/{scheme}/
+outputs/{dataset}/A_manual/HGCN_clinic/{scheme}/landmark_{T}/
 
 results/A_manual/{dataset}/cindex.csv
 ```

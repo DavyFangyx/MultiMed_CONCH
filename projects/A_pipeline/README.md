@@ -4,7 +4,7 @@
 
 从 clinical JSON 生成三类临床编码。默认读 `A_pipeline/datasets.json` 里的 9 个 lizhe 癌种：BRCA、LIHC、COAD、PRAD、READ、STAD，以及共用一份肾癌 JSON、再按 `project_id` 拆开的 KICH / KIRC / KIRP。不走 Field Bank / greedy。
 
-所有命令共用同一套 `--dataset` / `--scheme` / `--encoding`。`--scheme manual` 是 L0-L5，`--scheme paper` 是论文方案，`--scheme all` 是两组都跑。`--encoding text` 是 CONCH embedding，`--encoding baseline` 是 D 向量。论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`。`hgcn_clinic` 不接论文方案。每个方案在 `templates/{scheme}/fields.json` 写 `source`：L0-L5 是 `lizhe`，论文方案是 `gdc`。`--dataset all` 按方案来源展开：L0-L5 / D0-D5 只走 `A_pipeline/datasets.json` 的 9 个 clinical.cart；论文方案走 `projects/datasets.json` 的官方 JSON，并绑定全部 33 个 TCGA 队列。
+所有命令共用同一套 `--dataset` / `--scheme` / `--encoding`。`--scheme manual` 是 L0-L5，`--scheme paper` 是论文方案，`--scheme all` 是两组都跑。`--encoding text` 是 CONCH embedding，`--encoding baseline` 是 D 向量。论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`。`hgcn_clinic` 默认（`manual` / `all`）只跑 L0-L5，论文方案与 `templates/{scheme}` 自定义方案要显式点名。每个方案在 `templates/{scheme}/fields.json` 写 `source`：L0-L5 是 `lizhe`，论文方案是 `gdc`。`--dataset all` 按方案来源展开：L0-L5 / D0-D5 只走 `A_pipeline/datasets.json` 的 9 个 clinical.cart；论文方案走 `projects/datasets.json` 的官方 JSON，并绑定全部 33 个 TCGA 队列。
 
 ## 三类编码
 
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | L | `pipeline` / `json2prompt` / `encode` | L0-L5，以及论文方案 | 每字段一句模板 → CONCH | `(n_fields, 512).pt` |
 | D | `baseline` | D0-D5，以及论文方案 | 连续 min-max + 名义 onehot 拼接 | 变长向量 `.pt` |
-| HGCN clinic | `hgcn_clinic` | 仅 L0-L5 | 一字段一节点，对角 pad | `x_cli.pkl` 等 |
+| HGCN clinic | `hgcn_clinic` | L0-L5，以及点名的论文 / 自定义方案 | 一字段一节点，对角 pad | `x_cli.pkl` 等 |
 
 L 和 D 的字段列表对齐：L0 对应 D0，以此类推。每个方案的字段列表在 `templates/{scheme}/fields.json`，句子模板在 `templates/{scheme}/template.csv`。HGCN clinic 用的是 L0-L5 字段，不是 HGCN 论文那套癌种字段。
 
@@ -117,7 +117,7 @@ A_pipeline/templates/{scheme}/template.csv     # 该方案句子模板
 1. 编辑 `templates/HGCN_KIRC/fields.json` 或 `templates/MULTISURV/fields.json`。
 2. 同步改对应目录里的 `template.csv`。
 3. 这条字段表同时作用于 L（prompt/CONCH）和 D（baseline 向量）。
-4. `hgcn_clinic` 不会读这些论文方案。论文 HGCN 字段目前只走 `pipeline` 和 `baseline`。
+4. `hgcn_clinic --scheme MULTISURV`（显式点名）读的就是这份字段表：节点名 = `fields.json` 里的字段路径；L0-L5 之外的字段按 GDC dictionary 定类型，取不到值的记 `keep_none`。
 
 ### 方案绑定数据集
 
@@ -132,8 +132,9 @@ A_pipeline/templates/{scheme}/template.csv     # 该方案句子模板
 
 ### 改 HGCN clinic 的图节点字段
 
-- 只能改 L0-L5。例如改 `hgcn_clinic --scheme L4`，就去改 `templates/L4/fields.json`。
-- 不要去改 `templates/HGCN_KIRC/` 那些论文方案，它们不会进入 `x_cli.pkl`。
+- L0-L5 与其它方案同一套装载：`--scheme L4` 只读 `templates/L4/fields.json`，`--scheme HGCN_KIRC` 只读 `templates/HGCN_KIRC/fields.json`（后者要显式点名）。
+- L0-L5 走冻结三分法（`BASELINE_CONTINUOUS/ORDINAL/NOMINAL_FIELDS`）；其它方案的字段按 D 向量同一份 GDC dictionary 定类型，`extract_values` 取不出的字段落 `keep_none`（对角 0 行）。
+- landmark 臂：`--landmark_time 0/365/730` 先用与 prompt / baseline 相同的值级 mask 取字段值，产物落 `{scheme}/landmark_{T}/`。`--hgcn_out_root` 可换输出根目录（试跑 / 回归用）。
 
 如果新字段已经在 `_available_fields` 里，改对应方案的 `fields.json` + `template.csv` 即可。如果要加一个当前抽不出来的字段，还要改 `src/extract.py`；若它要进 HGCN clinic，还要把它加进 `src/baseline.py` 的 continuous / ordinal / nominal 三张表。
 
@@ -167,6 +168,10 @@ outputs/{dataset}/A_manual/HGCN_clinic/L{0-5}/ttt_cli_feas.pkl
 outputs/{dataset}/A_manual/HGCN_clinic/L{0-5}/t_cli_feas.pkl
 outputs/{dataset}/A_manual/HGCN_clinic/L{0-5}/x_cli.pkl
 outputs/{dataset}/A_manual/HGCN_clinic/L{0-5}/edge_index_cli.pkl
+
+# 点名的论文 / 自定义方案同一个根目录；landmark 臂多一层
+outputs/{dataset}/A_manual/HGCN_clinic/{scheme}/...
+outputs/{dataset}/A_manual/HGCN_clinic/{scheme}/landmark_{T}/...
 ```
 
 ### cindex

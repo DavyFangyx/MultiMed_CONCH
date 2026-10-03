@@ -1382,3 +1382,25 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：D7 待 S10c/S12（新 run dump diff=0 + 在线 vs 离线一致）。
 - 状态：完成（S10b）。下一步 S10c（arm_A/arm_B 全量重算）。
 
+---
+
+## S11 HGCN 编码侧落地（任意 scheme + landmark + 等价性回归，2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code 子 Agent
+- 目标：按 spec §8bis.3 落地 E=hgcn 编码侧（模型不接入）：hgcn_clinic 支持任意已注册 scheme + landmark 取值 mask + 输出根覆盖；对冻结备份做 L0-L5 等价性回归（D8 证据）。
+- 输入：`A_pipeline/src/hgcn_clinic.py`（L0-L5 白名单、无 landmark）、`A_pipeline/src/cli.py:155-156`（拒绝 landmark）、`A_pipeline/src/baseline.py` 的 GDC 字典三分类、冻结备份 `/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`。
+- 产物（全部 tracked 区域）：
+  - `A_pipeline/src/hgcn_clinic.py`（+~200 行）：任意 scheme 解析（fields.json 驱动）；新字段分类 = 冻结三分类 → BASELINE_DICTIONARY_FIELD_TYPES → keep_none（零节点）；L0-L5 占位词汇 shim；`run_hgcn_clinic(landmark_time, landmark_subdir)`；summary 增 display_fields/landmark_time。
+  - `A_pipeline/src/cli.py`：删 hgcn_clinic 的 landmark 拒绝；新增 `--hgcn_out_root`；hgcn 作业分支路由 out_root/landmark。
+  - 测试：`tests/test_hgcn_clinic_schemes.py`（17 用例）+ `A_pipeline/tests/test_landmark_time.py`（CLI 路由替换旧拒绝测试）+ `test_a_pipeline.py`（scheme 断言更新）。
+  - 文档：`A_pipeline/README_usage.md`、`README.md` 更新 hgcn_clinic 用法。
+- 审计（自检项 + 实际结果）：
+  - 测试 **61 passed**（17 新 + 44 A_pipeline，1.38 s，复跑一致）。
+  - **等价性回归**（KICH 109 + LIHC 365 患者，L0-L5，写 /tmp/s11_hgcn_regress）：`diff -r` 仅 `summary.md` 差 1 行（`- output:` 根路径——输出根覆盖导致，匹配它必须写入 outputs/，被冻结规则禁止，属构造性不可复现）；**值级 96/96 文件全等**（x_cli/ttt/t_cli/edge_index pkl 逐值相等、JSON deep-equal、summary 去行后相等）。
+  - **发现的既有漂移（非本步引入，已中和）**：`templates/L{0-5}/fields.json` 于 2026-09-08 从占位符迁移为 GDC 路径，而冻结产物（09-01）携带占位符——不加处理的重跑会仅因命名改写 4 个元数据文件。`artifact_field_name()` shim 恢复冻结词汇，故 L0-L5 默认输出与冻结产物逐字节一致。
+  - 真实数据冒烟：Test_3_greedy_TCGA-LAML（LAML 200 患者）→ 4 个 bank 字段为 keep_none 零节点、其余 3 字段 100% 观测；MULTISURV → ordinal stage + 3 个字典名义字段按数据集拟合；`--landmark_time 0` 落 `…/{scheme}/landmark_0/`。
+  - outputs/ 零写入（HGCN_clinic 下全部文件仍为 09-01 日期）。
+- 偏差与原因：无（hgcn_clinic 的 `all`/`manual` 语义刻意只含 L0-L5，防污染冻结树）。
+- 决策点：**D8** 实质等价成立（byte 级唯一差异 = 输出根路径行）——按 spec 属"等价→放行"，**待用户确认**；确认前不覆盖、不重跑既有 L0-L5 产物。
+- 状态：完成（S11）。E=hgcn 评估臂待模型接入后再定（遗留：模型侧消费方、cindex --encoding hgcn、keep_none 节点处理方式未决）。
+
