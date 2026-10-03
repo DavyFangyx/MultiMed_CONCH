@@ -14,7 +14,7 @@
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
 | D6 | Test_5 三轴口径（HGCN 编码/模型、多模态子集、Q 修复路径） | **已确认（2026-10-03，三次修订）** | **HGCN 编码纳入 E 轴且先落地**（第三档，S11 只做编码侧：任意 scheme + landmark，pkl 格式不变，评估臂待模型接入后补跑）；**HGCN 模型不接入本轮**（用户移植的训练器为独立工作，M 轴不含）；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
 | D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | 待执行 | — |
-| D8 | S11 HGCN L0-L5 等价性回归（等价→放行 / 不等价→冻结） | 待执行 | — |
+| D8 | S11 HGCN L0-L5 等价性回归（等价→放行 / 不等价→冻结） | **已确认（2026-10-03）：等价→放行** | byte 级唯一差异 = summary.md 输出根路径行（构造性不可复现）；值级 96/96 全等 → 视为等价放行；既有 L0-L5 产物维持冻结不覆盖 |
 | D9 | S13 Test_5 结论与 Test_4 三档表衔接 | 待执行 | — |
 
 ---
@@ -1401,6 +1401,6 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
   - 真实数据冒烟：Test_3_greedy_TCGA-LAML（LAML 200 患者）→ 4 个 bank 字段为 keep_none 零节点、其余 3 字段 100% 观测；MULTISURV → ordinal stage + 3 个字典名义字段按数据集拟合；`--landmark_time 0` 落 `…/{scheme}/landmark_0/`。
   - outputs/ 零写入（HGCN_clinic 下全部文件仍为 09-01 日期）。
 - 偏差与原因：无（hgcn_clinic 的 `all`/`manual` 语义刻意只含 L0-L5，防污染冻结树）。
-- 决策点：**D8** 实质等价成立（byte 级唯一差异 = 输出根路径行）——按 spec 属"等价→放行"，**待用户确认**；确认前不覆盖、不重跑既有 L0-L5 产物。
+- 决策点：**D8** 实质等价成立（byte 级唯一差异 = 输出根路径行）——**用户已确认（2026-10-03）：等价→放行**；既有 L0-L5 产物维持冻结不覆盖。
 - 状态：完成（S11）。E=hgcn 评估臂待模型接入后再定（遗留：模型侧消费方、cindex --encoding hgcn、keep_none 节点处理方式未决）。
 
