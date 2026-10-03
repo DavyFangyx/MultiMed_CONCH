@@ -12,6 +12,10 @@
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **已确认（2026-09-30）：放量，按三条硬条件执行** | ① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② Test_1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
 | D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）** | 贪婪用 sig_stop 阈值早停（0.005），另报历史 best |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
+| D6 | Test_5 三轴口径（HGCN 路线、多模态子集、Q 修复路径） | **已确认（2026-10-03）** | HGCN 走路线 A（编码扩展 + gcn_clinic 分析器移植，spec §8bis.3）；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
+| D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | 待执行 | — |
+| D8 | S11 HGCN L0-L5 等价性回归（等价→放行 / 不等价→冻结） | 待执行 | — |
+| D9 | S13 Test_5 结论与 Test_4 三档表衔接 | 待执行 | — |
 
 ---
 
@@ -1294,4 +1298,26 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 影响面：Test_2b 臂 B 展示值与 Test_3 表 `B_c / delta_C_minus_B`（交叉列；头条 Δc=C−B′ 不受影响）、Test_4「去泄露值」档的数据源随之更新；**下游展示/汇总重出（Test_2b 图、Test_4 表）为另一步，本步未执行**。
 - 未动：任何 run 目录/折文件/队列 conf/中间产物/他人进程；仅改表文件（results/ 不入库）。
 - 提交：本条目（只 add 执行日志）。
+
+---
+
+## S9 Test_5 规格落地 + HGCN 产物备份（2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code（用户指令）
+- 目标：把 Test_5（不变性：E/M/Q 三轴）规格写入 `z_notes/Test_series_spec.md` §8bis 并同步 `z_notes/experiment_list/experiment_list.md`；按用户指令在修改前备份既有 HGCN 编码产物。
+- 输入：`z_notes/Test_series_spec.md`（Test_5 占位）、`z_notes/experiment_list/experiment_list.md`、`outputs/{9 数据集}/A_manual/HGCN_clinic/`（L0–L5）、SurvPGC 参考实现（`utils/survival_metrics.py`、`results_display/scripts/Table1_{IBS_AUC,Cindex_Main,CoxBreslow_Forward}.py`）、Clinic_Analyzer 指标实现（`utils/core_utils.py:535-617`）。
+- 产物：
+  - `z_notes/Test_series_spec.md`：§1 定位更新、§3 注册表新增 S9–S13、新增 §8bis（Test_5 规格：命题/三轴/四子检查/锁定基线/HGCN 路线 A 与等价冻结规则/Q 修复清单/验收与产物）。
+  - `z_notes/experiment_list/experiment_list.md`：总表 Test_5 行 + 协议段替换占位。
+  - 备份 `/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`（9 数据集 × L0–L5，1.4G，**仓库外**）。
+- 命令与参数：
+  - 备份：`cp -a outputs/{BRCA,COAD,KICH,KIRC,KIRP,LIHC,PRAD,READ,STAD}/A_manual/HGCN_clinic → 备份目录`；校验 `diff -rq`（TCGA-KICH 全目录一致）+ `du -sh`（1.4G）。
+- 审计（自检项 + 实际结果）：
+  - 备份与源逐字节一致（KICH 抽检 diff=0，其余 cp -a 同源命令）。
+  - 规格要点与用户 2026-10-03 三项指令逐条对应：路线 A ✓（§8bis.3）；多模态子集 BRCA/COAD/KIRC/LIHC ✓（§8bis.2，KIRP 44 事件被协议 A 排除）；Q 先修复再迁移 ✓（§8bis.4，6 处缺陷逐条列明）。
+  - 锁定基线（landmark_0、5 折 seed 0、协议 A 15 主集只训不扩）与控制变量纪律（唯一差异 = 被换轴；hgcn 臂为配对例外并标注）写入 §8bis.1/§8bis.5。
+  - confs 估计 ≈546（prompt 臂复用既有产物零新增），写入 §8bis.2。
+- 偏差与原因：无。
+- 决策点：**D6**（三轴口径）→ 已确认（2026-10-03），结论见决策点状态表；D7/D8/D9 待 S10/S11/S13 执行时确认。
+- 状态：完成。下一步 S10（Q 指标修复 + 离线重算）。
 

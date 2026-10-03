@@ -20,9 +20,9 @@ Test_ 系列实验按两条论证链展开，**Test_1 是动机层**，分别指
 - **Test_2**（时间轴链主体）证明高估存在：2a 审计（定量泄露占比）+ 2b 去泄露对照（控制变量，唯一差异 = landmark mask）。
 - **Test_3**（字段轴链主体）在去泄露字段池上证明低估存在：贪婪搜索最优组合 vs 各工作去泄露后的组合——**收回** Test_1b 提出的"各数据集有各自最优组合"。
 - **Test_4 三档汇总表**（非实验）：报告值 / 去泄露值 / 可达值三档对照，两个档差分别收口两条链——报告值−去泄露值 = 时间轴链收口（高估量），去泄露值−可达值 = 字段轴链收口（低估量）。
-- **Test_5** 不变性（编码 / 模型 / 数据轴）——**后期**，Test_1–Test_3 完成后另出规格。
+- **Test_5** 不变性（编码 / 模型 / 指标轴）——规格见 §8bis（用户 2026-10-03 确认后落地）；数据轴（外部数据集 CPTAC、MMRF 等）不在本阶段（§2.4）。
 
-本阶段只执行 Test_0、Test_1（动机）、Test_2（高估）、Test_3（低估）；Test_4 是 Test_2+Test_3 的汇总产物表，Test_5 只占位。
+本阶段执行 Test_0、Test_1（动机）、Test_2（高估）、Test_3（低估）、Test_5（不变性，§8bis）；Test_4 是 Test_2+Test_3 的汇总产物表。
 
 ## 2. 锁定口径
 
@@ -86,9 +86,14 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | S5c | **Test_1b** 各数据集 Cindex 分布 + 跨数据集字段分布 + top-k 重叠度 | `results_display/Test_1b_dataset_cindex/` | top-k 的 k 取值 |
 | S6 | Test_3 贪婪批跑（主集）+ 三臂对照 | Δc、遗漏字段清单 | **D4** 最优组合口径（sig_stop vs best） |
 | S7 | Test_4 三档汇总表（收口，非独立实验） | `results_display/Test_4_three_tiers/` | — |
-| S8 | 回推 Test_0 manifest v2 + Test_5 规格起草 | manifest v2 | **D5** 数据集降级/剔除逐项确认 |
+| S8 | 回推 Test_0 manifest v2（Test_5 规格已提前落地，见 §8bis） | manifest v2 | **D5** 数据集降级/剔除逐项确认 |
+| S9 | **Test_5 规格落地 + HGCN 产物备份**（§8bis） | 仓库外备份 + 校验记录 | **D6** 路线 A、多模态子集 4 个——已确认（2026-10-03） |
+| S10 | Q 指标修复（对齐 SurvPGC）+ 离线重算 | `Clinic_Analyzer/utils/survival_metrics.py`、`results_display/scripts/Test_5_q_recompute.py`、`q_metrics.csv` | **D7** 在线 vs 离线 diff=0 |
+| S11 | HGCN 编码扩展（任意 scheme）+ `gcn_clinic` 分析器 + L0-L5 等价性回归 | gcn_clinic modality、L0-L5 diff=0 报告 | **D8** 等价→放行 / 不等价→冻结 |
+| S12 | baseline 编码产物 + Test_5 conf 批跑（5E_2b/5E_3/5M_2b/5M_3） | `outputs/*/A_manual/baseline/`、`configs/Test_5_*/`、`results/Test_5_invariance/` | — |
+| S13 | Test_5 报告（不变性矩阵收口） | `results_display/Test_5_invariance/` | **D9** 与 Test_4 三档表衔接 |
 
-依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。
+依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：S9 → S10 → S11 → S12 → S13；S9 不依赖 S6/S7 收尾，但 S12 批跑与 S6 续跑共享 GPU/队列资源，执行时协调。
 
 **执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；每完成一步做一次 git 提交（见 §9）。**未在用户实验清单中明确的事项（数据集范围、口径、规则数值等），执行前必须先向用户报告并获确认，不得擅自扩大范围或替用户做决定。**
 
@@ -274,6 +279,57 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 - **定位**（用户指令 2026-10-02）：Test_4 不是独立实验，只是 Test_2（高估链）与 Test_3（低估链）的**汇总产物表**——一个 Test 可以对应多张表，表本身不占实验命题。两个档差分别收口两条链：报告值−去泄露值 = 时间轴链收口；去泄露值−可达值 = 字段轴链收口。
 - **3a 三档表**：每 (dataset, work) 一行：报告值（旧 A_manual）、去泄露值（Test_2b 臂 B）、可达值（Test_3 臂 C）、档间 Δ；主集定量、扩展集带 CI；并列 n_event / event_rate / 每折事件数。
 - 产物：`results_display/Test_4_three_tiers/`。
+
+## 8bis. Test_5 规格（不变性：编码 / 模型 / 指标轴）
+
+### 8bis.1 命题与三轴
+
+Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（字段轴链）的结论在换编码、换分析器、换指标后依然成立**。被检验的两个结论：
+
+- 2b 结论：无数据集级系统性高估（臂 A−B 的 Δc 模式与方向一致率）；
+- 3 结论：贪婪可达 > 工作组合（Δc = C − B′）。
+
+三轴候选（基线加粗）：
+
+| 轴 | 候选 | 来源 |
+|---|---|---|
+| E 编码 | **prompt**（CONCH 文本塔 `(n_fields,512)`）/ baseline（onehot_ordinary D-向量）/ hgcn_clinic（全连接图节点,1024 pad） | A_pipeline `--encoding text/baseline`、`hgcn_clinic` 子命令 |
+| M 分析器 | **mlp_clinic_flatten** / snn_clinic_flatten / clinic_cox / survgc_f、survpgc_f（多模态） | Clinic_Analyzer `--modality` |
+| Q 指标 | **cv_c_mean**（5 折 val c-index）/ IBS（月网格 1–60）/ 时依 AUC@24/60 / IPCW c-index | 修复后的 sksurv 指标层（§8bis.4） |
+
+**锁定基线**（除被换轴外一律不变）：E=prompt、M=mlp_clinic_flatten、Q=cv_c_mean、landmark_0、5 折 × seed 0、协议 A 训练范围（**只在 n_event ≥ 100 的 15 个主集上新增训练**，R13；低档数据集不新增训练）。
+
+### 8bis.2 四个子检查
+
+| 子检查 | 换的轴 | 重复什么 | 范围（15 主集） | 新 confs（估计） |
+|---|---|---|---|---|
+| 5E_2b | E→baseline / hgcn_clinic | Test_2b 两臂 A（mask 关）/B（lm0），字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256 |
+| 5E_3 | E→baseline / hgcn_clinic | Test_3 臂 B′/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60 |
+| 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 两臂（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
+| 5M_3 | M→clinic_cox | Test_3 臂 B′/C（prompt 复用） | 15 × 2 臂 | ≈30 |
+
+合计 ≈546 confs（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增），与 Test_2b 的 552 同量级。
+
+- **多模态子集（用户确认 2026-10-03）** = 协议 A 15 主集 ∩ registry 多模态 5 数据集 = **BRCA / COAD / KIRC / LIHC**（KIRP 44 事件被排除）。survgc_f / survpgc_f 只在这 4 个数据集上跑。
+- E=hgcn 臂是"编码-分析器对"（图编码无 MLP 消费方），报告标注为配对检查，不视为控制变量违规。
+
+### 8bis.3 HGCN 路线 A（用户确认 2026-10-03）
+
+1. **编码扩展**：`hgcn_clinic` 支持任意 scheme——`resolve_hgcn_schemes` 的 L0-L5 白名单改为 fields.json 驱动，字段类型分类复用 baseline.py 的 GDC 字典逻辑（新增字段自动落 nominal/continuous/ordinal）。
+2. **分析器新增**：Clinic_Analyzer 新增 `gcn_clinic` 分析器（全连接图上 1–2 层图卷积/注意力 → 离散 4-bin 生存头；同 NLL loss、同 splits、同 landmark 三要件、同 5 折 seed 0），消费 `x_cli.pkl`/`edge_index_cli.pkl`。
+3. **既有产物等价 / 冻结（用户指令 2026-10-03）**：`outputs/{9 数据集}/A_manual/HGCN_clinic/`（BRCA、COAD、KICH、KIRC、KIRP、LIHC、PRAD、READ、STAD，L0–L5）**已备份仓库外**（`/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`，1.4G，抽检 diff 一致，S9 执行日志）。编码扩展落地后对 L0-L5 重跑编码并与冻结副本 `diff -r` = 0 才视为等价；若无法保证等价，这些目录**冻结**（不覆盖、不重跑），新编码产物另立命名空间。
+
+### 8bis.4 Q 指标修复（对齐 SurvPGC 参考实现）
+
+Clinic_Analyzer 现有 `utils/core_utils.py::_calculate_metrics`（:535-617）6 处缺陷（均静默降级为 0）：① 无共享指标层；② 评估网格硬编码 `[min+eps,12,36,60]`（应为月网格 1–60 / landmark [24,60]）；③ 生存曲线未插值到网格；④ AUC 列错位 + `np.append(iauc_list,0)` 多塞元素；⑤ 无守卫（不可用应记 nan 非 0）；⑥ cox 路径完全缺失（clinic_cox 的 IBS/AUC 恒 0）。修复 = 逐字移植 SurvPGC `utils/survival_metrics.py` + 按 SurvPGC `core_utils.py:1944-2091` 重写 + 移植 `_collect_train_survival_risks`（cox Breslow）+ 裸 except 改打印原因。
+
+离线重算（不新增训练）：离散模型从各折 `split_{fold}_results.pkl` 的 logits 重建生存曲线；cox 模型用 checkpoint 做 train-forward 补 Breslow（仿 SurvPGC `results_display/scripts/Table1_CoxBreslow_Forward.py`，args 重建走 experiment.txt + confs）。对既有 Test_2b/Test_3 全部 confs 与 Test_5 全部新臂统一出 Q 电池（c-index / IBS / AUC@24 / AUC@60 / IPCW）；**新臂"在线写入值 = 离线重算值"（diff=0）为双重验收**。
+
+### 8bis.5 验收与产物
+
+- 控制变量审计：每 conf 唯一差异 = 被换轴（hgcn 臂为配对例外并标注）；重跑 diff=0。
+- 统计口径：方向一致率（Test_2b 的 10/15 同款）+ paired Wilcoxon（Test_3 sig_stop 同款）。
+- 产物：`results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/`、`results_display/Test_5_invariance/`（每子检查对照表 + Q 四指标并排表 + 2×3 不变性矩阵收口）；命名全程 `Test_5_*`（configs / results / results_display）。
 
 ## 9. Git 提交协议
 

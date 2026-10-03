@@ -44,7 +44,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
 | **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(sig_stop 0.005)最优组合 vs 各工作组合 → 低估证据,三臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
-| **Test_5** 不变性 | 编码/模型/数据轴重复 Test_2b 与 Test_3 | 待定 | 待定 |
+| **Test_5** 不变性 | 编码(E)/模型(M)/指标(Q)轴重复 Test_2b 与 Test_3(四子检查 5E_2b/5E_3/5M_2b/5M_3,规格 `Test_series_spec.md` §8bis) | 15 主集(n_event ≥100);多模态仅 BRCA/COAD/KIRC/LIHC | `results/Test_5_invariance/`、`results_display/Test_5_invariance/` |
 | ~~旧 Test_3b / H3b~~ | 单字段排序对照 | — | ❌ 已取消 |
 
 ## 各实验协议
@@ -96,9 +96,12 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **评估器**:不新增训练——报告值 / 去泄露值来自 Test_2b 两臂(`clinic_cox` + `mlp_clinic_flatten`),可达值来自 Test_3(`mlp_clinic_flatten`)。
 - **轮数 / 协议**:纯汇总;每 (dataset, work) 一行三档 + 档间 Δ,并列 n_event / 每折事件数。产物 `results_display/Test_4_three_tiers/`。
 
-### Test_5 不变性(占位)
+### Test_5 不变性(规格已落地 2026-10-03,详见 `Test_series_spec.md` §8bis)
 
-- 编码轴(编码方式)/ 模型轴(分析器)/ 数据轴(外部数据集 CPTAC、MMRF 等)重复 Test_2b 与 Test_3。协议待 Test_1–Test_3 完成后另出规格。
+- **命题**:Test_2b(时间轴链)与 Test_3(字段轴链)的结论在换编码(E)、换分析器(M)、换指标(Q)后依然成立。
+- **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
+- **四个子检查**:5E_2b / 5E_3(换编码)、5M_2b / 5M_3(换分析器),约 546 新 confs;锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
+- **HGCN**:路线 A(编码扩展 + gcn_clinic 分析器移植);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)已备份仓库外,等价性回归不过则冻结。
 
 ### 基础建设(非单一命题,已落地)
 
