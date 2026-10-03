@@ -1341,3 +1341,5 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：**D7**（在线 vs 离线 diff=0）——代码侧落地完成，验收待 S10b 离线重算脚本与 S12 新臂实测。
 - 状态：完成（S10a）。下一步 S10b（离线重算脚本 `results_display/scripts/Test_5_q_recompute.py`）。
 
+- 补记（2026-10-03 晚，用户裁定）：① **Clinic_Analyzer 代码不入库**（维持 .gitignore 现状，方案 B）——后续各阶段该目录改动一律以 md5 记于执行日志，提交只含 tracked 区域文件；② **HGCN 模型/训练器由用户自行移植**进 Clinic_Analyzer 内部（`utils/hgcn_train.py`、`utils/hgcn_data/`，范围限该目录、不动其他代码）——S11 我方范围相应调整为：A_pipeline `hgcn_clinic` 任意 scheme 编码扩展 + L0-L5 等价性回归（对冻结备份 diff=0）+ 与用户 harness 对接，不重复移植模型。
+
