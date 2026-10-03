@@ -1273,3 +1273,25 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 14:40 现场：15/15 running、0 failed、0 result.json；watch（PID 3715209）与臂 C 链（PID 3724666）均存活；臂 C 触发验证（generate custom scheme → encode → enqueue）因首个 result.json 未落盘而**待续**。已重挂监视（60 s 轮询 result.json 计数 + watch/chain 存活；落盘 / 15 全完成 / 进程死亡即报）。
 - **14:42 GPU 竞争 → 臂 C 链改卡**：用户并行起了 Table3_MissingRate 实验（PID 3791694/3791712/3791517/3791547，各 ~21 GB，14:20 起），占满 GPU 0/1（现场余量 0.9 GB / 3.2 GB）。搜索 drainer 已分配显存不受影响（GPU 0 上 3 槽照跑）；但臂 C 的 encode + 8 worker drain 放 GPU 1 会 OOM。处置：终止旧链（PID 3724666）→ `T3_ENC_GPU=7 T3_GPU=7 T3_WORKERS=8 T3_POLL=120` 重启（新 PID 3904207，14:43:12），GPU 7 空闲（余 45.4 GB）；链幂等（当时尚未处理任何数据集），日志续写同一文件，监视改挂新 PID。**他人进程一律未动**。注意：GPU 0 余量紧，若其上任一搜索 drainer 死亡被 watch 拉起，~540 MiB 分配可能失败并触发限次重试（3 次后记 failed，需人工补投）。
 
+---
+
+## S6 续跑补记: 修复 Test_2b 臂 B 陈旧行（用户裁定，2026-10-03 15:00–15:25）
+
+- 依据：上一补记上报的"Test_2b 臂 B 表 32/64 行陈旧（summarize 与末折并发读竞态）"，用户裁定**执行修复**：删陈旧行 → 重跑 summarize 从折文件重新汇总 → 全量复核。
+- 口径（先审计后动手，脚本 `/tmp/Test_2b_armB_fix.py`，审计与修复同源）：
+  - 陈旧判据升级为 **per-fold 前缀判定**——表内 `val_per_fold` 恰为 run 目录 `val_result_fold*.csv` 末行 `val_cindex` 序列的**前缀**（长度 1–4 / 5）即"末折未落盘时的部分读"；均值比较用 1e-9 容差（此前严格相等把 PAAD SURVPGC 的 1-ulp 求和序差也计入，容差后归为正常）。
+  - 审计结果：64 条臂 B `{work}__landmark_0 × mlp_clinic_flatten` 行中 **32 条 prefix-陈旧 / 32 条正常 / 0 条其他**，与上次上报一致。
+  - 说明：表内 `results_dir` 仍写迁移前旧路径 `results/A_manual_landmark/...`（该目录已不存在），属历史元数据串；物理 run 即 `results/Test_2b/arm_B/runs/...`（M1 迁移改名），故从新树重 derive 正确。
+- 动作：
+  1. 备份 13 个受影响表 → `/tmp/Test_2b_armB_backup/{ds}[gdc]/{run_config.json,cindex.csv}.bak`；
+  2. 从 `run_config.json` 的 rows **仅摘除这 32 条陈旧行**（其余行/字段/其他 modality 行不动；CSV 由 summarize 重建）；
+  3. 重跑 `summarize_dataset`（复用 S4 `_jobs_for_combos(arm=B)` 同源 job 定义；表目录断言 `results/Test_2b/arm_B/{ds}[gdc]`）。
+- 前后计数（每表行数不变 = 删 k 补 k）：COAD 3、GBM 4、HNSC 3、KIRC 2、LAML 2、LGG 1、LUAD 3、LUSC 3、OV 3、PAAD 1、SKCM 2、STAD 3、TCGA_LIHC 2，合计 **32 行**；13 表 rows 数逐一不变（KIRC/LUAD/LUSC/LIHC 25 行、其余 20 行），CSV 行数 == run_config rows 数。
+- 验证（修复后全量复核）：
+  - **臂 B：64/64 行与折文件手算一致（均 5 折齐全，1e-9 容差）**；
+  - **臂 B′（Test_3_*）：64/64 行仍一致**（本次未触及）；
+  - 典型 before→after：LAML MULTISURV 0.54356(4折,std 0.0926)→**0.56091**(5折)；KIRC HGCN_KIRC 0.80387(1折,std 0)→**0.70273**(5折,std 0.0876)；STAD SURVPGC 0.51310(1折,std 0)→**0.57545**(5折)；LUSC SURVPGC 0.61444(3折)→**0.57946**(5折)；COAD SURVPGC 0.70346(2折)→**0.71549**(5折)。
+- 影响面：Test_2b 臂 B 展示值与 Test_3 表 `B_c / delta_C_minus_B`（交叉列；头条 Δc=C−B′ 不受影响）、Test_4「去泄露值」档的数据源随之更新；**下游展示/汇总重出（Test_2b 图、Test_4 表）为另一步，本步未执行**。
+- 未动：任何 run 目录/折文件/队列 conf/中间产物/他人进程；仅改表文件（results/ 不入库）。
+- 提交：本条目（只 add 执行日志）。
+
