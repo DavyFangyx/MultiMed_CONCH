@@ -1264,5 +1264,5 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 ### 状态
 
 - 进行中：搜索 15/15 running（0 done / 0 failed）；臂 C 接力链已挂后台轮询等待首个 result.json。三条自愈链路（搜索 watch、臂 C 接力链、队列 recover/retry）均已部署。
-- 提交：本条目入库（无脚本改动）。
+- 提交：本条目正文在写入后 11 s 被并发的 S2c 提交 `027673b` 先行带入（其 `git add` 覆盖到本文件；内容与本人所写一致，未覆盖他人条目）；本步骤另以独立提交 "S6 续跑: Test_3 搜索与臂 C 链恢复" 落库该行的补记，并 push origin main（无脚本改动，只 add 本日志）。
 
