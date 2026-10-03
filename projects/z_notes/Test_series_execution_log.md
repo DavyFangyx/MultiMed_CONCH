@@ -1361,3 +1361,24 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 既有 HGCN 编码产物冻结 + 仓库外备份（S9）的要求继续有效（S11 会改 hgcn_clinic.py）。
 - 状态：S10b 已完成（另见 S10b 条目）。
 
+---
+
+## S10b 离线 Q 重算脚本 + 训练侧 metrics-input 落盘（2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code 子 Agent
+- 目标：按 spec §8bis.4 建离线重算链路——既有 conf 从 pkl 重算 Q 电池（c-index/IBS/AUC@24/60/IPCW）；未来 run 逐折落 metrics-input 供精确重算（diff=0，D7 路径）。
+- 输入：S10a 修复后的 `Clinic_Analyzer/utils/survival_metrics.py` / `core_utils.py`；各 run 目录 `split_{fold}_results.pkl`、`splits_{fold}.csv`、`test_result.csv`、`experiment.txt`、`s_{fold}_checkpoint.pt`。
+- 产物：
+  - `results_display/scripts/Test_5_q_recompute.py`（1218 行；CLI `--results-root`（多根）/`--out`/`--modalities`/`--cox-device`（默认 cpu）/`--limit`/`--folds`/`--confs`；Q_COLUMNS 与规格一致；纯函数可单测）。
+  - `Clinic_Analyzer/utils/core_utils.py` 增 `_dump_metrics_input`（:710-723）与逐折 dump 块（:824-853，payload 含 edges/risk/censor/times/by_bin/train_risks/survival_train/slide_ids/metrics），`_summary` 加 `metrics_input_path`，`_step` 测试折调用点 :942-945；**不改变任何计算**（md5 `9ba56e1380b6bc56bbfeb6fc0da88e2b`，mtime 19:30:18，与并发 worker 无冲突——worker 只动 hgcn_train.py/general_utils.py/process_args.py）。
+  - `projects/tests/test_Test5_q_recompute.py`（670 行，23 用例）。
+- 审计（自检项 + 实际结果）：
+  - 测试 **44 passed**（23 新 + 21 S10a 回归，5.38 s，复跑一致）；镜像等价用例：合成数据上 `calculate_metrics_mirror == core_utils._calculate_metrics` 四场景逐位一致；dump 路径三方一致（diff ≤ 1e-8）。
+  - 冒烟（全 cpu，输出只落 /tmp，未写 results/）：LAML/BLCA/ACC 共 5 conf，c-index 与 csv 对齐 ≤ 5.55e-17（多数 0.0）；IBS/AUC 出真实值（例：BLCA SURVPGC mlp fold0 ibs=0.2054 / auc24=0.5995 / auc60=0.6361）；**cox 路径实测**（LAML fold0，cpu 4.8 s，cindex diff=0.0，auc24=0.3821 / auc60=0.3991——csv 旧值为 0，正是修复点）。
+  - cohort 定义镜像核实：train+val+test 三 loader metadata 直接 concat 无去重（core_utils.py:348-361/:887；LAML=206 行含 33 重复 case）；bins = uncensored qcut(n_bins=4)（dataset_survival.py:313-321），edges=bins[1:]；守卫与 NaN 语义与在线一致；c-index 先于负时间过滤（刻意保留，:606-611）。
+  - 已知限制：pkl 键 12 位 case_id（多 slide 覆盖）——现 33 TCGA label 均 rows == 唯一 case == 唯一 slide，无碰撞；旧 test_result.csv 的 IBS/iauc 为坏层产物（非有效参照），自检只对 c-index；dump 路径尚无真实产物（由新 run 产生，S10c/S12 首跑时核对 dump diff=0）。
+  - 附带发现（非本步引入）：`pytest tests/` 全目录因既有 `tests/test_event_stats.py` 采集失败（`scripts/run_event_stats.py:37` 用 py3.9 不支持的 `pd.DataFrame | None` 标注）——待用户决定是否修。
+- 偏差与原因：Clinic_Analyzer 改动按裁定不入库（md5 记于本条）。
+- 决策点：D7 待 S10c/S12（新 run dump diff=0 + 在线 vs 离线一致）。
+- 状态：完成（S10b）。下一步 S10c（arm_A/arm_B 全量重算）。
+
