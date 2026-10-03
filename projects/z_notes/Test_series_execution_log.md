@@ -1428,3 +1428,21 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - **GPU 政策（用户指令 2026-10-03）**：本机为公共服务器，用户 GPU 范围 = **0–3（最多 4 张）**。Test_5 后续训练批跑（S12b）一律限定 GPU 0–3 并现场协调；我方当前进程（编码/重算）零 GPU 占用；现场超限（S6 搜索占 0,2,3,4,5,6 + Table3 占 0/1）属 S6 会话与用户任务，未擅动。
 - **S12b 推迟至 S6 收尾后启动**（用户指令）。
 
+---
+
+## S12a baseline 编码批产（5E 臂数据准备，2026-10-03）
+
+- 时间 / 执行者：2026-10-03 / Claude Code 子 Agent（CPU-only，零 GPU）
+- 目标：为 5E_2b/5E_3 的 baseline（D-向量）臂批产编码，范围 = 15 主集 × 绑定方案 × 两臂 + Test_3 B′ 臂；不跑训练。
+- 命令与参数（目录约定以代码为准）：`baseline.py:135-145`（paper/custom → `{out_root}/baseline/{scheme}[/landmark_T]`）、`cli.py:330`（out_root）、`landmark.py:74-79,97-117`（arm A ≡ `--landmark_time none`）；① 共享 vocab 全量流 `baseline --dataset all --scheme paper --baseline_out /tmp/s12a_build`（重定向防覆盖 5 个 lizhe 重叠数据集元数据）；② 分数据集 `--landmark_time 0/… --baseline_stats_dir outputs/{ds}/A_manual/baseline/metadata`；③ B′ 走 `apply_patches` 进程内路由（custom scheme 不被 CLI 白名单接受，同 `scripts/Test_3_arms.py` 惯例）。
+- 产物：**188 个编码**（armA 64 + armB 64 + B′ 60）、94,498 个 .pt；共享表 `A_pipeline/baseline_onehot_mapping_tables/gdc/`（33 TCGA、22 字段、min_count 5）；`/tmp/s12a_baseline_manifest.csv`（188 行）；批脚本 `/tmp/s12a_batch.sh`、日志 `/tmp/s12a_baseline_encode.log`。
+- 审计（自检项 + 实际结果）：
+  - **188/188 患者集与 prompt 编码逐位一致**（0 失配）；B′ vs 同字段集 paper 臂 60/60 字节一致（证明进程内路由等价）；
+  - 抽查 **18/18 手算一致**（min-max 与 one-hot 索引，含 `__MISSING__`=0）；
+  - **幂等**：同命令重跑 run1/run2，`diff -r` 15/15 数据集与元数据全同；
+  - 写范围审计：仅新增 `outputs/{ds}/A_manual/baseline/**` 与 CLI 规范路径 `outputs/{ds}/A_manual/metadata/landmark_0/*.json`（15×3，新增不覆盖）；lizhe 表与重叠数据集元数据 md5 未动；pycache 0；
+  - 附带观察：S6 会话期间写了 `.claude/settings.local.json`（非本步，仅记录）。
+- 偏差与原因：arm C/greedy 按规格跳过（模板仅 2/15，待 S6 搜索）；HGCN_* 的 Test_3 变体不在 B′ 范围。
+- 决策点：无新增。
+- 状态：完成（S12a）。**S12b 训练推迟**（用户指令：S6 收尾后、限 GPU 0–3）；S12b 所需 clinic_dir / LABEL_FILE_PATH / EXP_GROUP 映射已在任务报告中列明（arm A = `baseline/{scheme}/embeddings/pt` + 旧 label 回退；arm B/B′ = `…/landmark_0/…` + `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`；B′ 需经 `apply_patches` 路由）。
+
