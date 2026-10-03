@@ -12,9 +12,9 @@
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **已确认（2026-09-30）：放量，按三条硬条件执行** | ① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② Test_1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
 | D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）** | 贪婪用 sig_stop 阈值早停（0.005），另报历史 best |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
-| D6 | Test_5 三轴口径（HGCN 是否纳入、多模态子集、Q 修复路径） | **已确认（2026-10-03，二次修订）** | **HGCN 不纳入 Test_5**（编码/模型由用户自行移植进 Clinic_Analyzer 内部，独立于本实验；既有 HGCN 编码产物冻结 + 已备份仓库外）；E 轴 = prompt / baseline 两档；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
+| D6 | Test_5 三轴口径（HGCN 编码/模型、多模态子集、Q 修复路径） | **已确认（2026-10-03，三次修订）** | **HGCN 编码纳入 E 轴且先落地**（第三档，S11 只做编码侧：任意 scheme + landmark，pkl 格式不变，评估臂待模型接入后补跑）；**HGCN 模型不接入本轮**（用户移植的训练器为独立工作，M 轴不含）；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
 | D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | 待执行 | — |
-| D8 | S11 HGCN L0-L5 等价性回归 | **随 S11 撤销（2026-10-03）** | HGCN 不纳入 Test_5，S11 取消 |
+| D8 | S11 HGCN L0-L5 等价性回归（等价→放行 / 不等价→冻结） | 待执行 | — |
 | D9 | S13 Test_5 结论与 Test_4 三档表衔接 | 待执行 | — |
 
 ---
@@ -1351,4 +1351,13 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - **Test_5 不运行 HGCN 模型/编码，维持原有方案**：E 轴 = prompt / baseline 两档；M / Q 轴不变。spec §8bis 同步修订（§8bis.1 E 轴两档；§8bis.2 合计 ≈388 confs；§8bis.3 改为"HGCN 不纳入 + 既有产物冻结"；§8bis.5 删配对例外；§3 注册表 S11 取消、依赖链 S9→S10→S12→S13）。
 - 既有 `outputs/*/A_manual/HGCN_clinic/`（9 数据集 L0–L5）冻结（不覆盖、不重跑、不扩展）；仓库外备份保留（S9）。
 - 状态：S10b 进行中（离线重算脚本），不受本修订影响。
+
+---
+
+## Test_5 方案修订②：HGCN 编码先落地、模型暂不接入（用户指令，2026-10-03 晚）
+
+- 修订①理解有误（把"模型不接入"扩大成了"编码也剔除"），**以本条为准**：E 轴保留 hgcn_clinic（全连接图节点）编码并**先落地**（S11 编码侧：任意 scheme + landmark 支持，pkl 格式不变，不加模型消费方）；**HGCN 模型暂不接入**（用户移植的训练器为独立工作），E=hgcn 评估臂（5E_2b/5E_3 hgcn 行，≈188 confs）**待模型接入后再跑**，届时另定对接协议。本轮 = baseline 编码臂 + M 轴臂，≈388 confs。
+- spec §8bis 同步修订：§8bis.1 三编码；§8bis.2 分"本轮 ≈388 / hgcn 待模型 ≈188 / 全量 ≈546"；§8bis.3 改为"编码先落地、模型暂不接入 + L0-L5 等价性回归要求继续有效"；§3 S11 恢复（仅编码侧）、依赖链 S9→S10→S11→S12→S13。
+- 既有 HGCN 编码产物冻结 + 仓库外备份（S9）的要求继续有效（S11 会改 hgcn_clinic.py）。
+- 状态：S10b 已完成（另见 S10b 条目）。
 

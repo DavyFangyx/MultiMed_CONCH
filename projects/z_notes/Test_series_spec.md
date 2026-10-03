@@ -89,11 +89,11 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | S8 | 回推 Test_0 manifest v2（Test_5 规格已提前落地，见 §8bis） | manifest v2 | **D5** 数据集降级/剔除逐项确认 |
 | S9 | **Test_5 规格落地 + HGCN 产物备份**（§8bis） | 仓库外备份 + 校验记录 | **D6** 路线 A、多模态子集 4 个——已确认（2026-10-03） |
 | S10 | Q 指标修复（对齐 SurvPGC）+ 离线重算 | `Clinic_Analyzer/utils/survival_metrics.py`、`results_display/scripts/Test_5_q_recompute.py`、`q_metrics.csv` | **D7** 在线 vs 离线 diff=0 |
-| S11 | ~~HGCN 编码扩展 + gcn_clinic 分析器 + 等价性回归~~（**已取消**：HGCN 不纳入 Test_5，用户指令 2026-10-03；训练器由用户自行移植，范围限 Clinic_Analyzer 内部） | — | **D8** 随 S11 撤销 |
+| S11 | HGCN 编码落地（hgcn_clinic 任意 scheme + landmark 支持，pkl 格式不变）+ L0-L5 等价性回归 | 扩展后的 hgcn_clinic.py、L0-L5 diff=0 报告 | **D8** 等价→放行 / 不等价→冻结 |
 | S12 | baseline 编码产物 + Test_5 conf 批跑（5E_2b/5E_3/5M_2b/5M_3） | `outputs/*/A_manual/baseline/`、`configs/Test_5_*/`、`results/Test_5_invariance/` | — |
 | S13 | Test_5 报告（不变性矩阵收口） | `results_display/Test_5_invariance/` | **D9** 与 Test_4 三档表衔接 |
 
-依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：S9 → S10 → S12 → S13（S11 已取消）；S9 不依赖 S6/S7 收尾，但 S12 批跑与 S6 续跑共享 GPU/队列资源，执行时协调。
+依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：S9 → S10 → S11 → S12 → S13；S9 不依赖 S6/S7 收尾，但 S12 批跑与 S6 续跑共享 GPU/队列资源，执行时协调。
 
 **执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；每完成一步做一次 git 提交（见 §9）。**未在用户实验清单中明确的事项（数据集范围、口径、规则数值等），执行前必须先向用户报告并获确认，不得擅自扩大范围或替用户做决定。**
 
@@ -293,7 +293,7 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 
 | 轴 | 候选 | 来源 |
 |---|---|---|
-| E 编码 | **prompt**（CONCH 文本塔 `(n_fields,512)`）/ baseline（onehot_ordinary D-向量） | A_pipeline `--encoding text/baseline` |
+| E 编码 | **prompt**（CONCH 文本塔 `(n_fields,512)`）/ baseline（onehot_ordinary D-向量）/ hgcn_clinic（全连接图节点,1024 pad） | A_pipeline `--encoding text/baseline`、`hgcn_clinic` 子命令 |
 | M 分析器 | **mlp_clinic_flatten** / snn_clinic_flatten / clinic_cox / survgc_f、survpgc_f（多模态） | Clinic_Analyzer `--modality` |
 | Q 指标 | **cv_c_mean**（5 折 val c-index）/ IBS（月网格 1–60）/ 时依 AUC@24/60 / IPCW c-index | 修复后的 sksurv 指标层（§8bis.4） |
 
@@ -303,20 +303,21 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 
 | 子检查 | 换的轴 | 重复什么 | 范围（15 主集） | 新 confs（估计） |
 |---|---|---|---|---|
-| 5E_2b | E→baseline | Test_2b 两臂 A（mask 关）/B（lm0），字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 | ≈128 |
-| 5E_3 | E→baseline | Test_3 臂 B′/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 | ≈30 |
+| 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 两臂 A（mask 关）/B（lm0），字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
+| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂 B′/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
 | 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 两臂（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
 | 5M_3 | M→clinic_cox | Test_3 臂 B′/C（prompt 复用） | 15 × 2 臂 | ≈30 |
 
-合计 ≈388 confs（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）。
+**本轮合计 ≈388 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈188 confs 待模型接入后补跑，全量 ≈546。
 
 - **多模态子集（用户确认 2026-10-03）** = 协议 A 15 主集 ∩ registry 多模态 5 数据集 = **BRCA / COAD / KIRC / LIHC**（KIRP 44 事件被排除）。survgc_f / survpgc_f 只在这 4 个数据集上跑。
 
-### 8bis.3 HGCN 不纳入（用户指令 2026-10-03）
+### 8bis.3 HGCN：编码先落地、模型暂不接入（用户指令 2026-10-03）
 
-- HGCN（全连接图编码 + 模型）**不进入 Test_5**：用户已自行将 HGCN 训练器移植进 Clinic_Analyzer 内部（独立工作，范围限该目录，不动其他代码）。Test_5 维持 E = prompt / baseline 两档的原有方案。
-- 既有 `outputs/{9 数据集}/A_manual/HGCN_clinic/`（L0–L5）**冻结**：不覆盖、不重跑、不扩展 scheme；已备份仓库外 `/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`（1.4G，S9 日志）。
-- `A_pipeline/src/hgcn_clinic.py` 保持现状不修改（等价性回归随 S11 一并取消）。
+- **编码保留并先落地**：hgcn_clinic（全连接图节点,1024 pad）为 E 轴第三档；S11 完成编码侧扩展——任意 scheme（fields.json 驱动 + GDC 字典类型分类）+ landmark 支持（现 CLI 明确不支持 `--landmark_time`，cli.py:155-156）——产物沿用既有 pkl 格式（`x_cli.pkl`/`edge_index_cli.pkl`），**不加模型消费方**。
+- **模型暂不接入**：用户已移植进 Clinic_Analyzer 的 HGCN 训练器为独立工作；E=hgcn 的评估臂（5E_2b/5E_3 的 hgcn 行）**待模型接入后再跑**，届时另定对接协议。本轮 M 轴不含 HGCN 模型。
+- **L0-L5 等价性回归（原要求继续有效）**：S11 修改 hgcn_clinic.py 后，重跑 L0-L5 编码与冻结备份 `diff -r` = 0 才放行；否则既有 `outputs/{9 数据集}/A_manual/HGCN_clinic/`（L0–L5）冻结（不覆盖、不重跑），新产物另立命名空间。备份在仓库外 `/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`（1.4G，S9 日志）。
+- Clinic_Analyzer 侧零改动。
 
 ### 8bis.4 Q 指标修复（对齐 SurvPGC 参考实现）
 
