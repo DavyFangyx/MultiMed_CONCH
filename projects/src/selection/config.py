@@ -2,6 +2,8 @@ from __future__ import annotations
 
 DELTA = 0.005
 PATIENCE = 3
+STOP_MODES = ("sig", "gain_only")   # D4 修订(2026-10-04):sig=Wilcoxon+gain(原口径) / gain_only=仅 gain
+DEFAULT_STOP_MODE = "sig"
 DEFAULT_SEED = 0
 N_FOLDS = 5
 MODALITY = "mlp_clinic_flatten"

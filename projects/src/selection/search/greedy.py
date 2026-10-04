@@ -8,10 +8,12 @@ from ..types import BudgetExhausted
 class GreedySearcher(Searcher):
     name = "A2_greedy"
 
-    def __init__(self, delta=0.005, patience=3): self.delta, self.patience = delta, patience
+    def __init__(self, delta=0.005, patience=3, stop_mode="sig"):
+        self.delta, self.patience, self.stop_mode = delta, patience, stop_mode
 
     def run(self, evaluator, bank, rng):
-        fields = tuple(bank); selected = []; best, best_score = (), 0.5; stop = SigStop(self.delta, self.patience)
+        fields = tuple(bank); selected = []; best, best_score = (), 0.5
+        stop = SigStop(self.delta, self.patience, mode=self.stop_mode)
         prefixes = {0: ()}; stop_path = []
         evaluator.proposal_count = 0; reason = "field_space_exhausted"
         try:
@@ -33,14 +35,15 @@ class GreedySearcher(Searcher):
                 state = stop.update(len(selected), current, result.cv_folds)
                 stop_path.append({"k": len(selected), "subset": list(result.subset), **state})
                 if state["stopped"]:
-                    reason = "sig_stop"
+                    reason = "gain_stop" if self.stop_mode == "gain_only" else "sig_stop"
                     ksig = state["k_sig"] or 0
                     recommended = prefixes[ksig]
-                    metadata = {**state, "sig_stop_path": stop_path}
+                    metadata = {**state, "sig_stop_path": stop_path, "stop_mode": self.stop_mode}
                     return finish(self, evaluator, getattr(evaluator, "seed", 0), best, best_score, reason, recommended, metadata)
         except BudgetExhausted:
             reason = "budget_exhausted"
-        metadata = {"k_star": stop.k_star, "wilcoxon_fallback": stop.fallback, "sig_stop_path": stop_path}
+        metadata = {"k_star": stop.k_star, "wilcoxon_fallback": stop.fallback, "sig_stop_path": stop_path,
+                    "stop_mode": self.stop_mode}
         return finish(self, evaluator, getattr(evaluator, "seed", 0), best, best_score, reason,
                       prefixes.get(stop.k_star, ()), metadata)
 

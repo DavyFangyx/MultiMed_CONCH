@@ -17,6 +17,7 @@ for item in (ROOT, ROOT / "src"):
 
 from common.datasets import load_dataset_configs, resolve_dataset_names
 from greedy.clinic import parse_modalities
+from selection.config import DEFAULT_STOP_MODE, STOP_MODES
 from selection.queue import DEFAULT_ROOT, claim, enqueue, move
 
 
@@ -25,6 +26,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--dataset", required=True)
     p.add_argument("--landmark_time", required=True)
     p.add_argument("--algo", required=True)
+    p.add_argument("--stop_mode", default=DEFAULT_STOP_MODE, choices=STOP_MODES,
+                   help="A2_greedy 停止标准:sig=Wilcoxon 显著 + gain(原口径) / gain_only=仅 gain(D4 修订 2026-10-04)")
     p.add_argument("--seed", default="0")
     p.add_argument("--field_bank_dir")
     p.add_argument("--splits")

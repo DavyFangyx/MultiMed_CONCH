@@ -1,7 +1,7 @@
 """Test_3（字段轴链主体）共享常量、主集读取与三臂路径工具。
 
 口径来源（唯一来源 = `z_notes/Test_series_spec.md`）：
-  §7     Test_3 规格（搜索池 / A2_greedy / sig_stop / 三臂 B, B', C / 遗漏字段清单）
+  §7     Test_3 规格（搜索池 / A2_greedy / gain-only 早停（D4 修订 2026-10-04）/ 三臂 B, B', C / 遗漏字段清单）
   §2.4   方案 × 数据集绑定（泛癌种 4 方案 × 全部 TCGA；HGCN_* 仅本癌种）
   §12 U1 数据协议 A + R13 训练范围（n_event >= 100 的 15 个主集）
 
@@ -38,6 +38,7 @@ COMPARE_ROOT = OUT_ROOT                     # Test_3_compare.py 的三臂 json/c
 
 ANALYZER = "mlp_clinic_flatten"             # E2 唯一搜索目标模型（spec §7.1）
 ALGO = "A2_greedy"
+STOP_MODE = "gain_only"                     # D4 修订(2026-10-04):gain-only δ=0.005;原 sig_stop 经 --stop-mode sig 保留
 SEED = 0
 LANDMARK_TIME = "0"
 ENCODING = "prompt"

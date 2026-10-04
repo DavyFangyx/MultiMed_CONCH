@@ -4,7 +4,7 @@
           本脚本只读不跑。
   臂 B' = 工作完整组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}。
   臂 C  = 贪婪最优组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}
-          （recommended_subset = sig_stop 参考点；--arm best 用历史 best_subset 作附录对照）。
+          （recommended_subset = gain-only δ=0.005 参考点，D4 修订 2026-10-04；--arm best 用历史 best_subset 作附录对照）。
 
 链路：generate（schemes.json 登记）→ encode（conch 环境 python；landmark_0 槽位过滤 + bank 句子）
       → enqueue（A_pipeline cindex conf，results/Test_2b/arm_B 路由）→ drain（Clinic_Analyzer/run.sh）

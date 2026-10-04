@@ -255,8 +255,9 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 ### 7.1 搜索
 
 - 池：S5 补全后的 `landmark_0` field bank（2026-10-02 现状核对：33/33 模板已填齐）。
-- 算法：复用 E2 的 `A2_greedy`（`src/selection/`，summary_only + SQLite 缓存 + sig_stop + 逻辑预算）。
-- 数据集：manifest 主集；最优组合默认 = sig_stop 推荐子集（D4 已确认：sig_stop 0.005，另报历史 best）。
+- 算法：复用 E2 的 `A2_greedy`（`src/selection/`，summary_only + SQLite 缓存 + 早停 + 逻辑预算）。
+- 数据集：manifest 主集；最优组合默认 = 早停推荐子集（D4 已确认：0.005 阈值，另报历史 best）。
+- **D4 修订（2026-10-04，用户确认）**：早停口径由 sig_stop 改为 **gain-only δ=0.005**——去掉 paired Wilcoxon p<0.05 门槛（n=5 时 p<0.05 要求 5/5 折全正，过严）；新判定：gain ≥ 0.005 → 更新 k_star 且 count=0；gain < 0.005 → count+1；连续 3 步停，k_sig=k−3；delta/patience 数值不变；历史 best 仍另报。实现为 `--stop-mode {sig,gain_only}`（sig 保留为默认）；Test_3 重跑使用 gain_only（stop_reason 记 "gain_stop"）。
 
 ### 7.2 三臂对照（全部走 A_pipeline 链路，同编码器/模型/划分/seed）
 

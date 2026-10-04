@@ -18,7 +18,10 @@ def paired_wilcoxon_greater(current, best) -> tuple[float, bool]:
 
 
 class SigStop:
-    def __init__(self, delta=0.005, patience=3):
+    def __init__(self, delta=0.005, patience=3, mode="sig"):
+        if mode not in ("sig", "gain_only"):
+            raise ValueError(f"unknown stop mode: {mode}")
+        self.mode = mode
         self.delta, self.patience = float(delta), int(patience)
         self.k_star, self.best_mean, self.best_folds = 0, 0.5, (0.5,) * 5
         self.count = 0
@@ -28,11 +31,17 @@ class SigStop:
         gain = float(mean) - self.best_mean
         p, fallback = paired_wilcoxon_greater(folds, self.best_folds)
         self.fallback |= fallback
-        meaningful = gain >= self.delta and p < 0.05
-        no_improvement = gain < self.delta and p >= 0.05
-        if meaningful:
+        if self.mode == "gain_only":
+            # D4 修订(2026-10-04):只看增益,不看 Wilcoxon 显著性。
+            # n=5 时 p<0.05 要求 5/5 折全正,过严;gain<delta 一律计数,不再因 p 清零。
+            improved, count_up = gain >= self.delta, gain < self.delta
+        else:
+            meaningful = gain >= self.delta and p < 0.05
+            no_improvement = gain < self.delta and p >= 0.05
+            improved, count_up = meaningful, no_improvement
+        if improved:
             self.k_star, self.best_mean, self.best_folds, self.count = int(k), float(mean), tuple(folds), 0
-        elif no_improvement:
+        elif count_up:
             self.count += 1
         else:
             self.count = 0

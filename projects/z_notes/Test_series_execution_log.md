@@ -10,7 +10,7 @@
 | D1 | Test_0 门槛与降级规则数值（照搬 event_impact_analysis 建议 vs 调整） | **已解决（2026-09-30，用户数据协议 A）** | 弃用无推导的 0.05 锚点。执行口径 = 用户数据协议 A（n_event 四档）：≥100 主图干净集；70–100 主图带 CI 不排名；30–70 补充材料 bootstrap CI；<30 不收录、单列低事件组定性讨论。适用于全部工作（含泛癌种）。B/C 存档不执行、D 不采用（R6）。 |
 | D2 | landmark 有效事件口径（mask vs 排除患者）+ 数据集范围 | **已确认**（用户指令 2026-09-29） | **经典 landmark 三要件（Anderson 1983 / van Houwelingen）**：① 只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T`）；② 时间原点平移到 T（`gt − T`，c-index 对其不变，仍实现以符合规范）；③ 协变量只用 T 前信息（现有 mask 已实现）。有效事件数 = `#{event==1 且 ground_truth_time > T}`。**数据集范围：仅 33 TCGA；TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**，Test_4c 阶段再议。 |
 | D3 | S3 自检（臂 A 与旧 A_manual 数值一致）通过后放量 | **已确认（2026-09-30）：放量，按三条硬条件执行** | ① 汇总 cindex 与旧表统一用同一 python 版本（本机默认 3.13.12），否则 `val_c_index_std` 末位 ULP 不同；② Test_1b 全程统一 label 源为 `Clinic_Analyzer/data/datasets_csv/metadata/`（两臂同源，Δc 不受影响；不回退旧源）；③ 一致性判据按模态区分：`clinic_cox` 逐位 diff = 0（✓ 已证），NN 模态用"同环境重跑逐位一致（det1 ✓）+ 换回旧 label 源可复现旧表（oldlabel 4/5 折逐位 ✓）"。**注意**：BRCA 单点 Δc（clinic_cox +0.0127 / mlp −0.0057）均落在折间 std（0.052–0.106）之内，须按 §4.2 规则 6 用 mask 后的有效事件数跨数据集聚合，且门槛数值待 U1（D1 的效应量先验）给出后再判定。 |
-| D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）** | 贪婪用 sig_stop 阈值早停（0.005），另报历史 best |
+| D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）+ 修订（2026-10-04，用户确认）** | 贪婪用 gain-only δ=0.005 早停（2026-10-04 起：gain≥0.005 更新 k_star 且清零，gain<0.005 计数，连续 3 步停，k_sig=k−3；原 sig_stop 经 `--stop-mode sig` 保留）；另报历史 best；best 口径三臂表由用户自出 |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
 | D6 | Test_5 三轴口径（HGCN 编码/模型、多模态子集、Q 修复路径） | **已确认（2026-10-03，三次修订）** | **HGCN 编码纳入 E 轴且先落地**（第三档，S11 只做编码侧：任意 scheme + landmark，pkl 格式不变，评估臂待模型接入后补跑）；**HGCN 模型不接入本轮**（用户移植的训练器为独立工作，M 轴不含）；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
 | D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | 待执行 | — |
@@ -1471,3 +1471,28 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 状态：完成（局部三臂表预览）。
 - 提交：本条目（只 add 执行日志）。
 
+
+---
+
+## S6 续跑：Test_3 停止标准口径变更（gain-only δ=0.005）与 15 集重跑（2026-10-04）
+
+- 时间 / 执行者：2026-10-04 / Claude Code（用户指令：当前剪枝标准过严，停止标准改为 gain-only δ=0.005；立即停掉 9 个在跑旧标准搜索换新标准重跑；best 口径三臂表由用户自出，不归本步）。
+- 现状确认（现场，以现场为准）：
+  - 旧 watch PID 3577525（`--gpus 0,2,3,0,2,3,0,2,3,4,5,6,4,5,6`，1h10m 前重启过）+ 9 个新一代 drainer（run_e2_selection_queue.py，GPU 0/2/3 上 32 workers、4/5 上 16 workers）+ 臂 C 链 PID 3904207（19h41m，轮询态）；
+  - 另有 **25 个 PPID=1 的孤儿 run_e2_selection.py**（9h15m，更早 drainer 世代遗留，与新一代同写 9 个数据集的 out 目录）及其 evaluate.py 子进程——一并清理；
+  - result.json 6/15 done（GBM/KIRC/LAML/LGG/OV/PAAD）；B′ 64 conf 全在 arms done 桶（无 pending）；局部三臂表 25 行（09:44–09:52 预览版）。
+- 口径变更（用户确认，D4 修订）：早停 sig_stop（gain<0.005 且 Wilcoxon p≥0.05 连续 3 步）→ **gain-only δ=0.005**（gain≥0.005 更新 k_star 且 count=0；gain<0.005 计数；连续 3 步停，k_sig=k−3；delta/patience 不变；历史 best 仍另报）。动机：n=5 时 Wilcoxon p<0.05 ⟺ 5/5 折全正（最小 p=0.03125），过严——OV recommended 被卡在 1 字段（0.5828，best 4 字段 0.6116）。理论性质：gain_only 计数序列逐点 ≥ sig → 停点 ≤ 旧停点，重跑路径不延伸，几乎全缓存命中。
+- 代码改动（`--stop-mode {sig,gain_only}`，sig 保留默认以锁旧口径）：
+  - `src/selection/stopping.py`：SigStop 加 `mode` 参数（非法值 raise ValueError）；update() 按 mode 分支（gain_only 不看 p，p 仍计算记录）；返回 dict 形状不变。
+  - `src/selection/search/greedy.py`：构造透传 `stop_mode`；gain_only 早停 reason="gain_stop"（sig 仍 "sig_stop"）；metadata 加 stop_mode。
+  - `src/selection/runner.py`：argparse `--stop-mode`（choices 引用 config.STOP_MODES）；run_one 对 A2_greedy 传 stop_mode；result.json/run_config.json 加 stop_mode 字段（cache 指纹不含，不受影响）。
+  - `src/selection/config.py`：STOP_MODES/DEFAULT_STOP_MODE 常量。`scripts/run_e2_selection_queue.py`：parser 同款参数（job_key 共同源头）。`scripts/Test_3_search_queue.py`：_runner_argv 注入 `--stop-mode gain_only`。`scripts/Test_3_common.py`：STOP_MODE="gain_only"。
+  - `tests/test_e2_greedy_sigstop.py`：旧 5 例保绿（默认 sig）+ 新 4 例（gain_only 混合情形更新 k_star / 微小显著增益计数 / 非法 mode 抛错 / GreedySearcher+run_one 端到端 gain_stop）。全量 `pytest tests/` 220 passed, 8 skipped。
+- 切换序列（按序）：归档旧标准产物 → 杀臂 C 链 → 杀 watch → pkill 两代搜索进程（bracket 正则防自匹配；首轮 pkill 自匹配误杀本 shell，已换写法补杀）→ recover + 15 个旧 conf park 进 parked_rekey（40 个）→ LGG 冒烟（GPU 3，gain_only，physical_trains=0，stop_reason=gain_stop，k_sig=4，recommended 与旧 sig 版相同——停点相同属理论预期）→ 重投 15 个（新 job_key，created=15 existing=0）→ 新 watch（PID 115457，`--gpus 0,2,3`，T3_SEARCH_WORKERS_MAP="0:32,2:32,3:32"，日志 watch_gain_only.log）。
+- 归档物证：`results/Test_3_greedy_vs_works/archive_sigstop_20261004/`（6 个 done 数据集 result.json+evaluations.jsonl、three_arm.csv 25 行、missed_fields.csv、compare/ 25 份）——用户出 best 口径三臂表用，重跑不覆盖。
+- 偏差与原因：
+  - 现场除 9 个在跑外还发现 25 个孤儿旧标准进程（两代同写 out 目录），一并清理；
+  - GPU 回归用户 0–3 政策（旧 watch 占 0-6 共 15 槽）；GPU 1 上发现 Test_5 5M_2b drainer（BLCA×SURVPGC，非本步范围，未触碰），新 watch 与其共存于 0/2/3；
+  - pkill 首轮因模式串出现在本 shell 命令行中自匹配被杀（exit 144），换 bracket 正则完成。
+- 决策点：**D4 修订已确认（2026-10-04）**。
+- 状态：进行中（15 集搜索重跑，watch 115457；完成后跑臂 C 链重出三臂表）。

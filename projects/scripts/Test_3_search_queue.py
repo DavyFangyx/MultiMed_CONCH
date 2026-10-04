@@ -1,9 +1,11 @@
 """Test_3 贪婪搜索队列助手：enqueue / status / recover / retry / drain / watch / report。
 
-搜索定义（spec §7.1 + D4）：A2_greedy × landmark_0 field bank × mlp_clinic_flatten × seed 0
-× 5 折；早停 sig_stop（gain < 0.005 且 paired Wilcoxon p >= 0.05 连续 3 步），另报历史 best。
+搜索定义（spec §7.1 + D4 修订 2026-10-04）：A2_greedy × landmark_0 field bank × mlp_clinic_flatten × seed 0
+× 5 折；早停 gain-only δ=0.005（gain < 0.005 连续 3 步；原 sig_stop 的 Wilcoxon 门槛已移除，经
+`--stop-mode sig` 保留），另报历史 best。
 
-队列机制复用 E2（`src/selection/queue.py`，只读复用，不改 E 组算法）：
+队列机制复用 E2（`src/selection/queue.py`）；停止标准经 `--stop-mode` 注入 job_key
+（Test_3_common.STOP_MODE = "gain_only"）。
   * 每个数据集一个 conf（`--out` 含数据集名，故 job_key 逐数据集独立）；
   * drainer = `scripts/run_e2_selection_queue.py`（enqueue 幂等 + claim + 训练 + move）；
   * watch 自愈：running 悬挂回收 / failed 限次重试 / drainer 死了拉起 / 全 done 汇总退出。
@@ -50,6 +52,7 @@ def _runner_argv(dataset: str, workers: int | None = None) -> list[str]:
         "--dataset", dataset,
         "--landmark_time", str(C.LANDMARK_TIME),
         "--algo", C.ALGO,
+        "--stop_mode", C.STOP_MODE,
         "--seed", str(C.SEED),
         "--out", str(C.search_dir(dataset)),
         "--inner_analyzer", C.ANALYZER,

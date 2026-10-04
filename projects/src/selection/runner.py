@@ -10,7 +10,7 @@ import numpy as np
 
 from common.paths import test_results_dir
 
-from .config import MODALITY, parse_seeds, budget_for
+from .config import MODALITY, parse_seeds, budget_for, STOP_MODES, DEFAULT_STOP_MODE
 from .evaluator import Evaluator
 from .cache import SQLiteCache
 from .references import load_univariate_rows
@@ -68,7 +68,7 @@ def run_one(*, algo, seed, fields, inner, output=None, budget=None, cache=None,
             field_index_hash="", split_hashes=(), train_args_hash="", dataset="",
             landmark_tag="", encoding="prompt", modality=MODALITY,
             univariate_scores=None, univariate_folds=None, semantic_embeddings=None,
-            field_indices=None):
+            field_indices=None, stop_mode=DEFAULT_STOP_MODE):
     started = time.perf_counter()
     ev = Evaluator(inner, fields, seed=seed, budget=budget,
                    cache=cache, field_index_hash=field_index_hash, split_hashes=split_hashes,
@@ -84,7 +84,7 @@ def run_one(*, algo, seed, fields, inner, output=None, budget=None, cache=None,
         ev.univariate_folds = tuple(tuple(row) for row in univariate_folds)
     if semantic_embeddings is not None:
         ev.semantic_embeddings = np.asarray(semantic_embeddings)
-    searcher = SEARCHERS[algo]()
+    searcher = SEARCHERS[algo](stop_mode=stop_mode) if algo == "A2_greedy" else SEARCHERS[algo]()
     result = searcher.run(ev, tuple(fields), np.random.default_rng(seed))
     if output:
         out = Path(output); out.mkdir(parents=True, exist_ok=True)
@@ -97,6 +97,7 @@ def run_one(*, algo, seed, fields, inner, output=None, budget=None, cache=None,
             "cache_hits": ev.cache_hits,
             "failure_count": ev.failures,
             "wall_ms": int((time.perf_counter() - started) * 1000),
+            "stop_mode": stop_mode,
         })
         (out / "result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=list) + "\n", encoding="utf-8")
     return result
@@ -107,6 +108,8 @@ def main(argv=None):
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--landmark_time", required=True, help="none or non-negative integer days")
     parser.add_argument("--algo", required=True, choices=sorted((*SEARCHERS, "ANCHOR_TIMING")))
+    parser.add_argument("--stop_mode", default=DEFAULT_STOP_MODE, choices=STOP_MODES,
+                        help="A2_greedy 停止标准:sig=Wilcoxon 显著 + gain(原口径) / gain_only=仅 gain(D4 修订 2026-10-04)")
     parser.add_argument("--seed", default="0")
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument("--splits", default=None)
@@ -243,12 +246,13 @@ def main(argv=None):
                              train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs}, sort_keys=True).encode()).hexdigest(),
                              dataset=args.dataset, landmark_tag=tag, encoding="prompt", modality=modality,
                              univariate_scores=scores, univariate_folds=folds,
-                             semantic_embeddings=semantic, field_indices=field_indices)
+                             semantic_embeddings=semantic, field_indices=field_indices,
+                             stop_mode=args.stop_mode)
             (out / "run_config.json").write_text(json.dumps({"dataset": args.dataset, "landmark_tag": tag,
                 "encoding": "prompt", "modality": modality, "seed": seed, "val_equals_test": True,
                 "fields": list(fields), "split_dir": str(split_dir.resolve()),
                 "restricted_anchor": args.anchor_p is not None,
-                "p_anchor": args.anchor_p}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                "p_anchor": args.anchor_p, "stop_mode": args.stop_mode}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(result.__dict__, ensure_ascii=False, default=list))
         if args.algo == "ANCHOR_TIMING":
             continue
