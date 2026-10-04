@@ -23,6 +23,8 @@
 
 输出（默认 results_display/Test_4_three_tiers/；Main_ 前缀 = 头条）：
   - Main_three_tiers.csv   每 (dataset, work) 一行三档 + 档间 Δ（协议 A 档位 → 数据集 → 方案排序）
+  - Main_three_tiers.png   头条柱状图：逐数据集三档均值（橙=报告/蓝=去泄露/绿=可达，仅可达值就绪的数据集）
+  - Appx_three_tiers_by_work.png 附录柱状图：逐工作三档均值（跨可达值就绪数据集聚合）
   - Main_tier_summary.csv  按协议 A 四档聚合（行数 / pending 数 / Δ 均值中位）
   - README.md              口径与状态说明（手写，results_display/** 被 .gitignore 忽略，不入库）
 
@@ -53,6 +55,24 @@ import Test_3_common as C3  # noqa: E402
 
 ARM_A_ROOT = test_results_dir("Test_2b/arm_A")
 ARM_B_ROOT = test_results_dir("Test_2b/arm_B")
+
+import matplotlib  # noqa: E402
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+
+# ---- 视觉常量（与 Test_2b_delta_report.py 同一套 light 表面；三档配色）----
+INK = "#0b0b0b"
+MUTED = "#898781"
+BASELINE = "#c3c2b7"
+SURFACE = "#fcfcfb"
+COL_REPORT = "#eb6834"  # 报告值（橙）
+COL_DELEAKED = "#2a78d6"  # 去泄露值（蓝）
+COL_REACH = "#3d8b52"  # 可达值（绿）
+
+OUT_MAIN_FIG = "Main_three_tiers.png"
+OUT_APPX_FIG = "Appx_three_tiers_by_work.png"
 THREE_ARM_CSV = C3.OUT_ROOT / "three_arm.csv"
 TEMPLATES = REPO_ROOT / "A_pipeline" / "templates"
 
@@ -220,6 +240,86 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
         })
     rows.sort(key=lambda r: (TIER_ORDER[r["tier"]], r["dataset"], r["work"]))
     return rows
+
+
+# --------------------------------------------------------------------------- 图
+def _tier_means(rows: list[dict], group_key: str) -> dict[str, tuple[list[float], int]]:
+    """按 group_key 聚合三档均值；只取 status==ok 且三档齐全的行（报告 n/a 剔除）。"""
+    groups: dict[str, list[tuple[float, float, float]]] = {}
+    for r in rows:
+        if r["status"] != "ok":
+            continue
+        rep, de, rc = _num(r["report_c"]), _num(r["deleak_c"]), _num(r["reach_c"])
+        if rep is None or de is None or rc is None:
+            continue
+        groups.setdefault(r[group_key], []).append((rep, de, rc))
+    return {
+        key: ([sum(v[i] for v in vals) / len(vals) for i in range(3)], len(vals))
+        for key, vals in groups.items()
+    }
+
+
+def _three_tier_bar_figure(names: list[str], agg: dict, *, n_label: str, title: str,
+                           ylabel: str, out_path: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(9.6, 5.2))
+    fig.patch.set_facecolor(SURFACE)
+    ax.set_facecolor(SURFACE)
+    x = np.arange(len(names))
+    w = 0.26
+    series = (
+        (COL_REPORT, "report (paper fields)"),
+        (COL_DELEAKED, "deleaked (landmark_0)"),
+        (COL_REACH, "reachable (greedy)"),
+    )
+    for i, (color, label) in enumerate(series):
+        means = [agg[n][0][i] for n in names]
+        ax.bar(x + (i - 1) * w, means, w, color=color, zorder=2, label=label)
+    for xi, name in enumerate(names):
+        means, n = agg[name]
+        ax.annotate(
+            f"{n_label}={n}", xy=(xi, max(means)), xytext=(0, 4),
+            textcoords="offset points", ha="center", fontsize=8.0, color=MUTED,
+        )
+    all_means = [agg[n][0][i] for n in names for i in range(3)]
+    ax.axhline(0.5, color=BASELINE, linewidth=1.2, zorder=1)
+    ax.set_ylim(min(0.5, min(all_means)) * 0.97, max(all_means) * 1.09)
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=28, ha="right", fontsize=8.5, color=INK)
+    ax.set_ylabel(ylabel, color=INK, fontsize=9)
+    ax.set_title(title, color=INK, fontsize=10.5, loc="left")
+    ax.legend(frameon=False, fontsize=9, loc="upper right", labelcolor=INK)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    return out_path
+
+
+def figure_three_tiers_by_dataset(rows: list[dict], out_path: Path) -> Path | None:
+    """头条柱状图：逐数据集三档均值（报告/去泄露/可达），仅含可达值就绪的数据集。"""
+    agg = _tier_means(rows, "dataset")
+    if not agg:
+        return None
+    names = sorted(agg)
+    return _three_tier_bar_figure(
+        names, agg, n_label="n works",
+        title="Test_4 three tiers per dataset (reachable ready: partial)\n"
+              "report (orange) vs deleaked (blue) vs reachable (green)",
+        ylabel="mean c-index across works", out_path=out_path,
+    )
+
+
+def figure_three_tiers_by_work(rows: list[dict], out_path: Path) -> Path | None:
+    """附录柱状图：逐工作三档均值（跨可达值就绪的数据集聚合）。"""
+    agg = _tier_means(rows, "work")
+    if not agg:
+        return None
+    names = sorted(agg)
+    return _three_tier_bar_figure(
+        names, agg, n_label="n datasets",
+        title="Test_4 three tiers per work (reachable ready: partial)\n"
+              "report (orange) vs deleaked (blue) vs reachable (green)",
+        ylabel="mean c-index across datasets", out_path=out_path,
+    )
 
 
 def tier_summary_rows(rows: list[dict]) -> list[dict]:
@@ -413,6 +513,13 @@ def main(argv=None) -> None:
     written = write_tables(rows, out_dir)
     for path in written:
         print(f"[csv] {path.name}")
+    for fn in (figure_three_tiers_by_dataset, figure_three_tiers_by_work):
+        path = fn(rows, out_dir / (OUT_MAIN_FIG if fn is figure_three_tiers_by_dataset else OUT_APPX_FIG))
+        if path is not None:
+            written.append(path)
+            print(f"[png] {path.name}")
+        else:
+            print(f"[png] {OUT_MAIN_FIG if fn is figure_three_tiers_by_dataset else OUT_APPX_FIG}: skipped (no reachable rows)")
 
     if args.audit:
         audit(rows)

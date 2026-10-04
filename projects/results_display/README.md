@@ -33,6 +33,7 @@ FigA 只画 TCGA。蓝色实线是 greedy 增长曲线；论文字段组合按�
 | `Test_1a_field_level/` | 时间口径 t0 在**单字段**层面改变了什么? | mask 改动的字段 Δc 均值 +0.034,未改动 ≈ 0(本底 +0.0011) | `Main_mask_group_delta.png` + `Main_field_ranking.csv` |
 | `Test_1b_dataset_cindex/` | 每个数据集是不是有**各自的最优字段组合**? | top-1 落在 18 个不同字段,k=5 时 47% 数据集对零共享 | `Main_per_dataset_profile.png` + `Main_topk_overlap_rate.png` + `Main_topk_zero_share.png` |
 | `Test_2b_delta/` | 论文**组合**报告值有没有被泄露抬高? | 无数据集级系统性高估(MULTISURV×Cox 一致率 10/15) | `Main_overview_*.png` + `Main_delta_summary.csv` |
+| `Test_4_three_tiers/` | 三档收口:报告值 / 去泄露值 / 可达值 差多少? | Δ1(报告−去泄露)≈0 无系统性高估;Δ2(去泄露−可达)预览版为负(可达值待 gain_only 重跑) | `Main_three_tiers.csv` + `Main_three_tiers.png` |
 
 每个目录内文件角色前缀:`Main_` = 头条(回答命题)、`Appx_` = 附录(明细/主表补充)、`Raw_` = 原始矩阵、`Meta_` = 元数据与审计。目录内 README.md 有逐文件含义。
 
