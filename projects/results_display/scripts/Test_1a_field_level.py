@@ -22,6 +22,7 @@ leak_rate 列（Test_2a 审计）：
   文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
   Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据与审计；本目录平铺，无子目录。
   Main_mask_group_delta.png      Δc 分组（取值未改动 = 噪声本底 vs 被 mask 改动）——唯一主结论
+  Main_mask_group_density.png    Δc 分组密度直方图（新头条「两座山+噪声走廊」；旧点图保留）
   Main_field_ranking.csv         条件化字段汇总：「哪些字段的泄露值得关注」（大小 × 涉及面 × 一致性）。
                                  列 = field / n_datasets_total（该字段覆盖的数据集数）/
                                  n_datasets_affected（取值被 mask 改动的数据集数）/
@@ -87,6 +88,7 @@ CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 �
 
 # ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
 OUT_MAIN_MASK_GROUP = "Main_mask_group_delta.png"
+OUT_MAIN_MASK_GROUP_DENSITY = "Main_mask_group_density.png"
 OUT_MAIN_FIELD_RANKING = "Main_field_ranking.csv"
 OUT_APPX_OFF_VS_T0 = "Appx_off_vs_t0.png"
 OUT_APPX_DELTA_BY_DATASET = "Appx_delta_by_dataset.png"
@@ -101,6 +103,7 @@ OUT_APPX_LEAK_VS_DELTA = "Appx_leak_vs_delta.png"
 OUT_META_AUDIT = "Meta_audit.json"
 OUTPUT_FILES = (
     OUT_MAIN_MASK_GROUP,
+    OUT_MAIN_MASK_GROUP_DENSITY,
     OUT_MAIN_FIELD_RANKING,
     OUT_APPX_OFF_VS_T0,
     OUT_APPX_DELTA_BY_DATASET,
@@ -696,6 +699,108 @@ def plot_delta_by_mask_group(rows: list[dict], out_path: Path, delta_threshold: 
     plt.close(fig)
 
 
+def plot_mask_group_density(rows: list[dict], out_path: Path, delta_threshold: float) -> None:
+    """Δc 分组密度直方图(新头条,「两座山 + 噪声走廊」):同指标、零变换。
+
+    共享分箱计数,灰山 = 取值未改动(噪声本底),彩山 = 被 mask 改动(按箱符号
+    红/蓝,沿用 COL_POS/COL_NEG 语义);本底 5–95% 走廊 + 最大值虚线给出
+    「效应超过本底」的直接视觉判据。旧点图 Main_mask_group_delta.png 保留。
+    确定性:固定 bins、无随机 → 重跑 diff=0。
+    """
+    groups = {
+        "noise": np.asarray(
+            [r["delta_c"] for r in rows if r.get("mask_affected") is False], dtype=float
+        ),
+        "affected": np.asarray(
+            [r["delta_c"] for r in rows if r.get("mask_affected") is True], dtype=float
+        ),
+    }
+    groups = {k: v for k, v in groups.items() if v.size}
+    if not groups:
+        return
+    lo = min(float(v.min()) for v in groups.values()) - 0.008
+    hi = max(float(v.max()) for v in groups.values()) + 0.008
+    bins = np.linspace(lo, hi, 64)
+    centers = (bins[:-1] + bins[1:]) / 2.0
+
+    fig, ax = plt.subplots(figsize=(8.8, 5.2), dpi=160)
+    fig.patch.set_facecolor(SURFACE)
+    _style_axes(ax)
+
+    # 本底 5–95% 走廊(竖带)+ 本底最大值虚线
+    noise = groups["noise"]
+    ax.axvspan(
+        float(np.percentile(noise, 5)), float(np.percentile(noise, 95)),
+        color=GRIDLINE, alpha=0.95, zorder=1,
+    )
+    ax.axvline(float(noise.max()), color=MUTED, linewidth=1.0, linestyle="--", zorder=2)
+    ax.text(
+        float(noise.max()), -0.055,
+        f"noise max {noise.max():+.3f}",
+        transform=ax.get_xaxis_transform(), ha="center", va="top",
+        fontsize=7, color=MUTED,
+    )
+    # 灰山:未改动(本底)
+    ax.hist(
+        noise, bins=bins, color="#c3c2b7", alpha=0.85, edgecolor=MUTED,
+        linewidth=0.4, zorder=2, label="value unchanged (noise floor)",
+    )
+    # 彩山:改动字段,按箱符号红/蓝
+    aff = groups["affected"]
+    counts, _ = np.histogram(aff, bins=bins)
+    for center, count in zip(centers, counts):
+        if count == 0:
+            continue
+        ax.bar(
+            center, count, width=bins[1] - bins[0], bottom=0.0,
+            color=COL_POS if center >= 0 else COL_NEG, alpha=0.75,
+            edgecolor=COL_POS if center >= 0 else COL_NEG, linewidth=0.4, zorder=3,
+        )
+    # (两组中位几乎重合且接近 0,不画中位线——本图故事在散布/右尾,中位数字进右上注释块)
+    ax.axhline(0.0, color=INK, linewidth=1.0)
+    for y in (-delta_threshold, delta_threshold):
+        ax.axvline(y, color=BASELINE, linewidth=1.0, linestyle="--", zorder=2)
+
+    # 关键数字(全部由数据现算,不硬编码)
+    aff_med = float(np.median(aff))
+    aff_p75 = float(np.percentile(aff, 75))
+    aff_p95 = float(np.percentile(aff, 95))
+    share_beyond = float(np.mean(aff >= float(noise.max())))
+    share_gt_005 = float(np.mean(aff > 0.05))
+    noise_med = float(np.median(noise))
+    noise_p95 = float(np.percentile(noise, 95))
+    stats_txt = (
+        f"affected (n={aff.size}):  median {aff_med:+.3f}   p75 {aff_p75:+.3f}   p95 {aff_p95:+.3f}\n"
+        f"noise floor (n={noise.size}):  median {noise_med:+.3f}   p95 {noise_p95:+.3f}   max {noise.max():+.3f}\n"
+        f"{share_beyond:.1%} of affected beyond noise max   |   {share_gt_005:.1%} > +0.05"
+    )
+    ax.text(
+        0.97, 0.96, stats_txt, transform=ax.transAxes,
+        ha="right", va="top", fontsize=7.2, color=MUTED, linespacing=1.6,
+    )
+    ks_txt = ""
+    try:
+        from scipy.stats import ks_2samp
+
+        ks_d, ks_p = ks_2samp(aff, noise)
+        ks_txt = f"   |   KS D={ks_d:.3f} p={ks_p:.1e}"
+    except Exception:
+        pass
+    ax.set_title(
+        "Test_1a Δc by mask effect — shared-bin counts\n"
+        "red/blue = value changed by mask (red = off arm higher, i.e. leak direction); "
+        f"grey = value unchanged noise floor{ks_txt}",
+        color=INK, fontsize=10, loc="left",
+    )
+    ax.set_xlabel("Δc_field = c(off) − c(t0)", color=INK, fontsize=9)
+    ax.set_ylabel("field rows", color=INK, fontsize=9)
+    ax.legend(loc="upper left", frameon=False, fontsize=7.5)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, facecolor=SURFACE)
+    plt.close(fig)
+
+
 def plot_leak_vs_delta(rows: list[dict], out_path: Path, delta_threshold: float, leak_threshold: float) -> bool:
     usable = [r for r in rows if str(r["leak_rate"]) not in ("", "None")]
     if not usable:
@@ -832,6 +937,7 @@ def main(argv: list[str] | None = None) -> int:
     plot_delta_distribution(rows, out_dir / OUT_APPX_DELTA_DISTRIBUTION, args.delta_threshold)
     plot_delta_boxplot(rows, out_dir / OUT_APPX_DELTA_BY_DATASET)
     plot_delta_by_mask_group(rows, out_dir / OUT_MAIN_MASK_GROUP, args.delta_threshold)
+    plot_mask_group_density(rows, out_dir / OUT_MAIN_MASK_GROUP_DENSITY, args.delta_threshold)
     leak_plotted = plot_leak_vs_delta(
         rows, out_dir / OUT_APPX_LEAK_VS_DELTA, args.delta_threshold, args.leak_threshold
     )

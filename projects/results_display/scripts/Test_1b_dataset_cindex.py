@@ -35,6 +35,7 @@
       Main_topk_overlap.csv        各 k 的聚合重叠率（Jaccard / 交叠率 / 零重叠对数）
       Meta_metrics.json            报告用头条量化数字
   图：Main_per_dataset_profile.png              E1 Fig2 升级（逐数据集字段画像）
+      Main_per_dataset_ridge.png                新头条：33 数据集山脊图（profile 保留）
       Appx_per_dataset_distribution.png         指标 a：分布 + 四挡分层
       Appx_cross_dataset_field_spread.png       指标 b：同一字段跨数据集 c-index 分布
       Appx_topk_overlap_matrix.png              指标 c：两两重叠矩阵
@@ -96,6 +97,7 @@ AUDIT_N = 3
 
 # ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
 OUT_MAIN_PER_DATASET_PROFILE = "Main_per_dataset_profile.png"
+OUT_MAIN_PER_DATASET_RIDGE = "Main_per_dataset_ridge.png"
 OUT_MAIN_TOPK_OVERLAP_RATE = "Main_topk_overlap_rate.png"
 OUT_MAIN_TOPK_ZERO_SHARE = "Main_topk_zero_share.png"
 OUT_MAIN_TOPK_OVERLAP_CSV = "Main_topk_overlap.csv"
@@ -508,6 +510,90 @@ def figure_per_dataset_profile(
     )
     setup_axes(ax)
     fig.subplots_adjust(left=0.13, right=0.995, top=0.895, bottom=0.185)
+    fig.savefig(out_path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    return out_path
+
+
+def figure_per_dataset_ridge(
+    records: list[dict], out_path: Path, *, analyzer: str, tier_note: str
+) -> Path:
+    """新头条:33 数据集山脊图。逐行 KDE(单字段 c-index 分布,Silverman×2,
+    确定性无随机),行序/档间隙复用 row_positions_gapped + annotate_tiers;
+    每座山脊标 top-1 菱形 + 字段 leaf 短名 —— 18 个不同的 top-1 字段一眼可见。
+    原共享字段轴画像 Main_per_dataset_profile.png 保留。
+    """
+    try:
+        from scipy.stats import gaussian_kde
+    except Exception:
+        gaussian_kde = None
+    all_vals = [v for r in records for v in r["values_sorted"]]
+    lo = min(all_vals) - 0.010
+    hi = max(all_vals) + 0.060  # 右侧留 top-1 标注空间
+    grid = np.linspace(lo, hi, 360)
+    ys = row_positions_gapped(records)
+    n = len(records)
+    fig, ax = plt.subplots(figsize=(9.6, max(6.0, 0.32 * n + 3.6)))
+    fig.patch.set_facecolor(SURFACE)
+    tier_fill = {"main": COL_NEG, "main_ci": "#86b6ef", "supp": MUTED, "low": BASELINE}
+    ridge_scale = 0.60  # 山脊最大高度(数据坐标;行距 1.0,不重叠)
+    for yi, record in zip(ys, records):
+        vals = np.asarray(record["values_sorted"], dtype=float)
+        dens = None
+        if gaussian_kde is not None and vals.size > 2 and float(vals.std(ddof=1)) > 1e-9:
+            dens = gaussian_kde(vals, bw_method=2.12)(grid)  # 2.12 = Silverman×2
+        if dens is None:  # 退化回退:定点高斯堆(几乎不会发生)
+            dens = np.zeros_like(grid)
+            for v in vals:
+                dens += np.exp(-0.5 * ((grid - v) / 0.004) ** 2)
+        dens = dens / float(dens.max()) * ridge_scale
+        ax.axhline(yi, color=GRIDLINE, lw=0.6, zorder=1)
+        px = np.concatenate([[grid[0]], grid, [grid[-1]]])
+        py = np.concatenate([[yi], yi + dens, [yi]])
+        ax.fill(
+            px, py, color=tier_fill.get(record["tier"], MUTED),
+            alpha=0.55, edgecolor=INK, linewidth=0.35, zorder=3,
+        )
+        # top-1:菱形落在山脊轮廓上,右侧标注字段短名 + 数值
+        top1 = record["top1_value"]
+        dens_at_top1 = float(dens[np.argmin(np.abs(grid - top1))])
+        ax.scatter(
+            [top1], [yi + dens_at_top1 + 0.030], s=26, marker="D",
+            c=COL_POS, edgecolors=SURFACE, linewidths=0.5, zorder=6,
+        )
+        ax.text(
+            top1 + 0.006, yi + dens_at_top1 + 0.030,
+            f"{field_leaf(record['top1_field'])}  {top1:.3f}",
+            ha="left", va="center", fontsize=6.8, color=INK, zorder=6,
+        )
+    ax.axvline(CHANCE, color=BASELINE, lw=1.1, ls="--", zorder=1)
+    ax.text(
+        CHANCE, ys[0] + 1.30, "chance 0.5",
+        ha="center", va="bottom", fontsize=7, color=MUTED, zorder=6,
+    )
+    annotate_tiers(ax, records, ys, gap=0.9, fontsize=7.5)
+    ax.set_yticks(ys)
+    ax.set_yticklabels(
+        [f'{r["dataset"]}  (n_event={r["n_event"]})' for r in records],
+        fontsize=7.2,
+        color=INK,
+    )
+    ax.tick_params(axis="both", length=0)
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(min(ys) - 0.55, ys[0] + 1.45)
+    ax.set_xlabel("single-field c-index (5-fold mean, per field)")
+    ax.set_title(
+        "Test_1b — single-field c-index ridge profile per dataset  |  "
+        f"{analyzer} / landmark_0\n"
+        "ridge = distribution across that dataset's fields (area normalized per dataset); "
+        "dashed = 0.5 chance; ◆ = dataset top-1 (field + value)\n"
+        f"{tier_note}",
+        fontsize=10,
+        color=INK,
+        pad=10,
+    )
+    setup_axes(ax)
+    fig.subplots_adjust(left=0.13, right=0.985, top=0.895, bottom=0.075)
     fig.savefig(out_path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
     return out_path
@@ -1136,6 +1222,10 @@ def main(argv: list[str] | None = None) -> int:
     wrote.append(figure_per_dataset_profile(
         records, fields, shared_fields, stats,
         out_dir / OUT_MAIN_PER_DATASET_PROFILE,
+        analyzer=args.analyzer, tier_note=tier_note,
+    ))
+    wrote.append(figure_per_dataset_ridge(
+        records, out_dir / OUT_MAIN_PER_DATASET_RIDGE,
         analyzer=args.analyzer, tier_note=tier_note,
     ))
     wrote.append(figure_per_dataset_distribution(

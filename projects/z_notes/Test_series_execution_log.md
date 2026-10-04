@@ -1562,3 +1562,31 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 状态：完成（Test_4 局部三档表预览）。
 - 提交：脚本、测试、本条目；产物 `results_display/Test_4_three_tiers/*.csv` 与目录 README 被
   `.gitignore` 忽略（`results_display/**` / `*.csv`），留在磁盘不入库（如需入库按 S5d 惯例 `git add -f`）。
+
+---
+
+## S7：Test_1a / Test_1b 头条图重设计（旧图保留，2026-10-04）
+
+- 时间 / 执行者：2026-10-04 / Claude Code（用户指令：两张头条图"严重的缺乏想象力"、点图不好看；
+  **指标继续用 c-index 不动**（Test_1a 为 Δc = c(off) − c(t0)，零统计变换），只换表现层；原图保留）。
+- 现状诊断（数据支撑）：Test_1a 旧点图两组中位几乎相同（+0.0048 vs +0.0001），最显眼的中位横线
+  造成"两组没差别"的误读；真实信号在散布/右尾（改动组 p75=+0.070、38% 超本底最大值、KS p=3e-18），
+  点图未编码且 468 点挤成坨；Test_1b 旧画像柱高以 0 为基线，有用区间 0.47–0.63 压成中带细线。
+- 新增：
+  - `results_display/scripts/Test_1a_field_level.py`：新函数 `plot_mask_group_density` →
+    `Main_mask_group_density.png`（"两座山 + 噪声走廊"：共享分箱计数直方图，灰山=取值未改动本底、
+    红/蓝=被 mask 改动按箱符号分色、本底 5–95% 走廊 + 最大值虚线 + 轴下标注、右上关键数字、
+    标题带 KS D/p；确定性固定 bins 无随机）；旧 `Main_mask_group_delta.png` 保留，脚本仍生成。
+  - `results_display/scripts/Test_1b_dataset_cindex.py`：新函数 `figure_per_dataset_ridge` →
+    `Main_per_dataset_ridge.png`（33 座山脊：逐数据集单字段 c-index KDE，Silverman×2、四档分色、
+    chance 0.5 虚线贯穿、top-1 菱形 + 字段 leaf 短名 + 数值标注，18 个不同 top-1 字段直接入画）；
+    旧 `Main_per_dataset_profile.png` 保留，脚本仍生成。
+  - 两个产物目录 README 各加新图行、旧图行标"（旧版，保留）"；顺带修正 Test_1a README 里
+    leak 散点"未出数"的过时描述（审计已出数，468/468 已填）。
+- 口径：指标与数据完全不变，仅表现层；两图均确定性（山脊图固定网格 + 固定带宽），满足重跑 diff=0。
+- 验证：两脚本重跑，**除新增 PNG 外全部既有产物逐字节一致**（md5 逐文件比对）；
+  Test_1a `--audit` 3 组抽查 ALL PASS；像素冒烟检查确认新图各图层均在
+  （灰山/红蓝柱/走廊、四档山脊色）；全量 `pytest tests/ -q` = **227 passed, 8 skipped**。
+- 状态：完成（两张新图已出，待用户目验后按反馈迭代）。
+- 提交：两个脚本 + 本条目；产物 PNG 与目录 README 被 `.gitignore` 忽略（`results_display/**`），
+  留在磁盘不入库。
