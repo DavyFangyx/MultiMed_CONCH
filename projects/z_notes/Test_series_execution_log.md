@@ -1496,3 +1496,42 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
   - pkill 首轮因模式串出现在本 shell 命令行中自匹配被杀（exit 144），换 bracket 正则完成。
 - 决策点：**D4 修订已确认（2026-10-04）**。
 - 状态：进行中（15 集搜索重跑，watch 115457；完成后跑臂 C 链重出三臂表）。
+
+---
+
+## S6 续跑：Test_4 三档汇总表（局部预览，2026-10-04 10:30–10:52）
+
+- 时间 / 执行者：2026-10-04 / Claude Code 子 Agent（用户指令：Test_4 三档汇总表先做一版局部）
+- 新增：脚本 `results_display/scripts/Test_4_three_tiers.py`（纯汇总，可复跑）+ 测试
+  `tests/test_test4_three_tiers.py`（7 用例）+ 产物目录 `results_display/Test_4_three_tiers/`
+  （`Main_three_tiers.csv` 64 行、`Main_tier_summary.csv`、README）。
+- 口径：每 (dataset, work) 一行三档——①**报告值** = `results/Test_2b/arm_A/{ds}[gdc]/cindex.csv`
+  的 `{work}` 行（论文报告原值）；②**去泄露值** = arm_B 表 `{work}__landmark_0` 行（S6 已修复口径）；
+  ③**可达值** = `three_arm.csv` 的 `C_c`（Test_3 臂 C；附 B′ 对照列与 `delta_C_minus_Bp`）。
+  档间 Δ：Δ1=报告−去泄露、Δ2=去泄露−可达。主口径 mlp_clinic_flatten，clinic_cox 交叉列。
+  缺臂哲学与 Test_3_compare 一致：缺可达值的行**整行保留**、C 列与 Δ2 记 `pending`；arm_A 无该行
+  记 `n/a`（SURVPGC/MMSURV 的非原文数据集）。分层 = 协议 A 四档（n_event 从 manifest 与
+  event_summary **交叉核对**读，不硬编码）。
+- 局部结果（64 行 = 15 主集 × 工作组合；R13 主集全为 `main` 档，四档机制为扩范围预留）：
+  - 可达值 **25 行**（6 集）/ `pending_C` **39 行**（9 集：BLCA、BRCA、COAD、HNSC、LUAD、LUSC、
+    SKCM、STAD、TCGA_LIHC 各 4 组合 + HGCN_LUAD/LUSC/LIHC 3 对）；报告值缺 22 行（SURVPGC 12 + MMSURV 10）；
+  - Δ1（42 行）：mean **−0.0032**、median +0.0001（与 Test_2b 主结论一致：无系统性高估）；
+  - Δ2（25 行）：mean **+0.0272**、median +0.0425，可达值反超仅 5/25（PAAD 3、KIRC 2）；
+    Δ2 与 Test_3 交叉口径 Δc=C−B（mean −0.0272）互为镜像。
+- 抽查（`--audit`，前 2 个可达值行三档逐位）：
+  - GBM×INTEGRATIVE_DNN：报告 0.630881、去泄露 0.630277、Δ1 +0.000604、可达 0.542832、Δ2 +0.087445；
+  - GBM×MULTISURV：报告 0.671706、去泄露 0.671778、Δ1 −0.000072、可达 0.542832、Δ2 +0.128946；
+  - 每行核对：三档值 = 源表重读逐位一致；报告/去泄露值 = 折文件重算逐位一致（<1e-12）；
+    Δ = 手算差 6 位舍入严格相等；cox 列同源；`n_fields_work` 与 three_arm 一致 —— **ALL PASS**。
+- 测试与回归：`tests/test_test4_three_tiers.py` 7 passed（四档边界 / 三档装配与 Δ / 缺可达值不中断 /
+  全缺不崩溃·空表与缺文件两态 / 写出与聚合 / three_arm 对齐 + 缺 n_event 显式报错）；
+  全量 `pytest tests/ -q` = **227 passed, 8 skipped**；脚本幂等（重跑 diff=0）。
+- 说明（**预览版**）：可达值产自 Test_3 **旧 sig 停点**（δ=0.005 + Wilcoxon 门控，与
+  `archive_sigstop_20261004/three_arm.csv` 为同一份 09:49 快照）；D4 修订（2026-10-04，
+  `stop_mode=gain_only`）15 集重跑完成后，本表随 three_arm.csv 重出，对应数据集 C 值与 Δ2 会变。
+  搜索 watch（旧 3577525 / 新 115457）与臂 C 链全程未触碰。
+- 偏差与原因：无。
+- 决策点：无新增。
+- 状态：完成（Test_4 局部三档表预览）。
+- 提交：脚本、测试、本条目；产物 `results_display/Test_4_three_tiers/*.csv` 与目录 README 被
+  `.gitignore` 忽略（`results_display/**` / `*.csv`），留在磁盘不入库（如需入库按 S5d 惯例 `git add -f`）。
