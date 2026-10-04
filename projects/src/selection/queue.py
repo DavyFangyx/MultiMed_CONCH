@@ -13,7 +13,7 @@ from common.paths import config_family_dir
 
 BUCKETS = ("queue", "running", "done", "failed")
 DEFAULT_ROOT = config_family_dir("Test_3_search")
-WORKER_LOCAL_KEYS = {"queue_root", "poll_seconds", "max_jobs"}
+WORKER_LOCAL_KEYS = {"queue_root", "poll_seconds", "max_jobs", "workers"}
 
 
 def ensure_dirs(root: Path) -> Path:
