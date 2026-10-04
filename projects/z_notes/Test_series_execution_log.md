@@ -13,7 +13,7 @@
 | D4 | Test_3 最优组合口径（sig_stop 推荐 vs 历史 best） | **已确认（R7）+ 修订（2026-10-04，用户确认）** | 贪婪用 gain-only δ=0.005 早停（2026-10-04 起：gain≥0.005 更新 k_star 且清零，gain<0.005 计数，连续 3 步停，k_sig=k−3；原 sig_stop 经 `--stop-mode sig` 保留）；另报历史 best；best 口径三臂表由用户自出 |
 | D5 | 回推：数据集中途降级/剔除 | 待确认 | — |
 | D6 | Test_5 三轴口径（HGCN 编码/模型、多模态子集、Q 修复路径） | **已确认（2026-10-03，三次修订）** | **HGCN 编码纳入 E 轴且先落地**（第三档，S11 只做编码侧：任意 scheme + landmark，pkl 格式不变，评估臂待模型接入后补跑）；**HGCN 模型不接入本轮**（用户移植的训练器为独立工作，M 轴不含）；多模态子集 = 15 主集 ∩ registry 5 集 = BRCA/COAD/KIRC/LIHC；Q = 先修复 Clinic_Analyzer 指标（对齐 SurvPGC `utils/survival_metrics.py`）再离线重算，双重验收 diff=0 |
-| D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | 待执行 | — |
+| D7 | S10 Q 修复验收（在线 vs 离线 diff=0） | **已关闭（2026-10-04，S12b pilot）** | 小样 5 conf 全部 `source=metrics_input_dump`，worst c-index |diff| = 5.55e-17（打印 0.0）；批量复检 39 run dirs worst 0.0 |
 | D8 | S11 HGCN L0-L5 等价性回归（等价→放行 / 不等价→冻结） | **已确认（2026-10-03）：等价→放行** | byte 级唯一差异 = summary.md 输出根路径行（构造性不可复现）；值级 96/96 全等 → 视为等价放行；既有 L0-L5 产物维持冻结不覆盖 |
 | D9 | S13 Test_5 结论与 Test_4 三档表衔接 | 待执行 | — |
 
@@ -1445,6 +1445,33 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 偏差与原因：arm C/greedy 按规格跳过（模板仅 2/15，待 S6 搜索）；HGCN_* 的 Test_3 变体不在 B′ 范围。
 - 决策点：无新增。
 - 状态：完成（S12a）。**S12b 训练推迟**（用户指令：S6 收尾后、限 GPU 0–3）；S12b 所需 clinic_dir / LABEL_FILE_PATH / EXP_GROUP 映射已在任务报告中列明（arm A = `baseline/{scheme}/embeddings/pt` + 旧 label 回退；arm B/B′ = `…/landmark_0/…` + `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`；B′ 需经 `apply_patches` 路由）。
+
+---
+
+## S12b Test_5 批跑基建 + 小样验证 + 批量投放（2026-10-04，用户指令：贪婪已停、继续推进）
+
+- 时间 / 执行者：2026-10-04 / Claude Code 子 Agent
+- 目标：建 Test_5 四个子检查的队列/入队/调度/汇总基建，小样验证 D7（在线 dump vs 离线重算 diff=0），然后限 GPU 0–3 投放全量。
+- 产物（scripts/，全部新建）：
+  - `scripts/Test_5_common.py`（口径：子检查→conf 枚举/队列/EXP_GROUP；数据集读 manifest、绑定读 templates/*/fields.json）、`Test_5_enqueue.py`（只入队、幂等；`--dry-run/--status/--list/--only/--include-multimodal`）、`Test_5_drain.py`（单卡 drainer）、`Test_5_scheduler.py`（0–3 空闲卡调度：util<15% 且 mem<800MiB，放置前逐卡 re-check，最多 4 drainer，只回收自己 spawn 的进程）、`Test_5_summarize.py`（每子检查 `results/Test_5_invariance/{sub}/{dataset}/cindex.csv`）、`Test_5_queue.sh`（总入口）、`Test_5_baseline_c.py`（基线 C 编码）。
+  - 队列：`Clinic_Analyzer/configs/Test_5_{5E_2b,5E_3,5M_2b,5M_3}/{queue,running,done,failed}`（5M_2b 另 `parked/`）。
+- conf 集（名义 460 / 入队 384 / parked 72 / 未产 4）：5E_2b 128（15 主集 × 绑定 × 2 臂 × baseline × mlp）；5E_3 66（B′ 4 工作 × 15 = 60 + C 6 模板中只 GBM/OV 有 baseline 编码 → 投 62，缺 4）；5M_2b 200（snn 128 入队 + 多模态 72 parked）；5M_3 66（B′ 60 + C 6，全 prompt × clinic_cox）。
+  - **与 spec ≈388 的差异 = +72**：spec 把 5E_3/5M_3 的 B′ 估为每数据集 1 组合（15×2=30），实际 B′ 按工作枚举（4 工作 × 15 = 60 + C 6），两子检查各 +36。
+- 小样（pilot）验证：6 conf 跨 4 分支 → **5 done / 1 多模态失败**（见下）。**D7 关闭**：`Test_5_q_recompute.py --merge` 对 5 个 pilot run → `refs=5 rows=25` 全部 `source=metrics_input_dump`，worst |diff| = **5.55e-17**（打印 0.0）；批量复检 39 run dirs / 176 行 worst 0.0。表行全部 5 折齐全（run_config per_fold=5），无半截行。
+- 批量投放（在跑）：调度器 PID **124255**（10:32:59 起，setsid nohup），gpu0→5M_2b、gpu1→5E_2b、gpu2→5M_3、gpu3→5E_3，workers=2/卡；GPU 4–7 全程未碰。进度：`bash scripts/Test_5_queue.sh status`；日志 `results/Test_5_invariance/logs/{scheduler,drain_{sub}_gpu{g}}.log`；停止 = `scheduler_stop`（只 kill 调度器，已起 drainer 清空自退）。10:41 快照 done=50；核验时（11:15）done=55/384。
+- 关键口径与证据：
+  - **EXP_GROUP 映射**（进程内覆写 cindex 常量，不新增目录约定）：runs → `results/Test_5_invariance/{sub}/runs`；表 → `results/Test_5_invariance/{sub}/{dataset}/cindex.csv`。证据：`cindex.py:43-46/:136-137/:260/:413/:466`、`Clinic_Analyzer/run.sh:242/:121-128`；drainer 从 conf 读回 EXP_GROUP。
+  - **summarize 完成性门**：只汇总"conf ∈ done 且 run dir 有 `.done`"的 run（防 `_merge_cindex_rows` 只追加不更新导致半截行永久残留）；`--allow-partial` 仅供调试。
+  - **发现并规避 Test_2b 只读范围问题**：`iter_cindex_jobs` 枚举 landmark 臂会无条件重写 `results/Test_2b/arm_B/labels/*.csv/json`（`landmark_labels.py:90-138`）——已核 4 集重生成与现文件逐字节一致，并在 Test_5 进程内换成"存在即只读复用"；建议 S13 评估是否给 A_pipeline 加 skip-if-exists。
+  - 训练日志中 `c-index ipcw/BS/IBS/iauc: observed time contains values smaller zero` 为已知非致命告警（负时间行被指标层过滤，val_cindex 不受影响，日志 :1338 有记录）；Q 四指标由离线重算（D7）供给。
+- 待办（S13 / 后补）：
+  1. **多模态 72 conf（parked）**：根因 = Clinic_Analyzer 的 label metadata 是 case 级 slide_id，而 `SurvPGC_Workspace/{study}/P/uni_v1/*.pt` 是 slide 级 → WSI filter kept 0。用上游 slide 级 metadata（`SurvPGC_github_init/datasets_csv/metadata/{study}.csv`）试跑同 conf 通过（kept 1055）。**需用户定 label 源 + landmark_0 从 slide 级 label 的派生口径**后 `--include-multimodal` 投放。
+  2. **5E_3 的 4 个 C×baseline**（KIRC/LAML/LGG/PAAD）：greedy 字段无基线 schema 类型映射，待支持后补投；其余 9 主集无 C 模板（贪婪停摆，非本轮范围）。
+  3. hgcn_clinic 编码臂（E 轴第三档，≈188 confs）待 HGCN 模型接入后另定（§8bis.3）。
+  4. 队列跑完后 `summarize` 收尾出表；Q 电池正式落点由 S13 定。
+- 偏差与原因：无（多模态失败与 4 个 baseline-C 缺编码均非脚本缺陷，已如实上报）。
+- 决策点：**D7 已关闭**（在线 vs 离线 diff=0）；多模态 label 源口径待用户。
+- 状态：进行中（调度器在跑）。
 
 ---
 
