@@ -516,12 +516,14 @@ def figure_per_dataset_profile(
 
 
 def figure_per_dataset_ridge(
-    records: list[dict], out_path: Path, *, analyzer: str, tier_note: str
+    records: list[dict], out_path: Path, *, analyzer: str
 ) -> Path:
     """新头条:33 数据集山脊图。逐行 KDE(单字段 c-index 分布,Silverman×2,
     确定性无随机),行序/档间隙复用 row_positions_gapped + annotate_tiers;
     每座山脊标 top-1 菱形 + 字段 leaf 短名 —— 18 个不同的 top-1 字段一眼可见。
     原共享字段轴画像 Main_per_dataset_profile.png 保留。
+    构图:单行标题 + 一行副标题(编码说明);右侧留白按最长 top-1 标注估算,
+    全部标注完整入图;档位说明在图中左侧由 annotate_tiers 承担,不再重复。
     """
     try:
         from scipy.stats import gaussian_kde
@@ -529,14 +531,19 @@ def figure_per_dataset_ridge(
         gaussian_kde = None
     all_vals = [v for r in records for v in r["values_sorted"]]
     lo = min(all_vals) - 0.010
-    hi = max(all_vals) + 0.060  # 右侧留 top-1 标注空间
+    # 右侧留白:先用最长标注估算起步 xlim,再用渲染器实测各 top-1 标注右端精确收紧
+    longest_label = max(
+        len(f"{field_leaf(r['top1_field'])}  {r['top1_value']:.3f}") for r in records
+    )
+    hi = max(all_vals) + 0.012 + longest_label * 0.0040
     grid = np.linspace(lo, hi, 360)
     ys = row_positions_gapped(records)
     n = len(records)
     fig, ax = plt.subplots(figsize=(9.6, max(6.0, 0.32 * n + 3.6)))
     fig.patch.set_facecolor(SURFACE)
     tier_fill = {"main": COL_NEG, "main_ci": "#86b6ef", "supp": MUTED, "low": BASELINE}
-    ridge_scale = 0.60  # 山脊最大高度(数据坐标;行距 1.0,不重叠)
+    ridge_scale = 0.62  # 山脊最大高度(数据坐标;行距 1.0,不重叠)
+    top1_texts: list = []
     for yi, record in zip(ys, records):
         vals = np.asarray(record["values_sorted"], dtype=float)
         dens = None
@@ -550,9 +557,10 @@ def figure_per_dataset_ridge(
         ax.axhline(yi, color=GRIDLINE, lw=0.6, zorder=1)
         px = np.concatenate([[grid[0]], grid, [grid[-1]]])
         py = np.concatenate([[yi], yi + dens, [yi]])
+        fill_color = tier_fill.get(record["tier"], MUTED)
         ax.fill(
-            px, py, color=tier_fill.get(record["tier"], MUTED),
-            alpha=0.55, edgecolor=INK, linewidth=0.35, zorder=3,
+            px, py, color=fill_color,
+            alpha=0.55, edgecolor=fill_color, linewidth=0.6, zorder=3,
         )
         # top-1:菱形落在山脊轮廓上,右侧标注字段短名 + 数值
         top1 = record["top1_value"]
@@ -561,16 +569,12 @@ def figure_per_dataset_ridge(
             [top1], [yi + dens_at_top1 + 0.030], s=26, marker="D",
             c=COL_POS, edgecolors=SURFACE, linewidths=0.5, zorder=6,
         )
-        ax.text(
+        top1_texts.append(ax.text(
             top1 + 0.006, yi + dens_at_top1 + 0.030,
             f"{field_leaf(record['top1_field'])}  {top1:.3f}",
             ha="left", va="center", fontsize=6.8, color=INK, zorder=6,
-        )
+        ))
     ax.axvline(CHANCE, color=BASELINE, lw=1.1, ls="--", zorder=1)
-    ax.text(
-        CHANCE, ys[0] + 1.30, "chance 0.5",
-        ha="center", va="bottom", fontsize=7, color=MUTED, zorder=6,
-    )
     annotate_tiers(ax, records, ys, gap=0.9, fontsize=7.5)
     ax.set_yticks(ys)
     ax.set_yticklabels(
@@ -580,20 +584,28 @@ def figure_per_dataset_ridge(
     )
     ax.tick_params(axis="both", length=0)
     ax.set_xlim(lo, hi)
-    ax.set_ylim(min(ys) - 0.55, ys[0] + 1.45)
+    ax.set_ylim(min(ys) - 0.55, ys[0] + 0.90)
+    # 实测每条 top-1 标注的右端,精确收紧右界(全部标注完整入图,且不留多余空白)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    inv = ax.transData.inverted()
+    right_edge = hi
+    for text in top1_texts:
+        bb = text.get_window_extent(renderer)
+        x1_data = float(inv.transform((bb.x1, 0.0))[0])
+        right_edge = max(right_edge, x1_data)
+    ax.set_xlim(lo, right_edge + 0.008)
     ax.set_xlabel("single-field c-index (5-fold mean, per field)")
     ax.set_title(
-        "Test_1b — single-field c-index ridge profile per dataset  |  "
-        f"{analyzer} / landmark_0\n"
-        "ridge = distribution across that dataset's fields (area normalized per dataset); "
-        "dashed = 0.5 chance; ◆ = dataset top-1 (field + value)\n"
-        f"{tier_note}",
+        f"Test_1b — single-field c-index ridge profile per dataset ({analyzer} / landmark_0)\n"
+        "ridge = per-dataset field distribution (area normalized) · dashed = chance 0.5 · ◆ = top-1 field + value",
         fontsize=10,
         color=INK,
-        pad=10,
+        pad=8,
+        linespacing=1.5,
     )
     setup_axes(ax)
-    fig.subplots_adjust(left=0.13, right=0.985, top=0.895, bottom=0.075)
+    fig.subplots_adjust(left=0.18, right=0.975, top=0.955, bottom=0.055)
     fig.savefig(out_path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
     return out_path
@@ -1226,7 +1238,7 @@ def main(argv: list[str] | None = None) -> int:
     ))
     wrote.append(figure_per_dataset_ridge(
         records, out_dir / OUT_MAIN_PER_DATASET_RIDGE,
-        analyzer=args.analyzer, tier_note=tier_note,
+        analyzer=args.analyzer,
     ))
     wrote.append(figure_per_dataset_distribution(
         records, out_dir / OUT_APPX_PER_DATASET_DISTRIBUTION,

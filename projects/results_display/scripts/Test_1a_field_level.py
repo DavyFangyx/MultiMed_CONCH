@@ -761,7 +761,7 @@ def plot_mask_group_density(rows: list[dict], out_path: Path, delta_threshold: f
     for y in (-delta_threshold, delta_threshold):
         ax.axvline(y, color=BASELINE, linewidth=1.0, linestyle="--", zorder=2)
 
-    # 关键数字(全部由数据现算,不硬编码)
+    # 关键数字(全部由数据现算,不硬编码;KS 也在内,标题只留短说明)
     aff_med = float(np.median(aff))
     aff_p75 = float(np.percentile(aff, 75))
     aff_p95 = float(np.percentile(aff, 95))
@@ -769,27 +769,26 @@ def plot_mask_group_density(rows: list[dict], out_path: Path, delta_threshold: f
     share_gt_005 = float(np.mean(aff > 0.05))
     noise_med = float(np.median(noise))
     noise_p95 = float(np.percentile(noise, 95))
+    ks_line = ""
+    try:
+        from scipy.stats import ks_2samp
+
+        ks_d, ks_p = ks_2samp(aff, noise)
+        ks_line = f"   |   KS D={ks_d:.3f} p={ks_p:.1e}"
+    except Exception:
+        pass
     stats_txt = (
         f"affected (n={aff.size}):  median {aff_med:+.3f}   p75 {aff_p75:+.3f}   p95 {aff_p95:+.3f}\n"
         f"noise floor (n={noise.size}):  median {noise_med:+.3f}   p95 {noise_p95:+.3f}   max {noise.max():+.3f}\n"
-        f"{share_beyond:.1%} of affected beyond noise max   |   {share_gt_005:.1%} > +0.05"
+        f"{share_beyond:.1%} of affected beyond noise max   |   {share_gt_005:.1%} > +0.05{ks_line}"
     )
     ax.text(
         0.97, 0.96, stats_txt, transform=ax.transAxes,
         ha="right", va="top", fontsize=7.2, color=MUTED, linespacing=1.6,
     )
-    ks_txt = ""
-    try:
-        from scipy.stats import ks_2samp
-
-        ks_d, ks_p = ks_2samp(aff, noise)
-        ks_txt = f"   |   KS D={ks_d:.3f} p={ks_p:.1e}"
-    except Exception:
-        pass
     ax.set_title(
         "Test_1a Δc by mask effect — shared-bin counts\n"
-        "red/blue = value changed by mask (red = off arm higher, i.e. leak direction); "
-        f"grey = value unchanged noise floor{ks_txt}",
+        "red/blue = value changed by mask · grey = value unchanged (noise floor)",
         color=INK, fontsize=10, loc="left",
     )
     ax.set_xlabel("Δc_field = c(off) − c(t0)", color=INK, fontsize=9)
