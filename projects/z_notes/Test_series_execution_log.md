@@ -1446,3 +1446,28 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 决策点：无新增。
 - 状态：完成（S12a）。**S12b 训练推迟**（用户指令：S6 收尾后、限 GPU 0–3）；S12b 所需 clinic_dir / LABEL_FILE_PATH / EXP_GROUP 映射已在任务报告中列明（arm A = `baseline/{scheme}/embeddings/pt` + 旧 label 回退；arm B/B′ = `…/landmark_0/…` + `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`；B′ 需经 `apply_patches` 路由）。
 
+---
+
+## S6 续跑：Test_3 局部三臂表（预览，2026-10-04 09:44–09:52）
+
+- 时间 / 执行者：2026-10-04 / Claude Code 子 Agent（用户指令：不等 15 集齐，先用已有 result.json 的数据集出**局部三臂表**）
+- 现状确认（09:44 现场，以现场为准）：
+  - result.json **6/15**：TCGA-GBM、KIRC、LAML、LGG、OV、PAAD；搜索 watch（PID 3577525，9 集在跑，GPU 0/2/3/4/5/6）**全程未触碰**；
+  - 臂 C 链（PID 3904207，19 h）已对这 6 集完成 generate → encode（gpu 7）→ enqueue：`Test_3_arms` 队列恰为这 6 个 greedy conf（`tcga_{ds}__Test_3_greedy_TCGA-{DS}__landmark_0__mlp_clinic_flatten.conf`），**无缺口，未补跑**。
+- arms drain（09:46:26–09:48:58，GPU 1 × workers 6；避开搜索占用的 0/2/3/4/5，用户 Table3 已结束故 GPU 1 空闲；GPU 7 留给链内 encode）：done 64 → **70**、failed 0；6 个 greedy run 各 5 折齐（`results/Test_2b/arm_B/runs/tcga_{ds}__Test_3_greedy_TCGA-{DS}__landmark_0/mlp_clinic_flatten/`）。
+- summarize：`Test_3_arms.py summarize --arm ksig --datasets <6 集>`（名单由现场 result.json 存在性导出，非硬编码）→ 6 张 `{ds}[gdc]` 表各 +1 行（greedy × mlp_clinic_flatten）；**无重复行键，CSV 与 run_config.json 行键逐一对齐**（GBM 21 / KIRC 26 / LAML·LGG·OV·PAAD 各 21 行）。
+- 比较：`Test_3_compare.py --all` → **pairs=64 done=25 pending=39，未报错**——实测确认脚本对缺 result.json 的数据集只记 pending（`MissingArm` 捕获后 continue），**无需修改**。产物：`results/Test_3_greedy_vs_works/three_arm.csv`（25 行）、`missed_fields.csv`（112 行）、`compare/{ds}__{work}.json` 25 份、`results_display/Test_3_greedy_vs_works/`（csv 副本 + Δc 图）。
+- 抽查（表内前 2 行，逐位核对）：三臂 mean/std 与折文件手算（`val_result_fold*.csv` 末行 `val_cindex`，5 折 mean/std ddof=1）**逐位一致**，`run_config.json` 的 `val_per_fold` 亦逐位一致：
+  - TCGA-GBM / MULTISURV：B 0.671778/0.023908、B′ 0.667205/0.022165、C 0.542832/0.037079，Δc(C−B′)=−0.124373；
+  - TCGA-GBM / SURVPGC：B 0.627797/0.028854、B′ 0.625925/0.027189、C 0.542832/0.037079，Δc(C−B′)=−0.083093。
+- **局部 Δc = C − B′ 摘要（25 个 (数据集 × 工作组合)，已完成 6 集）**：
+  - 全体：mean **−0.0282**、median **−0.0416**、Δc>0 仅 **5/25（20%）**；交叉口径 Δc=C−B mean −0.0272（同向）；
+  - 分数据集 mean Δc：PAAD **+0.0746**（4 行中 3 正）> KIRC −0.0019（5 行中 2 正）> LGG −0.0382 > LAML −0.0493 > OV −0.0657 > GBM −0.0950；
+  - 贪婪字段数 vs 工作组合字段数：OV 1、GBM 3、LGG 4、PAAD 6、LAML 7、KIRC 9（工作侧 3–10）——胜/负与字段数不单调（PAAD 6 字段仍胜，KIRC 9 字段仅打平）。
+- pending 清单（39 pair，缺 result.json 故缺 C 臂）：BLCA、BRCA、COAD、HNSC、LUAD、LUSC、SKCM、STAD、TCGA_LIHC 各 4 组合，另加 HGCN_LUAD/LUSC/LIHC 三个专属对——待各自 result.json 落盘后由臂 C 链自动 generate/encode/enqueue。
+- 说明：**本表为预览版**（15 集齐后由链尾 `summarize --arm bp/ksig` + `compare --all` 重出完整版）；链内新产的 `A_pipeline/templates/Test_3_greedy_*`（6 个）与 `schemes.json` 注册项属链产物（10-03 16:23–10-04 07:38 生成，非本步），**留在工作区不入库**，随完整版一并提交。
+- 偏差与原因：无。
+- 决策点：无新增。
+- 状态：完成（局部三臂表预览）。
+- 提交：本条目（只 add 执行日志）。
+
