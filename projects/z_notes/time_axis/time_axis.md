@@ -197,5 +197,4 @@ python -m pytest tests/test_time_stats.py -q
 - [`t_record_derivation.md`](t_record_derivation.md) — t_record 区间判据的逐条推导与实例（P1/P2 病理锚点、N1/N2 否定勾选、既往史定点、molecular/OCA 规则）。§4 判据表是该文档的落地版。**未落地部分**：§8.1 `timepoint_category` 对照表（须先做 §8.1 的方向检验）、biospecimen 实体连接、合并开关 M1/M2/M3 与假设开关 A1（默认关；Δ 参数恒 0），A2 随访阶梯已开启。
 - [`index_date_anchor_audit.md`](index_date_anchor_audit.md) — index_date 轴锚点全库审计（含 SKCM 反例）。枚举分布、缺键打标、day-0 一致性三项已落地为 `index_date_stats.csv`（2026-09-30）；原发诊断平移与换数据前的重跑提示仍未落地。
 - [`t_write.md`](t_write.md) — GDC 入库时间（`updated_datetime`）审计，**另册**；不参与 landmark / 泄露判定。
-- [`错误.md`](错误.md) — 旧口径的批判与设计动因（三条硬伤 → 区间判据的动机），历史文档，非现行判据。
 - 相关口径：`z_notes/Test_series_spec.md`（Test_ 系列实验规格，§2.1 泄露定义、§2.5 landmark 三要件）；`z_notes/Test_series_execution_log.md`（历史决策与执行记录）。

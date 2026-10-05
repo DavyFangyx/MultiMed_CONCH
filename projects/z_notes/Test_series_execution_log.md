@@ -23,7 +23,7 @@
 
 - 时间 / 执行者：2026-09-29 / Claude（主会话）
 - 目标：建立 Test_ 系列单步执行框架：规格文档、步骤注册表、决策点清单、执行日志模板与 Git 提交协议。
-- 输入：用户实验清单（Test_1–Test_4）、`project_overview.md`、`z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`、`rawdata_stats/_shared/event_impact_analysis/`。
+- 输入：用户实验清单（Test_1–Test_4）、`README.md`、`z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`、`rawdata_stats/_shared/event_impact_analysis/`。
 - 命令与参数：无（纯文档）。
 - 产物：`z_notes/Test_series_spec.md`、`z_notes/Test_series_execution_log.md`（本文件）。
 - 审计：规格中锁定口径（定量泄露、控制变量、三档、Test_0 规则、Git 协议）与用户三轮反馈一致。
@@ -1703,3 +1703,14 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 状态：代码 + 产物 + 文档完成；官方 kept_fields 是否切换新口径（选项 C）与下游重跑范围待用户。
 - 提交：本条目 + 代码 + 测试（results_display/** 与 rawdata_stats/** 被 gitignore，留在磁盘）。
 
+
+## 单步登记（2026-10-05 起，新格式）
+
+2026-10-05 起，每次改动在下方表格追加一行。**只有明确的决策点才会成为 git 提交**（spec §9）；
+脚本小改 / 改名 / 决策点的单步实现不提交、不单独登记。格式：改动名称 | git 提交 | 时间 | 简单描述。
+
+| 改动名称 | git 提交 | 时间 | 简单描述 |
+|---|---|---|---|
+| gt≤0 患者全局剔除（决策点） | `gt≤0 患者全局剔除(决策点 2026-10-05):全局过滤 + rawdata_stats 统计 + MMSURV 重跑验证` | 2026-10-05 | 训练/评估全局过滤 gt≤0 占位坑患者（label 层、splits 不动）；rawdata_stats 分类计数 + 排除清单；MMSURV 132 confs 重跑验证：59/66 对 Δ 逐位归零，7 对残差根因 = 特征工件不一致 |
+| landmark-first 字段准入（决策点） | `S7b: Test_1a landmark-first 字段准入(t0 口径 stats + R0-R6 重跑 + 报表准入集)` | 2026-10-05 | t0 口径字段统计 + R0-R6 重跑，172/468 字段排除，Test_1a 报表准入集 296 字段 |
+| 论文字段缺失处理 | （并入 S6/Test_3 提交链） | 2026-10-02–04 | missed_fields 遗漏字段清单（产物已被 gt≤0 清理删除，重跑属"后议"） |

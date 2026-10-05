@@ -2,7 +2,7 @@
 
 本文档是 Test_ 系列实验的**唯一口径来源与步骤注册表**。所有执行 agent 必须先读本文档，再读 `z_notes/Test_series_execution_log.md`（执行日志）。若本文档与仓库现状冲突，以本文档明确写出的规则为准，并在执行日志记录冲突与处理方式。
 
-相关文档：项目口径见 `project_overview.md`；三处目录命名公约（configs/results/results_display 以 Test 编号为主键）见 `z_notes/experiment_list/naming_convention.md`；可复用机制见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`（E2 的评估器/缓存/搜索规格仍有效，但 E2 的算法竞赛目标作废）。
+相关文档：项目口径见 `README.md`；三处目录命名公约（configs/results/results_display 以 Test 编号为主键）见 `z_notes/experiment_list/naming_convention.md`；可复用机制见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`（E2 的评估器/缓存/搜索规格仍有效，但 E2 的算法竞赛目标作废）。
 
 ---
 
@@ -96,7 +96,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 
 依赖：S0 → S1 → S2 → S3 → S4；S1 → S5 → S5b / S5c → S6 → S7；S4/S6 异常 → S8。S5b 的 leak_rate 交叉列依赖 S2（Test_2a）出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：S9 → S10 → S11 → S12 → S13；S9 不依赖 S6/S7 收尾，但 S12 批跑与 S6 续跑共享 GPU/队列资源，执行时协调。
 
-**执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；每完成一步做一次 git 提交（见 §9）。**未在用户实验清单中明确的事项（数据集范围、口径、规则数值等），执行前必须先向用户报告并获确认，不得擅自扩大范围或替用户做决定。**
+**执行纪律**：单步执行；每步有执行报告（追加到执行日志）；决策点未确认前禁止进入依赖该决策的下一步；决策点确认后做一次 git 提交（见 §9）。**未在用户实验清单中明确的事项（数据集范围、口径、规则数值等），执行前必须先向用户报告并获确认，不得擅自扩大范围或替用户做决定。**
 
 ## 4. Test_0 规格：实验可用数据集评估
 
@@ -347,16 +347,18 @@ Clinic_Analyzer 现有 `utils/core_utils.py::_calculate_metrics`（:535-617）6 
 
 ## 9. Git 提交协议
 
-- **每完成一步做一次提交**，提交只包含本步的文件（`git add <具体路径>`，**禁止 `git add -A`** 或 `git add .`——工作树里有与 Test_ 系列无关的历史修改）。
+- **只有明确的决策点（用户拍板/口径确认）才可以成为一次提交**（用户指令 2026-10-05）。脚本小改、改名、以及决策点的单步实现**不单独提交**，随所属决策点一起提交。
+- 提交只包含本决策点的文件（`git add <具体路径>`；工作树有他人并发修改时禁止 `git add -A`）。
 - `results/`、`results_display/`、`outputs/`、`rawdata_stats/` 已被 .gitignore，产物不入库；提交内容 = 代码、脚本、文档、测试。
-- 提交信息：`S{n}: {步骤中文摘要}`，结尾加 `Co-Authored-By: Claude Code <noreply@anthropic.com>`。
-- 每完成一步做一次提交并 push 到 origin（用户指令 2026-10-02："每完成一步，存档与上传"）。
+- 提交信息：`{决策点摘要}`，结尾加 `Co-Authored-By: Claude Code <noreply@anthropic.com>`。
+- 决策点提交后 push 到 origin。
 
 ## 10. 执行日志协议
 
 - **单文件归档**：`z_notes/Test_series_execution_log.md`，所有执行报告追加到该文件（不另开文件）。
+- **2026-10-05 起**：新改动按文件末尾"单步登记"表格追加一行（改动名称 | git 提交 | 时间 | 简单描述），不再使用下方 S{n} 模板（历史条目原样保留）。
 - 追加前先重读文件末尾，避免覆盖并发写入。
-- 模板：
+- 历史模板（2026-10-05 前）：
 
 ```markdown
 ## S{n} {步骤名}
