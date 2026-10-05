@@ -670,6 +670,136 @@ def test_resolve_json_field_dict_path_skips_gdc_csv():
         assert resolve_json_field_dict_path("TCGA-BRCA", explicit_path=custom) == custom
 
 
+def test_field_stats_case_values_landmark_matches_field_bank():
+    from discovery.field_bank import extract_field_bank_raw_values
+    from discovery.landmark import patient_landmark, resolve_landmark
+    from discovery.stats import _case_field_values
+
+    case = {
+        "submitter_id": "TCGA-AA-0001",
+        "demographic": {"vital_status": "Alive", "race": "white"},
+        "diagnoses": [
+            {
+                "days_to_diagnosis": 0,
+                "days_to_last_follow_up": 100,
+                "primary_diagnosis": "Adenocarcinoma",
+                "treatments": [
+                    {
+                        "number_of_cycles": 4,
+                        "days_to_treatment_start": 10,
+                        "updated_datetime": "2024-01-11T00:00:00+00:00",
+                    },
+                    {
+                        "number_of_cycles": 8,
+                        "days_to_treatment_start": 150,
+                        "updated_datetime": "2024-06-01T00:00:00+00:00",
+                    },
+                ],
+            }
+        ],
+        "follow_ups": [
+            {
+                "ecog_performance_status": "0",
+                "days_to_follow_up": 80,
+                "updated_datetime": "2024-03-01T00:00:00+00:00",
+            },
+            {
+                "ecog_performance_status": "3",
+                "days_to_follow_up": 200,
+                "updated_datetime": "2024-08-01T00:00:00+00:00",
+            },
+        ],
+    }
+    state = resolve_landmark(case, landmark=True, landmark_time=100)
+    assert state == patient_landmark(case, landmark_time=100)
+
+    # landmark 路径与 field bank 提取逐位一致(states 为 None)
+    for field in (
+        "diagnoses[].treatments[].number_of_cycles",
+        "follow_ups[].ecog_performance_status",
+        "demographic.race",
+    ):
+        valid_vals, states, raw_vals = _case_field_values(
+            case, field, landmark_state=state, landmark_time=100
+        )
+        assert states is None
+        assert valid_vals == extract_field_bank_raw_values(
+            case, field, landmark=state, landmark_time=100
+        )
+        assert raw_vals  # raw 提取始终存在(masked_count 审计用)
+
+    # 官方路径(landmark_state=None)行为不变
+    valid_vals, states, raw_vals = _case_field_values(
+        case, "follow_ups[].ecog_performance_status", landmark_state=None
+    )
+    assert valid_vals == ["0", "3"]
+    assert states == ["valid", "valid"]
+
+
+def test_stats_parser_landmark_time_default_none():
+    from discovery.cli import build_stats_parser
+
+    assert build_stats_parser().parse_args([]).landmark_time == "none"
+    assert build_stats_parser().parse_args(["--landmark_time", "0"]).landmark_time == "0"
+
+
+def test_filter_parser_out_suffix_and_r3_default():
+    from discovery.cli import build_filter_parser
+
+    args = build_filter_parser().parse_args(["--landmark_time", "0", "--out_suffix", "t0stats"])
+    assert args.out_suffix == "t0stats"
+    assert args.R3_coverage == 0.30
+    assert args.R4_n_unique == 2
+    assert args.R4_mode_share == 0.95
+
+
+def test_paths_landmark_stats_and_out_suffix():
+    from common.paths import (
+        dataset_exclusion_log_path,
+        dataset_field_registry_path,
+        dataset_field_stats_path,
+        dataset_filter_log_dir,
+        dataset_kept_fields_path,
+        shared_field_stats_path,
+        shared_kept_fields_path,
+    )
+
+    assert dataset_field_stats_path("TCGA-BRCA") == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "field_stats.csv"
+    assert (
+        dataset_field_stats_path("TCGA-BRCA", "landmark_0")
+        == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "landmark_0" / "field_stats.csv"
+    )
+    assert shared_field_stats_path() == PROJECT_ROOT / "rawdata_stats" / "_shared" / "field_stats.csv"
+    assert (
+        shared_field_stats_path("landmark_0")
+        == PROJECT_ROOT / "rawdata_stats" / "_shared" / "landmark_0" / "field_stats.csv"
+    )
+    assert (
+        dataset_kept_fields_path("TCGA-BRCA", "landmark_0", out_suffix="t0stats")
+        == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "landmark_0_t0stats" / "kept_fields.json"
+    )
+    assert (
+        shared_kept_fields_path("landmark_0", out_suffix="t0stats")
+        == PROJECT_ROOT / "rawdata_stats" / "_shared" / "landmark_0_t0stats" / "kept_fields.json"
+    )
+    assert (
+        dataset_filter_log_dir("TCGA-BRCA", "landmark_0", out_suffix="t0stats")
+        == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "landmark_0_t0stats" / "fliter_log"
+    )
+    assert (
+        dataset_exclusion_log_path("TCGA-BRCA", "landmark_0", out_suffix="t0stats")
+        == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "landmark_0_t0stats" / "fliter_log" / "exclusion_log.csv"
+    )
+    assert (
+        dataset_field_registry_path("TCGA-BRCA", "landmark_0", out_suffix="t0stats")
+        == PROJECT_ROOT / "rawdata_stats" / "TCGA-BRCA" / "landmark_0_t0stats" / "fliter_log" / "field_registry.csv"
+    )
+    with pytest.raises(ValueError):
+        dataset_kept_fields_path("TCGA-BRCA", "landmark_0", out_suffix="bad-suffix")
+    with pytest.raises(ValueError):
+        dataset_field_stats_path("TCGA-BRCA", "landmark_0_t0stats")
+
+
 
 if __name__ == "__main__":
     test_extract_path_and_primary_diagnosis()

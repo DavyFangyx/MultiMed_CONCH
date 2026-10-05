@@ -1,0 +1,20 @@
+{
+  "description": "Test_3 对照方案 Test_3_greedy_TCGA-KIRC (来源: greedy=result.json algo=A2_greedy bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_greedy_TCGA-KIRC",
+  "source": "gdc",
+  "fields": [
+    "demographic.ethnicity",
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].ajcc_pathologic_m",
+    "diagnoses[].ajcc_pathologic_n",
+    "diagnoses[].ajcc_pathologic_t",
+    "diagnoses[].ajcc_staging_system_edition",
+    "diagnoses[].morphology",
+    "follow_ups[].molecular_tests[].laboratory_test",
+    "follow_ups[].molecular_tests[].test_result"
+  ],
+  "datasets": [
+    "TCGA-KIRC"
+  ]
+}

@@ -1669,3 +1669,37 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - **推论（重跑口径）**：正式重跑 Test_2b 前,报告值臂（none）必须用**当前 A_pipeline 重新编码**
   （mask off）,保证两臂特征工件同源;否则残差 Δ 会被读者误读为泄露效应。
 - 状态：MMSURV 重跑产物保留在 `results/Test_2b_mmsurv_rerun/`（gitignore 内）,待用户决定全量重跑范围。
+## S7b：Test_1a landmark-first 字段准入（t0 口径 stats + R0-R6 重跑 + 报表准入集，2026-10-05）
+
+- 时间 / 执行者：2026-10-05 / Claude Code（用户指令：mask 后覆盖率崩塌的字段不应计入 Test_1a 统计；
+  方案 = 先 landmark 再处理，跑 R3_coverage 0.30 / R4_n_unique 2 / R4_mode_share 0.95；实现层级 = 管道级、
+  单独产物，不动官方 kept_fields）。
+- 口径（规格 §5bis.1）：字段统计（coverage / unique_count / mode_share）改在 Field Bank 同款 landmark
+  mask 上计算（`extract_field_bank_raw_values`，与 t0 臂 .pt mask 严格同源）；`run_field_stats` 新增
+  `--landmark_time`（默认 none，官方行为不变），产物写 `rawdata_stats/{ds}/landmark_0/field_stats.csv`
+  + `_shared` 合并；`run_field_filter` 新增 `--out_suffix`，筛选产物写
+  `rawdata_stats/{ds}/landmark_0_t0stats/{kept_fields.json, fliter_log/...}`。运行器
+  `scripts/run_landmark_first_filter.py`（35 数据集：33 TCGA + CPTAC + MMRF）；验收器
+  `scripts/validate_t0stats_vs_masks.py`。
+- 验收：
+  - 35 数据集 t0 stats 与 t0 臂 .pt mask 逐字段比对 **n_mismatch=0、max_abs_diff ≤ 5e-7**；
+  - 官方模式回归：git stash 换回旧 stats.py 重跑 BRCA，与新代码输出**逐字节一致**（期间发现并修复
+    重构引入的 multi_record 计数回归，修复后 diff 为空）；官方 `field_stats.csv` /
+    `landmark_0/kept_fields.json` 零写入。
+  - 全量 `pytest tests/ -q` = **233 passed, 9 skipped**；Test_1a `--audit` 3 组抽查 ALL PASS。
+- Test_1a 报表联动（`results_display/scripts/Test_1a_field_level.py`）：
+  - `Appx_field_delta.csv` 新增 `coverage_off / coverage_t0 / t0_filter_status / t0_filter_rule /
+    t0_filter_trigger`（全部 468 行）；头条统计、Main_ 图、`Main_field_ranking.csv`、influential 清单、
+    `Raw_delta_matrix.csv`、Meta 头条数字只在准入集计算；新增 `Appx_excluded_fields.csv`。
+  - 排除结果：**172/468**（R3_coverage 124——与 .pt mask 实测逐数据集完全一致：BLCA 9 / BRCA 18 /
+    COAD 3 / GBM 12 / HNSC 8 / KIRC 3 / LAML 2 / LGG 10 / LUAD 10 / LUSC 8 / OV 10 / PAAD 7 /
+    SKCM 13 / STAD 4 / LIHC 7；另有 R4_degenerate 48，如 t0 下 classification_of_tumor 只有
+    "primary tumor" 一个值）。R3 排除者集中为 treatments 剂量类、follow_ups、molecular_tests（leak_rate≈1.0）。
+- 头条数字变化（准入集 296 vs 全集 468）：准入集 Δc 均值 **−0.0010**、中位 0、极值 −0.098~+0.035；
+  mask_affected（114 行）均值 **−0.0045**、中位 −0.0016，mask_unaffected（182 行）均值 +0.0013
+  （噪声本底不变）→ **旧头条"效应集中在 mask 改动字段（+0.034）"不再成立**：旧数字主要由 t0 覆盖率
+  崩塌字段的伪效应（t0 臂全占位符，Δc ≈ c(off) − 0.5）驱动。influential 清单 97 行 → **8 行**。
+  准入口径与结论文本的后续口径裁定（如是否把"字段仅在泄露值上存在"写成独立类别）待用户。
+- 状态：代码 + 产物 + 文档完成；官方 kept_fields 是否切换新口径（选项 C）与下游重跑范围待用户。
+- 提交：本条目 + 代码 + 测试（results_display/** 与 rawdata_stats/** 被 gitignore，留在磁盘）。
+

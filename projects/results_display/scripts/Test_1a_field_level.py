@@ -18,6 +18,17 @@ leak_rate 列（Test_2a 审计）：
     脚本可在审计出数后直接重跑填列（无需改代码）。
   - 「理论上能动组合 Δc 的字段清单」= leak_rate > --leak_threshold 且 |Δc_field| >= --delta_threshold。
 
+landmark-first 字段准入（规格 §5bis.1，2026-10-05）：
+  - coverage_off 来自官方 raw 统计 rawdata_stats/{dataset}/field_stats.csv；coverage_t0 来自
+    t0 口径统计 rawdata_stats/{dataset}/landmark_0/field_stats.csv（Field Bank 同款 mask 提取，
+    scripts/run_landmark_first_filter.py 生成，scripts/validate_t0stats_vs_masks.py 验收）。
+  - t0_filter_status 来自 landmark-first 筛选排除日志
+    rawdata_stats/{dataset}/landmark_0_t0stats/fliter_log/exclusion_log.csv
+    （R3_coverage=0.30 / R4_n_unique=2 / R4_mode_share=0.95）；t0 口径下覆盖率崩塌或退化的字段
+    不计入头条统计。缺产物时状态列留空 = 视为准入（与 leak_rate 同样的优雅降级）。
+  - 头条统计、Main_ 图、字段排名、influential 清单、Raw 矩阵、Meta 头条数字只在准入集上计算；
+    被排除字段单独出 Appx_excluded_fields.csv；Appx_field_delta.csv 仍含全部行。
+
 输出（默认 results_display/Test_1a_field_level/；gitignore 产物，不入库）：
   文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
   Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据与审计；本目录平铺，无子目录。
@@ -33,9 +44,10 @@ leak_rate 列（Test_2a 审计）：
   Appx_off_vs_t0.png             两臂 c-index 散点（对角线 = 无差异）
   Appx_delta_distribution.png    Δc 分布（全体 + 逐数据集条带）
   Appx_delta_by_dataset.png      逐数据集 Δc 箱线（按 n_event 排序）
-  Appx_field_delta.csv           逐 (dataset, field)：c_t0/c_off/Δc/leak_rate（待填）
+  Appx_field_delta.csv           逐 (dataset, field)：c_t0/c_off/Δc/leak_rate + coverage/t0 准入列（全部行）
   Appx_dataset_summary.csv       逐 dataset：字段数、Δc 均值/中位/极值、非平凡占比、Top ± 字段
   Appx_influential_fields.csv    「能动字段清单」（leak 未出数时为空表，列齐全）
+  Appx_excluded_fields.csv       landmark-first 被排除字段（coverage_t0 < 0.30 或 t0 退化；不入口径统计）
   Appx_leak_vs_delta.png         x=leak_rate, y=Δc_field（leak 未出数时跳过并记 pending）
   Raw_delta_matrix.csv           dataset × field Δc 对齐矩阵（字段列序 = 逐字段 |Δc 均值| 降序）
   Meta_metrics.json              头条量化数字 + 覆盖度（pending 数据集/字段）
@@ -83,6 +95,9 @@ DEFAULT_MANIFEST = REPO_ROOT / "results" / "Test_0_dataset_availability" / "mani
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
+DEFAULT_RAW_STATS_ROOT = REPO_ROOT / "rawdata_stats"
+DEFAULT_T0_STATS_TAG = "landmark_0"  # landmark-first 统计目录(rawdata_stats/{ds}/landmark_0/field_stats.csv)
+DEFAULT_T0_FILTER_SUFFIX = "t0stats"  # landmark-first 筛选产物后缀(landmark_0_t0stats/)
 MIN_EVENT = 100  # R13
 CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 阈值（列名固定，不随 CLI 变）
 
@@ -96,6 +111,7 @@ OUT_APPX_DELTA_DISTRIBUTION = "Appx_delta_distribution.png"
 OUT_APPX_FIELD_DELTA = "Appx_field_delta.csv"
 OUT_APPX_DATASET_SUMMARY = "Appx_dataset_summary.csv"
 OUT_APPX_INFLUENTIAL_FIELDS = "Appx_influential_fields.csv"
+OUT_APPX_EXCLUDED_FIELDS = "Appx_excluded_fields.csv"  # landmark-first 准入被排除的字段(附录单列)
 OUT_RAW_DELTA_MATRIX = "Raw_delta_matrix.csv"
 OUT_META_METRICS = "Meta_metrics.json"
 # 条件产物：leak 出数后才有 / 只有 --audit 才写
@@ -111,6 +127,7 @@ OUTPUT_FILES = (
     OUT_APPX_FIELD_DELTA,
     OUT_APPX_DATASET_SUMMARY,
     OUT_APPX_INFLUENTIAL_FIELDS,
+    OUT_APPX_EXCLUDED_FIELDS,
     OUT_RAW_DELTA_MATRIX,
     OUT_META_METRICS,
 )
@@ -166,6 +183,37 @@ def load_value_diff(dataset: str, off_root: Path) -> dict[str, dict]:
                 "changed_cells": int(float(item.get("changed_cells") or 0)),
                 "timed_family": bool(item.get("timed_family")),
             }
+    return out
+
+
+def load_field_coverage(path: Path) -> dict[str, float]:
+    """读 field_stats.csv 的 field_path → coverage。文件缺失返回空。"""
+    if not Path(path).exists():
+        return {}
+    out = {}
+    with Path(path).open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            name = str(row.get("field_path") or "").strip()
+            cov = str(row.get("coverage") or "").strip()
+            if name and cov:
+                out[name] = float(cov)
+    return out
+
+
+def load_t0_filter_exclusions(path: Path) -> dict[str, dict]:
+    """读 landmark-first 筛选排除日志(fliter_log/exclusion_log.csv)。文件缺失返回空。
+
+    返回 {field: {rule, trigger, coverage, n_unique, mode_share}}——出现在日志里即
+    landmark-first 口径下未准入(t0 覆盖不足或退化)。
+    """
+    if not Path(path).exists():
+        return {}
+    out = {}
+    with Path(path).open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            name = str(row.get("field") or "").strip()
+            if name:
+                out[name] = row
     return out
 
 
@@ -249,6 +297,9 @@ def assemble(
     manifest: dict[str, dict],
     events: dict[str, dict],
     leak_root: Path,
+    raw_stats_root: Path,
+    t0_stats_tag: str,
+    t0_filter_suffix: str,
 ) -> tuple[list[dict], list[dict], dict]:
     """返回 (field_rows, pending, coverage)。pending 记 (dataset, 原因)。"""
     rows: list[dict] = []
@@ -257,6 +308,9 @@ def assemble(
     n_field_rows_off = 0
     n_leak_available = 0
     n_field_pairs = 0
+    n_coverage_off_filled = 0
+    n_coverage_t0_filled = 0
+    n_t0_filter_excluded = 0
     for dataset in datasets:
         t0_path = Path(t0_root) / dataset / analyzer / CSV_NAME
         off_path = Path(off_root) / dataset / analyzer / CSV_NAME
@@ -279,6 +333,19 @@ def assemble(
         schemes = [scheme_for_field_idx(i) for i in sorted(idx_to_field)]
         leak = load_leak_rates(leak_root, dataset, schemes)
         value_diff = load_value_diff(dataset, off_root)
+        # landmark-first 准入:coverage_off(官方 raw 统计)、coverage_t0(t0 口径统计)、排除日志
+        cov_off = load_field_coverage(raw_stats_root / dataset / "field_stats.csv")
+        t0_stats_path = raw_stats_root / dataset / t0_stats_tag / "field_stats.csv"
+        cov_t0 = load_field_coverage(t0_stats_path)
+        if not cov_t0:
+            pending.append({"dataset": dataset, "reason": "missing_t0_stats", "path": str(t0_stats_path)})
+        excl_path = (
+            raw_stats_root / dataset / f"{t0_stats_tag}_{t0_filter_suffix}"
+            / "fliter_log" / "exclusion_log.csv"
+        )
+        t0_filter = load_t0_filter_exclusions(excl_path)
+        if not t0_filter:
+            pending.append({"dataset": dataset, "reason": "missing_t0_filter_log", "path": str(excl_path)})
         ev = events.get(dataset, {})
         man = manifest.get(dataset, {})
         n_event = int(float(ev.get("n_event") or man.get("n_event") or 0))
@@ -314,6 +381,15 @@ def assemble(
                 leak_rate = float(leak_item["leak_rate"])
                 leak_status = LEAK_STATUS_OK
                 n_leak_available += 1
+            cov_off_val = cov_off.get(field, "")
+            cov_t0_val = cov_t0.get(field, "")
+            if cov_off_val != "":
+                n_coverage_off_filled += 1
+            if cov_t0_val != "":
+                n_coverage_t0_filled += 1
+            excluded = t0_filter.get(field)
+            if excluded is not None:
+                n_t0_filter_excluded += 1
             rows.append(
                 {
                     "dataset": dataset,
@@ -340,6 +416,11 @@ def assemble(
                     "delta_c": c_off - c_t0,
                     "leak_rate": leak_rate,
                     "leak_rate_status": leak_status,
+                    "coverage_off": cov_off_val,
+                    "coverage_t0": cov_t0_val,
+                    "t0_filter_status": "excluded" if excluded is not None else ("kept" if t0_filter else ""),
+                    "t0_filter_rule": (excluded or {}).get("rule", ""),
+                    "t0_filter_trigger": (excluded or {}).get("trigger", ""),
                 }
             )
     coverage = {
@@ -350,6 +431,9 @@ def assemble(
         "n_leak_available": n_leak_available,
         "n_pending": len(pending),
         "leak_rate_status": LEAK_STATUS_OK if n_leak_available else LEAK_STATUS_PENDING,
+        "n_coverage_off_filled": n_coverage_off_filled,
+        "n_coverage_t0_filled": n_coverage_t0_filled,
+        "n_t0_filter_excluded": n_t0_filter_excluded,
     }
     return rows, pending, coverage
 
@@ -543,6 +627,12 @@ FIELD_COLUMNS = [
     "dataset", "field", "field_idx", "scheme", "family", "timed_family", "mask_affected",
     "value_cells_changed", "n_event", "n_patients", "event_rate",
     "c_t0", "c_t0_std", "c_off", "c_off_std", "delta_c", "leak_rate", "leak_rate_status",
+    "coverage_off", "coverage_t0", "t0_filter_status", "t0_filter_rule", "t0_filter_trigger",
+]
+EXCLUDED_COLUMNS = [
+    "dataset", "field", "field_idx", "scheme", "family", "timed_family",
+    "rule", "trigger", "coverage_t0", "coverage_off", "n_unique_t0", "mode_share_t0",
+    "n_event", "n_patients", "c_t0", "c_off", "delta_c", "leak_rate", "leak_rate_status",
 ]
 DATASET_COLUMNS = [
     "dataset", "n_event", "n_patients", "event_rate", "n_fields", "delta_mean", "delta_median",
@@ -871,6 +961,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--event_summary", default=str(DEFAULT_EVENT_SUMMARY))
     parser.add_argument("--leak_root", default=str(DEFAULT_LEAK_ROOT))
     parser.add_argument("--out_dir", default=str(DEFAULT_OUT_DIR))
+    parser.add_argument("--raw_stats_root", default=str(DEFAULT_RAW_STATS_ROOT))
+    parser.add_argument("--t0_stats_tag", default=DEFAULT_T0_STATS_TAG)
+    parser.add_argument("--t0_filter_suffix", default=DEFAULT_T0_FILTER_SUFFIX)
     parser.add_argument("--delta_threshold", type=float, default=0.01, help="|Δc| 视为非平凡的阈值")
     parser.add_argument("--leak_threshold", type=float, default=0.05, help="leak_rate 视为高的阈值")
     parser.add_argument("--audit", action="store_true", help="生成后做 3 组抽查（规格 §5bis 验收）")
@@ -894,19 +987,29 @@ def main(argv: list[str] | None = None) -> int:
         manifest=manifest,
         events=events,
         leak_root=Path(args.leak_root),
+        raw_stats_root=Path(args.raw_stats_root),
+        t0_stats_tag=args.t0_stats_tag,
+        t0_filter_suffix=args.t0_filter_suffix,
     )
     if not rows:
         print("[Test_1a] no comparable (dataset, field) pairs yet — off arm still running?")
         print(f"[Test_1a] pending: {len(pending)}")
         return 1
 
-    ds_summary = summarize_datasets(rows, args.delta_threshold)
-    field_summary = summarize_fields(rows, args.delta_threshold)
-    field_ranking = rank_fields_by_impact(rows, CONSISTENCY_DELTA)
+    # landmark-first 准入(§5bis.1):头条统计/排名/清单只算准入集,被排除字段附录单列
+    excluded_rows = [r for r in rows if r.get("t0_filter_status") == "excluded"]
+    admitted = [r for r in rows if r.get("t0_filter_status") != "excluded"]
+    if not admitted:
+        print("[Test_1a] no admitted rows after landmark-first filtering — check t0 stats/filter logs")
+        return 1
 
-    # 能动字段清单（leak_rate 未出数时为空表，列齐）
+    ds_summary = summarize_datasets(admitted, args.delta_threshold)
+    field_summary = summarize_fields(admitted, args.delta_threshold)
+    field_ranking = rank_fields_by_impact(admitted, CONSISTENCY_DELTA)
+
+    # 能动字段清单（leak_rate 未出数时为空表，列齐；只算准入集）
     influential = []
-    for row in rows:
+    for row in admitted:
         if str(row["leak_rate"]) in ("", "None"):
             continue
         if float(row["leak_rate"]) > args.leak_threshold and abs(row["delta_c"]) >= args.delta_threshold:
@@ -922,31 +1025,70 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(out_dir / OUT_MAIN_FIELD_RANKING, field_ranking, RANKING_COLUMNS)
     write_csv(out_dir / OUT_APPX_INFLUENTIAL_FIELDS, influential, INFLUENTIAL_COLUMNS)
 
-    # dataset × field 矩阵（字段列序沿用逐字段 |Δc 均值| 降序 = field_summary 的行序）
-    datasets_present = sorted({r["dataset"] for r in rows})
+    # landmark-first 被排除字段附录（按 dataset + field_idx 排序）
+    excluded_out = []
+    for row in sorted(excluded_rows, key=lambda r: (r["dataset"], int(r["field_idx"]))):
+        excluded_out.append(
+            {
+                "dataset": row["dataset"],
+                "field": row["field"],
+                "field_idx": row["field_idx"],
+                "scheme": row["scheme"],
+                "family": row["family"],
+                "timed_family": row["timed_family"],
+                "rule": row["t0_filter_rule"],
+                "trigger": row["t0_filter_trigger"],
+                "coverage_t0": row["coverage_t0"],
+                "coverage_off": row["coverage_off"],
+                "n_unique_t0": "",
+                "mode_share_t0": "",
+                "n_event": row["n_event"],
+                "n_patients": row["n_patients"],
+                "c_t0": row["c_t0"],
+                "c_off": row["c_off"],
+                "delta_c": row["delta_c"],
+                "leak_rate": row["leak_rate"],
+                "leak_rate_status": row["leak_rate_status"],
+            }
+        )
+    write_csv(out_dir / OUT_APPX_EXCLUDED_FIELDS, excluded_out, EXCLUDED_COLUMNS)
+
+    # dataset × field 矩阵（字段列序沿用逐字段 |Δc 均值| 降序 = field_summary 的行序；只算准入集）
+    datasets_present = sorted({r["dataset"] for r in admitted})
     field_order = [r["field"] for r in field_summary]
     with (out_dir / OUT_RAW_DELTA_MATRIX).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["dataset"] + field_order)
-        lookup = {(r["dataset"], r["field"]): r["delta_c"] for r in rows}
+        lookup = {(r["dataset"], r["field"]): r["delta_c"] for r in admitted}
         for dataset in datasets_present:
             writer.writerow([dataset] + [fmt(lookup.get((dataset, f), "")) for f in field_order])
 
-    plot_c_off_vs_t0(rows, out_dir / OUT_APPX_OFF_VS_T0)
-    plot_delta_distribution(rows, out_dir / OUT_APPX_DELTA_DISTRIBUTION, args.delta_threshold)
-    plot_delta_boxplot(rows, out_dir / OUT_APPX_DELTA_BY_DATASET)
-    plot_delta_by_mask_group(rows, out_dir / OUT_MAIN_MASK_GROUP, args.delta_threshold)
-    plot_mask_group_density(rows, out_dir / OUT_MAIN_MASK_GROUP_DENSITY, args.delta_threshold)
+    plot_c_off_vs_t0(admitted, out_dir / OUT_APPX_OFF_VS_T0)
+    plot_delta_distribution(admitted, out_dir / OUT_APPX_DELTA_DISTRIBUTION, args.delta_threshold)
+    plot_delta_boxplot(admitted, out_dir / OUT_APPX_DELTA_BY_DATASET)
+    plot_delta_by_mask_group(admitted, out_dir / OUT_MAIN_MASK_GROUP, args.delta_threshold)
+    plot_mask_group_density(admitted, out_dir / OUT_MAIN_MASK_GROUP_DENSITY, args.delta_threshold)
     leak_plotted = plot_leak_vs_delta(
-        rows, out_dir / OUT_APPX_LEAK_VS_DELTA, args.delta_threshold, args.leak_threshold
+        admitted, out_dir / OUT_APPX_LEAK_VS_DELTA, args.delta_threshold, args.leak_threshold
     )
 
-    deltas = np.asarray([r["delta_c"] for r in rows], dtype=float)
+    deltas = np.asarray([r["delta_c"] for r in admitted], dtype=float)
+    excluded_by_rule = {}
+    excluded_by_dataset = {}
+    for row in excluded_rows:
+        rule = row["t0_filter_rule"] or "unknown"
+        excluded_by_rule[rule] = excluded_by_rule.get(rule, 0) + 1
+        excluded_by_dataset[row["dataset"]] = excluded_by_dataset.get(row["dataset"], 0) + 1
     metrics = {
         "scope": f"R13 main set (n_event >= {MIN_EVENT})",
         "n_datasets_expected": len(datasets),
         "n_datasets_covered": len({r["dataset"] for r in rows}),
         "n_field_pairs": coverage["n_field_pairs"],
+        "n_field_pairs_all_rows": len(rows),
+        "n_field_pairs_admitted": len(admitted),
+        "n_excluded_fields": len(excluded_rows),
+        "excluded_by_rule": excluded_by_rule,
+        "excluded_by_dataset": excluded_by_dataset,
         "n_pending": coverage["n_pending"],
         "pending_reasons": sorted({p["reason"] for p in pending}),
         "delta_mean": float(deltas.mean()),
@@ -970,21 +1112,32 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "n_influential_fields": len(influential),
         "leak_scatter_plotted": leak_plotted,
-        "delta_c_by_mask_group": noise_floor_stats(rows, args.delta_threshold),
+        "delta_c_by_mask_group": noise_floor_stats(admitted, args.delta_threshold),
         "noise_floor_note": (
             "两臂嵌入来自两次独立构建（raw bank vs lm0 bank）；CONCH 文本编码对全局 padding 长度不"
             "完全不变，故取值未改动（mask_affected=False）的字段仍有非零 Δc —— 该组即本底（噪声本底），"
             "Δc 归因于 mask 需显著超过它。"
+        ),
+        "coverage_join": {
+            "n_coverage_off_filled": coverage["n_coverage_off_filled"],
+            "n_coverage_t0_filled": coverage["n_coverage_t0_filled"],
+            "n_t0_filter_excluded": coverage["n_t0_filter_excluded"],
+        },
+        "t0_filter_note": (
+            "landmark-first 字段准入（先 mask 后 R0-R6）：t0 口径 stats 上 R3_coverage=0.30 / "
+            "R4_n_unique=2 / R4_mode_share=0.95；头条统计、排名、influential 清单只在准入集上计算，"
+            "被排除字段见 Appx_excluded_fields.csv"
         ),
     }
     (out_dir / OUT_META_METRICS).write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
-    print(f"[Test_1a] datasets covered: {metrics['n_datasets_covered']}/{len(datasets)}  pairs={len(rows)}  pending={len(pending)}")
-    print(f"[Test_1a] Δc: mean={deltas.mean():+.4f} median={np.median(deltas):+.4f} "
+    print(f"[Test_1a] datasets covered: {metrics['n_datasets_covered']}/{len(datasets)}  "
+          f"pairs={len(rows)}  admitted={len(admitted)}  excluded={len(excluded_rows)}  pending={len(pending)}")
+    print(f"[Test_1a] Δc(admitted): mean={deltas.mean():+.4f} median={np.median(deltas):+.4f} "
           f"[{deltas.min():+.4f}, {deltas.max():+.4f}]  |Δc|>={args.delta_threshold}: "
-          f"{metrics['n_abs_delta_ge_threshold']}/{len(rows)}")
+          f"{metrics['n_abs_delta_ge_threshold']}/{len(admitted)}")
     print(f"[Test_1a] leak_rate: {coverage['leak_rate_status']} ({coverage['n_leak_available']}/{len(rows)} filled)  "
           f"influential={len(influential)}")
     for label, stats in metrics["delta_c_by_mask_group"].items():

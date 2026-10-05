@@ -600,35 +600,50 @@ def shared_field_presence_not_in_table_path() -> Path:
     return RAWDATA_STATS_SHARED_DIR / "field_presence_not_in_table.csv"
 
 
-def dataset_field_stats_path(dataset_name: str) -> Path:
-    return RAWDATA_STATS_ROOT / dataset_name / "field_stats.csv"
+def dataset_field_stats_path(dataset_name: str, landmark_tag: str | None = None) -> Path:
+    if landmark_tag is None:
+        return RAWDATA_STATS_ROOT / dataset_name / "field_stats.csv"
+    return RAWDATA_STATS_ROOT / dataset_name / require_landmark_tag(landmark_tag) / "field_stats.csv"
 
 
-def dataset_kept_fields_path(dataset_name: str, landmark_tag: str | None = None) -> Path:
+def _tag_with_suffix(landmark_tag: str | None, out_suffix) -> str:
+    """官方 tag 校验后追加输出后缀(如 t0stats → landmark_0_t0stats)。
+
+    后缀目录不匹配 _LANDMARK_TAG_RE,iter_landmark_tags 不会误认为 landmark 变体。
+    """
     tag = require_landmark_tag(landmark_tag)
-    return RAWDATA_STATS_ROOT / dataset_name / tag / "kept_fields.json"
+    suffix = str(out_suffix or "").strip().lower()
+    if not suffix:
+        return tag
+    if not re.fullmatch(r"[a-z0-9_]+", suffix):
+        raise ValueError(f"unsupported out_suffix {out_suffix!r}; expected [a-z0-9_]+")
+    return f"{tag}_{suffix}"
 
 
-def shared_kept_fields_path(landmark_tag: str | None = None) -> Path:
-    tag = require_landmark_tag(landmark_tag)
-    return RAWDATA_STATS_SHARED_DIR / tag / "kept_fields.json"
+def dataset_kept_fields_path(dataset_name: str, landmark_tag: str | None = None, *, out_suffix=None) -> Path:
+    return RAWDATA_STATS_ROOT / dataset_name / _tag_with_suffix(landmark_tag, out_suffix) / "kept_fields.json"
 
 
-def shared_field_stats_path() -> Path:
-    return RAWDATA_STATS_SHARED_DIR / "field_stats.csv"
+def shared_kept_fields_path(landmark_tag: str | None = None, *, out_suffix=None) -> Path:
+    return RAWDATA_STATS_SHARED_DIR / _tag_with_suffix(landmark_tag, out_suffix) / "kept_fields.json"
 
 
-def dataset_filter_log_dir(dataset_name: str, landmark_tag: str | None = None) -> Path:
-    tag = require_landmark_tag(landmark_tag)
-    return RAWDATA_STATS_ROOT / dataset_name / tag / "fliter_log"
+def shared_field_stats_path(landmark_tag: str | None = None) -> Path:
+    if landmark_tag is None:
+        return RAWDATA_STATS_SHARED_DIR / "field_stats.csv"
+    return RAWDATA_STATS_SHARED_DIR / require_landmark_tag(landmark_tag) / "field_stats.csv"
 
 
-def dataset_exclusion_log_path(dataset_name: str, landmark_tag: str | None = None) -> Path:
-    return dataset_filter_log_dir(dataset_name, landmark_tag) / "exclusion_log.csv"
+def dataset_filter_log_dir(dataset_name: str, landmark_tag: str | None = None, *, out_suffix=None) -> Path:
+    return RAWDATA_STATS_ROOT / dataset_name / _tag_with_suffix(landmark_tag, out_suffix) / "fliter_log"
 
 
-def dataset_field_registry_path(dataset_name: str, landmark_tag: str | None = None) -> Path:
-    return dataset_filter_log_dir(dataset_name, landmark_tag) / "field_registry.csv"
+def dataset_exclusion_log_path(dataset_name: str, landmark_tag: str | None = None, *, out_suffix=None) -> Path:
+    return dataset_filter_log_dir(dataset_name, landmark_tag, out_suffix=out_suffix) / "exclusion_log.csv"
+
+
+def dataset_field_registry_path(dataset_name: str, landmark_tag: str | None = None, *, out_suffix=None) -> Path:
+    return dataset_filter_log_dir(dataset_name, landmark_tag, out_suffix=out_suffix) / "field_registry.csv"
 
 
 def resolve_reference_dict_path(explicit=None) -> Path:

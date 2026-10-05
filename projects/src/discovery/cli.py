@@ -40,7 +40,7 @@ def scan_main(argv=None):
     run_scan(parser.parse_args(argv))
 
 
-def stats_main(argv=None):
+def build_stats_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="基于扫描字典统计 JSON 全字段覆盖率 / 三态缺失")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
@@ -50,10 +50,21 @@ def stats_main(argv=None):
         default=str(DEFAULT_JSON_FIELD_DICT),
         help="覆盖字段字典路径。默认优先 rawdata_stats/{dataset}/scanned_fields.json",
     )
-    run_field_stats(parser.parse_args(argv))
+    parser.add_argument(
+        "--landmark_time",
+        default="none",
+        help="landmark 起点天数或 none。none = 官方口径(写 rawdata_stats/{dataset}/field_stats.csv,行为不变);"
+        "传天数(如 0)时按 Field Bank 同款 mask 计算覆盖率,写 rawdata_stats/{dataset}/landmark_{T}/field_stats.csv,"
+        "不覆盖官方 field_stats.csv。仅支持单个 token。",
+    )
+    return parser
 
 
-def filter_main(argv=None):
+def stats_main(argv=None):
+    run_field_stats(build_stats_parser().parse_args(argv))
+
+
+def build_filter_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按 landmark tag 写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；共享 kept_fields.json 按 dataset 合并，不覆盖其它队列")
     parser.add_argument("--dataset", default="all")
     parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
@@ -90,8 +101,17 @@ def filter_main(argv=None):
         action="store_true",
         help="按 R0-R6 保留字段生成长表模板 templates/field_bank/{dataset}/{landmark_tag}/FIELD_BANK.csv（field,example,convert,unit,template）",
     )
+    parser.add_argument(
+        "--out_suffix",
+        default="",
+        help="输出目录后缀：产物写 rawdata_stats/{dataset}/{landmark_tag}_{out_suffix}/（如 t0stats → landmark_0_t0stats/），不覆盖官方 {landmark_tag}/ 产物",
+    )
     add_landmark_cli_args(parser, extraction=False)
-    run_field_filter(parser.parse_args(argv))
+    return parser
+
+
+def filter_main(argv=None):
+    run_field_filter(build_filter_parser().parse_args(argv))
 
 
 def build_field_bank_parser() -> argparse.ArgumentParser:

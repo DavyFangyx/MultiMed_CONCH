@@ -240,6 +240,7 @@ def run_field_filter(args):
 def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | None = None) -> None:
     tag = landmark_dir_tag(args)
     args.landmark_tag = tag
+    suffix = str(getattr(args, "out_suffix", "") or "").strip().lower() or None
 
     exclusion_rows = []
     keep_rows = []
@@ -317,7 +318,7 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
         wanted = set(write_datasets)
         output_datasets = [name for name in datasets if name in wanted]
     for dataset in output_datasets:
-        log_dir = dataset_filter_log_dir(dataset, tag)
+        log_dir = dataset_filter_log_dir(dataset, tag, out_suffix=suffix)
         log_dir.mkdir(parents=True, exist_ok=True)
 
         ds_exclusion = (
@@ -352,13 +353,13 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
             )
         ds_registry = pd.DataFrame(ds_registry_rows).sort_values(["keep", "field"], ascending=[False, True])
 
-        exclusion_path = dataset_exclusion_log_path(dataset, tag)
-        registry_path = dataset_field_registry_path(dataset, tag)
+        exclusion_path = dataset_exclusion_log_path(dataset, tag, out_suffix=suffix)
+        registry_path = dataset_field_registry_path(dataset, tag, out_suffix=suffix)
         ds_exclusion.to_csv(exclusion_path, index=False)
         ds_registry.to_csv(registry_path, index=False)
 
         payload = active.get(dataset, {"n_patients": 0, "fields": [], "coverage": {}})
-        kept_path = dataset_kept_fields_path(dataset, tag)
+        kept_path = dataset_kept_fields_path(dataset, tag, out_suffix=suffix)
         kept_path.parent.mkdir(parents=True, exist_ok=True)
         with open(kept_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -374,7 +375,7 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
             "n_patients": payload.get("n_patients", 0),
             "fields": list(payload.get("fields", [])),
         }
-    summary_path = shared_kept_fields_path(tag)
+    summary_path = shared_kept_fields_path(tag, out_suffix=suffix)
     merged = upsert_json_mapping(summary_path, summary)
     print(f"✅ kept_fields 总表: {summary_path}  ({len(merged)} 个数据集)")
 

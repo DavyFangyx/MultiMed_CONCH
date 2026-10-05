@@ -217,6 +217,17 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 - **实现**：新增 field bank 变体 `raw`（字段列表 = landmark_0 kept，取值 mask 关闭，提取 landmark=False），univariate 评估两臂共用同患者集（复用 S4 的派生 label 机制，gt≤0 排除）。
 - **验收**：抽查 3 个 (dataset, field) 手算一致；两臂患者集逐位一致；交叉表与 Test_2a 审计 leak_rate 数值一致。
 
+### 5bis.1 landmark-first 字段准入（t0 口径，2026-10-05）
+
+- **动机**（用户指令 2026-10-05）：§5bis 的 kept 字段集是在原始数据上按 R3/R4 筛选的，landmark mask 在 Field Bank 取值时才生效——部分字段 mask 前覆盖率 40%、mask 后只剩 5% 甚至 0，其 t0 臂实际是全占位符（常数特征，c≈0.5），Δc 是"字段整个消失"造成的，不应计入"时间处理改变评估值"的统计。实测 15 主集 468 对 (dataset, field) 中 124 个（26.5%）t0 覆盖率 < 0.30（68 个 ≈ 0），集中在 `diagnoses[].treatments[].*`（剂量类）、`follow_ups[]`、`molecular_tests[]` 等。
+- **准入口径**：先 landmark 再处理——字段统计（coverage / unique_count / mode_share）在 Field Bank 同款 landmark mask 上计算（`extract_field_bank_raw_values`，与 t0 臂 .pt mask 严格同源），再跑现有 R0-R6 筛选 `--R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95`。
+- **产物（单独命名空间，不覆盖官方产物）**：
+  - t0 口径统计：`rawdata_stats/{dataset}/landmark_0/field_stats.csv` + `rawdata_stats/_shared/landmark_0/field_stats.csv`（官方根级 `field_stats.csv` 不动）；
+  - landmark-first 筛选：`rawdata_stats/{dataset}/landmark_0_t0stats/{kept_fields.json, fliter_log/...}` + `_shared/landmark_0_t0stats/kept_fields.json`（官方 `landmark_0/kept_fields.json` 不动）；
+  - 运行器 `scripts/run_landmark_first_filter.py`；验收器 `scripts/validate_t0stats_vs_masks.py`。
+- **Test_1a 报表联动**：`Appx_field_delta.csv` 新增 `coverage_off / coverage_t0 / t0_filter_status / t0_filter_rule / t0_filter_trigger` 列（全部行）；头条统计、Main_ 图、`Main_field_ranking.csv`、influential 清单、`Raw_delta_matrix.csv`、Meta 头条数字只在准入集上计算；被排除字段单列 `Appx_excluded_fields.csv`。
+- **验收**：t0 stats coverage 与 t0 臂 .pt mask 逐字段比对 max_abs_diff ≤ 1e-5；官方产物零改动；报表重跑 diff=0。
+- **边界**：官方 kept_fields 暂不切换（下游 field bank / Test_2b 臂 B / Test_3 bank 口径不漂移）；将来是否扶正官方 kept_fields 另行决策（选项 C）。
 
 ## 5ter. Test_1b 各数据集 Cindex 情况（字段轴链动机）
 

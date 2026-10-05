@@ -1,0 +1,2 @@
+demographic_sex_at_birth_template,diagnoses_age_at_diagnosis_template,diagnoses_calgb_risk_group_template,diagnoses_icd_10_code_template,diagnoses_primary_diagnosis_template,follow_ups_molecular_tests_laboratory_test_template,follow_ups_molecular_tests_molecular_analysis_method_template
+The patient sex at birth is {}.,The patient was {} years old at diagnosis.,The CALGB cytogenetic risk group is {}.,The ICD-10 diagnosis code is {}.,The primary histologic diagnosis is {}.,The laboratory test performed is {}.,The molecular analysis was performed by {}.

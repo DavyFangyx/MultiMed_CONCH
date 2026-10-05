@@ -46,11 +46,37 @@ def _calc_variance(values: list) -> tuple:
     return (mean, var, math.sqrt(var))
 
 
-def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list | None = None) -> pd.DataFrame:
+def _case_field_values(case, field_path, *, landmark_state=None, landmark_time=None):
+    """返回 (valid_vals, states, raw_vals)。
+
+    landmark_state=None 走官方提取(extract_path_values + classify_raw_value,行为不变);
+    否则走 Field Bank 同款 mask 提取(与 outputs/*/field_bank/prompt/landmark_0 的 .pt mask
+    严格同源),states 为 None。raw_vals 始终提取一次,供 masked_count 审计。
+    """
+    raw_vals = extract_path_values(case, field_path)
+    if landmark_state is None:
+        states = [classify_raw_value(v) for v in raw_vals]
+        return [v for v, st in zip(raw_vals, states) if st == "valid"], states, raw_vals
+    from .field_bank import extract_field_bank_raw_values
+
+    valid_vals = extract_field_bank_raw_values(
+        case, field_path, landmark=landmark_state, landmark_time=landmark_time
+    )
+    return valid_vals, None, raw_vals
+
+
+def analyze_json_all_fields(
+    json_path,
+    json_field_dict: str,
+    project_ids: list | None = None,
+    landmark_time=None,
+) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【JSON 全字段统计】")
     print(f"  JSON            : {json_path}")
     print(f"  字段字典        : {json_field_dict}")
+    if landmark_time is not None:
+        print(f"  landmark mask   : t_hi <= {landmark_time}(Field Bank 同款提取)")
     print(f"{'='*60}")
 
     cases = load_clinical_cases(json_path, project_ids=project_ids)
@@ -59,6 +85,15 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
     if patient_total == 0:
         print("  ⚠️  纳入病例数为 0，跳过全字段统计")
         return pd.DataFrame()
+
+    landmark_states = None
+    if landmark_time is not None:
+        from .landmark import resolve_landmark
+
+        # 与 field_bank 调用形状一致(不传 dataset_name),保证与 .pt mask 逐位同源
+        landmark_states = [
+            resolve_landmark(case, landmark=True, landmark_time=landmark_time) for case in cases
+        ]
 
     dict_path = Path(json_field_dict)
     if not dict_path.exists():
@@ -74,24 +109,31 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
         field_path = fd["field_path"]
         field_name = fd["field_name"]
         patient_values = []
-        valid_count = null_count = sentinel_count = multi_record_count = 0
+        valid_count = null_count = sentinel_count = multi_record_count = masked_count = 0
 
-        for case in cases:
-            raw_vals = extract_path_values(case, field_path)
-            if not raw_vals:
-                null_count += 1
-                continue
-            if len(raw_vals) > 1:
-                multi_record_count += 1
-            states = [classify_raw_value(v) for v in raw_vals]
-            valid_vals = [v for v, st in zip(raw_vals, states) if st == "valid"]
+        for idx, case in enumerate(cases):
+            state = None if landmark_states is None else landmark_states[idx]
+            valid_vals, states, raw_vals = _case_field_values(
+                case, field_path, landmark_state=state, landmark_time=landmark_time
+            )
             if valid_vals:
                 valid_count += 1
                 patient_values.append(collapse_patient_values(valid_vals))
-            elif any(st == "sentinel" for st in states):
-                sentinel_count += 1
-            else:
+                if states is None and len(valid_vals) > 1:
+                    multi_record_count += 1
+            elif states is None:
+                # landmark 模式:mask 掉的患者走 missing;raw 有 valid 值则计入 masked_count
                 null_count += 1
+                if any(classify_raw_value(v) == "valid" for v in raw_vals):
+                    masked_count += 1
+            else:
+                if any(st == "sentinel" for st in states):
+                    sentinel_count += 1
+                else:
+                    null_count += 1
+            if states is not None and len(raw_vals) > 1:
+                # 官方口径:多记录按 raw 值计数(与旧实现一致),含 valid 与 sentinel 患者
+                multi_record_count += 1
 
         total_count = patient_total
         missing_count = null_count + sentinel_count
@@ -133,34 +175,37 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
             info_metric_value = 0.0 if math.isnan(entropy_norm) else round(entropy_norm, 6)
 
         prompt_placeholder = L5_PLACEHOLDER_BY_FIELD_PATH.get(field_path, "")
-        rows.append(
-            {
-                "field_path": field_path,
-                "section": fd["section"],
-                "total": total_count,
-                "missing": missing_count,
-                "valid": valid_count,
-                "missing_rate": f"{missing_rate:.1%}",
-                "value_kind": value_kind,
-                "unique_count": unique_count,
-                "info_metric_type": info_metric_type,
-                "info_metric_value": info_metric_value,
-                "coverage": round(coverage, 6),
-                "null_count": null_count,
-                "sentinel_count": sentinel_count,
-                "null_rate": round(null_rate, 6),
-                "sentinel_rate": round(sentinel_rate, 6),
-                "mode_value": str(mode_value)[:80],
-                "mode_share": round(float(mode_share or 0.0), 6),
-                "example_values": " | ".join(str(v)[:80] for v in non_empty_clean[:5]),
-                "inferred_type": infer_type(field_name, non_empty_clean, unique_count),
-                "multi_record": multi_record,
-                "multi_record_rate": round(multi_record_rate, 6),
-                "used_in_l0_l5": bool(prompt_placeholder),
-                "prompt_placeholder": prompt_placeholder,
-                "_missing_rate": missing_rate,
-            }
-        )
+        row = {
+            "field_path": field_path,
+            "section": fd["section"],
+            "total": total_count,
+            "missing": missing_count,
+            "valid": valid_count,
+            "missing_rate": f"{missing_rate:.1%}",
+            "value_kind": value_kind,
+            "unique_count": unique_count,
+            "info_metric_type": info_metric_type,
+            "info_metric_value": info_metric_value,
+            "coverage": round(coverage, 6),
+            "null_count": null_count,
+            "sentinel_count": sentinel_count,
+            "null_rate": round(null_rate, 6),
+            "sentinel_rate": round(sentinel_rate, 6),
+            "mode_value": str(mode_value)[:80],
+            "mode_share": round(float(mode_share or 0.0), 6),
+            "example_values": " | ".join(str(v)[:80] for v in non_empty_clean[:5]),
+            "inferred_type": infer_type(field_name, non_empty_clean, unique_count),
+            "multi_record": multi_record,
+            "multi_record_rate": round(multi_record_rate, 6),
+            "used_in_l0_l5": bool(prompt_placeholder),
+            "prompt_placeholder": prompt_placeholder,
+            "_missing_rate": missing_rate,
+        }
+        if landmark_time is not None:
+            # landmark 口径专属审计列,官方 CSV schema 不变
+            row["landmark_time"] = landmark_time
+            row["masked_count"] = masked_count
+        rows.append(row)
 
     df = pd.DataFrame(rows)
     df = df.sort_values(["_missing_rate", "field_path"], ascending=[False, True]).drop(columns=["_missing_rate"])
@@ -168,6 +213,13 @@ def analyze_json_all_fields(json_path, json_field_dict: str, project_ids: list |
 
 
 def run_field_stats(args):
+    from .landmark import landmark_dir_tag, parse_landmark_options
+
+    use_landmark, landmark_time = parse_landmark_options(args)
+    tag = landmark_dir_tag(args) if use_landmark else None
+    if tag is not None:
+        print(f"landmark 口径统计:tag={tag},产物写 rawdata_stats/{{dataset}}/{tag}/field_stats.csv(不覆盖官方 field_stats.csv)")
+
     datasets = load_dataset_configs(args.datasets_config)
     dataset_names = [] if not args.dataset else resolve_dataset_names(args.dataset, datasets)
     RAWDATA_STATS_SHARED_DIR.mkdir(parents=True, exist_ok=True)
@@ -194,10 +246,12 @@ def run_field_stats(args):
             print(f"  ⚠️  未找到字段字典: {dict_path}")
             print("     请先运行: python projects/scripts/run_scan_fields.py --dataset {name}")
             continue
-        df = analyze_json_all_fields(job["json_paths"], str(dict_path), project_ids=job["project_ids"])
+        df = analyze_json_all_fields(
+            job["json_paths"], str(dict_path), project_ids=job["project_ids"], landmark_time=landmark_time
+        )
         if df.empty:
             continue
-        out_path = dataset_field_stats_path(name)
+        out_path = dataset_field_stats_path(name, tag)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
         print(f"\n✅ JSON 全字段统计已保存: {out_path}")
@@ -207,7 +261,8 @@ def run_field_stats(args):
         incoming = pd.concat(frames, ignore_index=True)
         cols = ["dataset"] + [c for c in incoming.columns if c != "dataset"]
         incoming = incoming[cols]
-        out_path = shared_field_stats_path()
+        out_path = shared_field_stats_path(tag)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         merged = upsert_csv_by_key(
             out_path,
             incoming,

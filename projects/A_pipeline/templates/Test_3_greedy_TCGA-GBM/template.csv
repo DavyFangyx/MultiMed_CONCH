@@ -1,0 +1,2 @@
+demographic_race_template,diagnoses_age_at_diagnosis_template,diagnoses_prior_treatment_template
+The patient race is {}.,The patient was {} years old at diagnosis.,Treatment received before this diagnosis: {}.

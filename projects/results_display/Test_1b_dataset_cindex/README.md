@@ -8,7 +8,8 @@
 
 | 文件 | 角色 | 它想表达的含义 |
 |---|---|---|
-| `Main_per_dataset_profile.png` | 头条图 | 33 个数据集在共享字段轴上的单字段 c-index 全貌(协议 A 四档分层)——各数据集字段能力画像 |
+| `Main_per_dataset_ridge.png` | 头条图(新版) | 33 座山脊:逐数据集单字段 c-index 分布(KDE,行内面积归一),协议 A 四档分色,chance 0.5 虚线贯穿,top-1 菱形 + 字段短名 + 数值标注——18 个不同 top-1 字段一眼可见 |
+| `Main_per_dataset_profile.png` | 头条图(旧版,保留) | 33 个数据集在共享字段轴上的单字段 c-index 全貌(协议 A 四档分层)——各数据集字段能力画像;脚本仍生成,作对照留存 |
 | `Main_topk_overlap_rate.png` | 头条图1 | 逐 k 平均/中位重叠率(k=5/10/20:0.149/0.197/0.327)——**重叠程度有多低** |
 | `Main_topk_zero_share.png` | 头条图2 | 逐 k 零共享占比(47.2% / 13.6% / 0%)——**多少数据集对的最优组合完全不重合**;"0 个字段进入全部数据集的 top-k" |
 | `Main_topk_overlap.csv` | 头条表 | 重叠度汇总数字(逐 k,含 Jaccard) |

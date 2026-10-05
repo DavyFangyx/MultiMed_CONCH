@@ -113,6 +113,12 @@
     "Test_3_SURVPGC_TCGA_LIHC",
     "Test_3_MMSURV_TCGA_LIHC",
     "Test_3_INTEGRATIVE_DNN_TCGA_LIHC",
-    "Test_3_HGCN_LIHC_TCGA_LIHC"
+    "Test_3_HGCN_LIHC_TCGA_LIHC",
+    "Test_3_greedy_TCGA-LAML",
+    "Test_3_greedy_TCGA-GBM",
+    "Test_3_greedy_TCGA-KIRC",
+    "Test_3_greedy_TCGA-PAAD",
+    "Test_3_greedy_TCGA-LGG",
+    "Test_3_greedy_TCGA-OV"
   ]
 }

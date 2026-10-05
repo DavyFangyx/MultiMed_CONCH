@@ -1,0 +1,2 @@
+diagnoses_age_at_diagnosis_template,diagnoses_morphology_template,diagnoses_treatments_treatment_type_template,diagnoses_tumor_of_origin_template
+The patient was {} years old at diagnosis.,The ICD-O morphology code is {}.,The treatment type is {}.,Tumor Of Origin is {}.

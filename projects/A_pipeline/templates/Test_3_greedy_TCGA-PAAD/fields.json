@@ -1,0 +1,17 @@
+{
+  "description": "Test_3 对照方案 Test_3_greedy_TCGA-PAAD (来源: greedy=result.json algo=A2_greedy bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_greedy_TCGA-PAAD",
+  "source": "gdc",
+  "fields": [
+    "demographic.cause_of_death_source",
+    "demographic.sex_at_birth",
+    "diagnoses[].ajcc_staging_system_edition",
+    "diagnoses[].diagnosis_is_primary_disease",
+    "diagnoses[].pathology_details[].lymph_nodes_positive",
+    "diagnoses[].tissue_or_organ_of_origin"
+  ],
+  "datasets": [
+    "TCGA-PAAD"
+  ]
+}

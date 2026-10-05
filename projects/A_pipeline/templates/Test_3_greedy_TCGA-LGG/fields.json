@@ -1,0 +1,15 @@
+{
+  "description": "Test_3 对照方案 Test_3_greedy_TCGA-LGG (来源: greedy=result.json algo=A2_greedy bank模板(landmark_0))",
+  "prompt_file": "prompts.csv",
+  "dirname": "Test_3_greedy_TCGA-LGG",
+  "source": "gdc",
+  "fields": [
+    "diagnoses[].age_at_diagnosis",
+    "diagnoses[].morphology",
+    "diagnoses[].treatments[].treatment_type",
+    "diagnoses[].tumor_of_origin"
+  ],
+  "datasets": [
+    "TCGA-LGG"
+  ]
+}
