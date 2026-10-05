@@ -21,7 +21,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
-| P9 | 收尾：R2 移除 + legacy 回退映射删除 + static_only 更名 + 术语修订（决策点） | `4fac584` | 2026-10-05 | R2（timepoint 标记）移除——无下游消费者，时点语义由 landmark-first R3 承载；paths.py 三组 \*\_LEGACY 目录回退映射删除（旧名目录已不存在），LEGACY_TO_TEST_RESULTS 保留（历史 run_config 字面量仍被 Test_2b 展示消费）；landmark_none → static_only 全量更名（36 rawdata_stats + 35 outputs bank 目录，代码/测试同步，Clinic_Analyzer registry 盘上同步）；「官方」称谓废弃（唯一官方 = TCGA GDC 词典），kept_fields 等一律称「现行」 |
+| P9 | 收尾：R2 移除 + legacy 回退映射删除 + static_only 更名 + 术语修订（决策点） | `4fac584` `5afccf3` | 2026-10-05 | R2（timepoint 标记）移除——无下游消费者，时点语义由 landmark-first R3 承载；paths.py 三组 \*\_LEGACY 目录回退映射删除（旧名目录已不存在），LEGACY_TO_TEST_RESULTS 保留（历史 run_config 字面量仍被 Test_2b 展示消费）；landmark_none → static_only 全量更名（36 rawdata_stats + 35 outputs bank 目录，代码/测试同步，Clinic_Analyzer registry 盘上同步）；「官方」称谓废弃（唯一官方 = TCGA GDC 词典），kept_fields 等一律称「现行」 |
 | D13 | landmark-first 扶正 + 旧 raw-first 运行清理（决策点，选项 C） | `3b1570d` | 2026-10-05 | t0stats 产物扶正为现行 `landmark_0/kept_fields.json`（36 数据集）；`run_field_filter` 默认消费 landmark 统计；删除旧口径下游 23G（field bank 921M + `outputs/_raw` 17G + `results/Test_1a` 5.2G），旧 kept_fields 与两臂 field_cindex 移走 `z_notes/backup/landmark_first_promotion_20261005/`；清理清单 `z_notes/cleaned_runs_landmark_first_20261005.md` |
 | G6 | TCGA 处理流程一页地图 | `8b87e45` | 2026-10-05 | `z_notes/tcga_pipeline/README.md`：八阶段流程（扫描→统计→筛选→Field Bank→schemes→label→评估→报表）+ 两条筛选链对照（raw-first vs landmark-first）+ 关键口径一句话版 |
 | T28 | 论文字段存在性审计 | `b5681fc` | 2026-10-05 | 论文字段缺失被静默占位符化：29 项根本不存在 + 60 项近零（`z_notes/temp/field_existence_audit.md`，字段轴链低估论据） |

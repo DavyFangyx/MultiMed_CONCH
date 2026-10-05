@@ -22,6 +22,13 @@
 - 17G  `outputs/_raw/`(Test_1a off 臂 raw bank 变体)
 - 5.2G `results/Test_1a/`(arm_t0 + arm_off,43,528 文件;univariate 逐字段 checkpoint/结果)
 
+## 补刀(同日二批:盘上其余旧字段表 bank)
+
+- 761M `outputs/{ds}/field_bank/prompt/` 根级 bank(field_index/prompts/embeddings;39 字段,2026-09-01 pre-landmark 遗留)
+- 185M `outputs/{ds}/field_bank/prompt/static_only/`(原 landmark_none;2 字段,2026-09-03 旧物)
+- 未动:`outputs/{ds}/field_bank/prompt/landmark_365|730`(raw-first kept 列表,39 字段)——其重编依赖 D14
+  (365/730 landmark 统计缺失行为)拍板,届时随重编一并替换。
+
 ## 移走路径(小结,供对账)
 
 - `results/Test_1a/{arm_t0,arm_off}/**/field_cindex.csv`(逐数据集)→
