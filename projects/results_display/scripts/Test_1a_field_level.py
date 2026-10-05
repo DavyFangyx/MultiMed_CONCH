@@ -104,6 +104,7 @@ CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 �
 # ---- 产物文件名（Main_/Appx_/Raw_/Meta_ 角色前缀；本约定平铺，无子目录）----
 OUT_MAIN_MASK_GROUP = "Main_mask_group_delta.png"
 OUT_MAIN_MASK_GROUP_DENSITY = "Main_mask_group_density.png"
+OUT_MAIN_FIELD_EXISTENCE = "Main_field_existence.png"  # t0 存在性头条(§5bis.1 口径后的新命题)
 OUT_MAIN_FIELD_RANKING = "Main_field_ranking.csv"
 OUT_APPX_OFF_VS_T0 = "Appx_off_vs_t0.png"
 OUT_APPX_DELTA_BY_DATASET = "Appx_delta_by_dataset.png"
@@ -120,6 +121,7 @@ OUT_META_AUDIT = "Meta_audit.json"
 OUTPUT_FILES = (
     OUT_MAIN_MASK_GROUP,
     OUT_MAIN_MASK_GROUP_DENSITY,
+    OUT_MAIN_FIELD_EXISTENCE,
     OUT_MAIN_FIELD_RANKING,
     OUT_APPX_OFF_VS_T0,
     OUT_APPX_DELTA_BY_DATASET,
@@ -142,6 +144,7 @@ SURFACE = "#fcfcfb"
 COL_POS = "#e34948"  # Δc > 0：off 臂更高（泄露可能高估）
 COL_NEG = "#2a78d6"  # Δc < 0
 COL_NEUTRAL = "#898781"
+COL_AMBER = "#e0982c"  # R4_degenerate（t0 值退化）；与 COL_POS ΔE≥17.9（validate_palette 校验）
 
 LEAK_STATUS_PENDING = "pending_test_2a"
 LEAK_STATUS_OK = "ok"
@@ -890,6 +893,150 @@ def plot_mask_group_density(rows: list[dict], out_path: Path, delta_threshold: f
     plt.close(fig)
 
 
+def plot_field_existence(rows: list[dict], out_path: Path) -> None:
+    """t0 存在性头条图（「字段在 t0 后还在吗」）：两面板，回答新头条命题。
+
+    左 = 崩塌散点：x=coverage(off)、y=coverage(landmark_0)；对角线 = 不受 mask 影响，
+    R3 准入线 0.30；t0 覆盖率恰为 0 的点落 y<0 条带（无随机抖动）。右 = 逐数据集
+    准入 / R3 / R4 构成（水平堆叠条，按被排除占比降序）。
+    颜色：灰 = 准入、红 = R3 覆盖崩塌、琥珀 = R4 t0 值退化（文本在侧，颜色不独担识别）。
+    确定性：无随机、固定排序 → 重跑 diff=0。
+    """
+    groups = {"admitted": [], "R3": [], "R4": []}
+    for row in rows:
+        try:
+            x = float(row["coverage_off"])
+            y = float(row["coverage_t0"])
+        except (TypeError, ValueError):
+            continue
+        if row.get("t0_filter_status") == "excluded":
+            key = "R4" if row.get("t0_filter_rule") == "R4_degenerate" else "R3"
+        else:
+            key = "admitted"
+        groups[key].append((x, y, row["dataset"]))
+
+    fig, (ax_l, ax_r) = plt.subplots(
+        1, 2, figsize=(11.6, 5.8), dpi=160,
+        gridspec_kw={"width_ratios": [1.55, 1.0]},
+    )
+    fig.patch.set_facecolor(SURFACE)
+    _style_axes(ax_l)
+    _style_axes(ax_r)
+
+    # ---- 左:崩塌散点 ----
+    ax_l.plot([0, 1], [0, 1], color=BASELINE, linewidth=1.2, linestyle="--", zorder=1)
+    ax_l.axhline(0.30, color=MUTED, linewidth=1.0, linestyle=":", zorder=2)
+    ax_l.text(0.012, 0.315, "R3 准入线 0.30", transform=ax_l.get_xaxis_transform(),
+              ha="left", va="bottom", fontsize=7, color=MUTED)
+
+    n_zero = sum(1 for x, y, _ in groups["R3"] if y == 0.0)
+    band_bottom, band_top = -0.135, -0.055
+    if n_zero:
+        ax_l.axhspan(band_bottom, band_top, color=GRIDLINE, alpha=0.9, zorder=1)
+        ax_l.text(0.5, (band_bottom + band_top) / 2.0,
+                  f"t0 coverage = 0(n={n_zero})",
+                  ha="center", va="center", fontsize=7.5, color=MUTED)
+
+    style = {
+        "admitted": (MUTED, "admitted(n=%d)"),
+        "R4": (COL_AMBER, "R4 t0 退化(n=%d)"),
+        "R3": (COL_POS, "R3 t0 覆盖 < 0.30(n=%d)"),
+    }
+    for key, (color, label_tpl) in style.items():
+        xs = []
+        ys = []
+        for x, y, _ in groups[key]:
+            xs.append(x)
+            ys.append(band_bottom + 0.010 if (key == "R3" and y == 0.0) else y)
+        if not xs:
+            continue
+        ax_l.scatter(
+            xs, ys, s=15, color=color, alpha=0.85,
+            edgecolors=SURFACE, linewidths=0.9, zorder=4 if key == "admitted" else 5,
+            label=label_tpl % len(xs),
+        )
+    ax_l.set_xlim(-0.03, 1.03)
+    ax_l.set_ylim(band_bottom - 0.045 if n_zero else -0.03, 1.03)
+    ax_l.set_xlabel("coverage(off,取值 mask 关闭)", color=INK, fontsize=9)
+    ax_l.set_ylabel("coverage(landmark_0)", color=INK, fontsize=9)
+    ax_l.legend(loc="upper left", frameon=False, fontsize=7.5)
+
+    n_adm = len(groups["admitted"])
+    n_r3 = len(groups["R3"])
+    n_r4 = len(groups["R4"])
+    total = n_adm + n_r3 + n_r4
+    ax_l.text(
+        0.975, 0.965,
+        f"{total} 对字段行 → 准入 {n_adm} / 排除 {n_r3 + n_r4}\n"
+        f"{n_r3 + n_r4}/{total} = {(n_r3 + n_r4) / total:.0%} 在 t0 下不存在或退化",
+        transform=ax_l.transAxes, ha="right", va="top", fontsize=7.6, color=INK,
+        linespacing=1.7,
+    )
+    ax_l.set_title(
+        "coverage 崩塌:t0 mask 之后字段还剩多少\n"
+        "对角线 = 不受 mask 影响 · 其下方 = 取值被 mask 移除",
+        color=INK, fontsize=10, loc="left",
+    )
+
+    # ---- 右:逐数据集构成 ----
+    comp = {}
+    for row in rows:
+        ds = row["dataset"]
+        comp.setdefault(ds, {"admitted": 0, "R3": 0, "R4": 0})
+        if row.get("t0_filter_status") == "excluded":
+            key = "R4" if row.get("t0_filter_rule") == "R4_degenerate" else "R3"
+        else:
+            key = "admitted"
+        comp[ds][key] += 1
+    order = sorted(
+        comp,
+        key=lambda ds: (
+            -(comp[ds]["R3"] + comp[ds]["R4"]) / max(1, sum(comp[ds].values())),
+            ds,
+        ),
+    )
+    ypos = list(range(len(order)))
+    for ds, y in zip(order, ypos):
+        left = 0.0
+        for key, color in (("admitted", MUTED), ("R3", COL_POS), ("R4", COL_AMBER)):
+            n = comp[ds][key]
+            if n == 0:
+                continue
+            ax_r.barh(
+                y, n, left=left, height=0.62, color=color, alpha=0.9,
+                edgecolor=SURFACE, linewidth=1.0,
+            )
+            if n >= 4:
+                ax_r.text(
+                    left + n / 2.0, y, str(n), ha="center", va="center",
+                    fontsize=7, color=SURFACE, fontweight="bold",
+                )
+            left += n
+        ax_r.text(
+            left + 0.15, y, str(sum(comp[ds].values())), ha="left", va="center",
+            fontsize=7.5, color=MUTED,
+        )
+    ax_r.set_yticks(ypos)
+    ax_r.set_yticklabels([ds.replace("TCGA_", "TCGA-") for ds in order], fontsize=7.5)
+    ax_r.set_xlim(0, max(sum(v.values()) for v in comp.values()) + 4)
+    ax_r.invert_yaxis()
+    ax_r.set_xlabel("字段对数", color=INK, fontsize=9)
+    ax_r.set_title(
+        "逐数据集:准入 vs 被排除(15 主集)\n"
+        "灰 = 准入 · 红 = R3 覆盖崩塌 · 琥珀 = R4 退化",
+        color=INK, fontsize=10, loc="left",
+    )
+
+    fig.suptitle(
+        "t0 口径下,字段还存在吗?——Test_1a 存在性头条",
+        color=INK, fontsize=11.5, x=0.5, y=0.995, ha="center",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.955])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, facecolor=SURFACE)
+    plt.close(fig)
+
+
 def plot_leak_vs_delta(rows: list[dict], out_path: Path, delta_threshold: float, leak_threshold: float) -> bool:
     usable = [r for r in rows if str(r["leak_rate"]) not in ("", "None")]
     if not usable:
@@ -1068,6 +1215,7 @@ def main(argv: list[str] | None = None) -> int:
     plot_delta_boxplot(admitted, out_dir / OUT_APPX_DELTA_BY_DATASET)
     plot_delta_by_mask_group(admitted, out_dir / OUT_MAIN_MASK_GROUP, args.delta_threshold)
     plot_mask_group_density(admitted, out_dir / OUT_MAIN_MASK_GROUP_DENSITY, args.delta_threshold)
+    plot_field_existence(rows, out_dir / OUT_MAIN_FIELD_EXISTENCE)
     leak_plotted = plot_leak_vs_delta(
         admitted, out_dir / OUT_APPX_LEAK_VS_DELTA, args.delta_threshold, args.leak_threshold
     )

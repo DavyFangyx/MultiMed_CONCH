@@ -226,6 +226,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
   - landmark-first 筛选：`rawdata_stats/{dataset}/landmark_0_t0stats/{kept_fields.json, fliter_log/...}` + `_shared/landmark_0_t0stats/kept_fields.json`（官方 `landmark_0/kept_fields.json` 不动）；
   - 运行器 `scripts/run_landmark_first_filter.py`；验收器 `scripts/validate_t0stats_vs_masks.py`。
 - **Test_1a 报表联动**：`Appx_field_delta.csv` 新增 `coverage_off / coverage_t0 / t0_filter_status / t0_filter_rule / t0_filter_trigger` 列（全部行）；头条统计、Main_ 图、`Main_field_ranking.csv`、influential 清单、`Raw_delta_matrix.csv`、Meta 头条数字只在准入集上计算；被排除字段单列 `Appx_excluded_fields.csv`。
+- **存在性头条图**（用户指令 2026-10-05）：新增 `Main_field_existence.png`（两面板：coverage(off)→coverage(landmark_0) 崩塌散点 + 逐数据集准入/R3/R4 构成），承载修正后的头条命题「时间口径决定单字段是否存在」。
 - **验收**：t0 stats coverage 与 t0 臂 .pt mask 逐字段比对 max_abs_diff ≤ 1e-5；官方产物零改动；报表重跑 diff=0。
 - **边界**：官方 kept_fields 暂不切换（下游 field bank / Test_2b 臂 B / Test_3 bank 口径不漂移）；将来是否扶正官方 kept_fields 另行决策（选项 C）。
 
