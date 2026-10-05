@@ -67,7 +67,11 @@ def stats_main(argv=None):
 def build_filter_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="R0-R6 字段筛选，按 landmark tag 写出 fliter_log 下的 field_registry、exclusion_log，以及 kept_fields.json；共享 kept_fields.json 按 dataset 合并，不覆盖其它队列")
     parser.add_argument("--dataset", default="all")
-    parser.add_argument("--stats_csv", default=str(shared_field_stats_path()))
+    parser.add_argument(
+        "--stats_csv",
+        default=None,
+        help="统计表覆盖。默认:landmark 开启(单 token)且 rawdata_stats/_shared/{landmark_tag}/field_stats.csv 存在时用它(landmark-first,已扶正 2026-10-05),否则用 raw 共享统计;显式传入始终覆盖",
+    )
     parser.add_argument(
         "--filter_rules",
         default=str(DEFAULT_FIELD_FILTER_RULES),

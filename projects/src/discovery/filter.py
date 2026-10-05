@@ -215,12 +215,31 @@ def _build_registry_row(field, src, kept, excluded, n_present, n_datasets, keep=
     }
 
 
+def resolve_filter_stats_path(explicit_csv, tag=None) -> Path:
+    """统计表选择(landmark-first 已扶正,2026-10-05)。
+
+    优先级:显式 --stats_csv 始终覆盖;landmark 开启(单 token)且对应
+    rawdata_stats/_shared/{tag}/field_stats.csv 存在 → 用 landmark-first 统计;
+    否则回退 raw 共享统计(官方原始口径)。
+    """
+    if explicit_csv:
+        return Path(explicit_csv)
+    if tag is not None:
+        tagged = shared_field_stats_path(tag)
+        if tagged.exists():
+            return tagged
+    return shared_field_stats_path()
+
+
 def run_field_filter(args):
-    stats_path = Path(args.stats_csv) if args.stats_csv else shared_field_stats_path()
+    use_landmark, landmark_time = parse_landmark_options(args)
+    tag = landmark_dir_tag(args) if use_landmark else None
+    stats_path = resolve_filter_stats_path(args.stats_csv, tag)
     if not stats_path.exists():
         raise FileNotFoundError(
             f"未找到统计表: {stats_path}。请先运行 python projects/scripts/run_field_stats.py --dataset all"
         )
+    print(f"统计表: {stats_path}  ({'landmark-first' if tag is not None and stats_path == shared_field_stats_path(tag) else 'raw/显式'})")
 
     df = pd.read_csv(stats_path)
     if "dataset" not in df.columns:

@@ -19,6 +19,9 @@
   Δc ≈ c(off) − 0.5,属于"字段整个消失"的伪效应。在被排除字段内
   (leak_rate≈1.0,见 `Appx_excluded_fields.csv`),Δc 依然可达 +0.15~+0.25——
   这部分是"字段只有泄露值可用"的真实效应,但按 t0 口径它们不应进入单字段评估。
+- 新头条命题落在**存在性**上(见 `Main_field_existence.png`):468 对字段行中 172 对
+  (37%)在 t0 口径下不存在或退化——时间口径在单字段层面决定的是"字段是否存在",
+  而非"评估值改变多少"。
 - 准入集内 143 正 / 134 负 / 19 零;|Δc| ≥ 0.01 的 73/296(24.7%);influential 清单
   (leak_rate > 0.05 且 |Δc| ≥ 0.01)由 97 行降为 **8** 行。
 
@@ -26,6 +29,7 @@
 
 | 文件 | 角色 | 它想表达的含义 |
 |---|---|---|
+| `Main_field_existence.png` | 头条图(存在性) | 修正口径后的新头条命题「**时间口径决定单字段是否存在**」:左 = coverage(off) → coverage(landmark_0) 崩塌散点(对角线 = 不受 mask 影响,R3 准入线 0.30,t0 覆盖恰为 0 的点落 y<0 条带);右 = 逐数据集 准入/R3/R4 构成(按被排除占比降序)。灰 = 准入、红 = R3 覆盖崩塌、琥珀 = R4 t0 值退化 |
 | `Main_mask_group_density.png` | 头条图(新版) | 同一结论的密度直方图版:共享分箱,灰山=取值未改动(噪声本底)、红/蓝=被 mask 改动(按箱符号分色,红=off 臂更高=泄露方向);本底 5–95% 走廊 + 最大值虚线;右上关键数字、标题带 KS D/p |
 | `Main_mask_group_delta.png` | 头条图(旧版,保留) | Δc 分组点图:被 mask 改动的字段 vs 未改动的字段(噪声本底)——脚本仍生成,作对照留存 |
 | `Main_field_ranking.csv` | 头条表 | 条件化字段汇总(只统计准入集内取值确实被 mask 改动的行):`n_datasets_total` / `n_datasets_affected` / `median_delta_among_affected` / `frac_abs_delta_ge_0p05`(一致性) / `max_abs_delta`;按 affected 中位 Δc 降序,无 affected 数据集的字段排表尾——**哪些字段的泄露值得关注**(大小 × 涉及面 × 一致性) |

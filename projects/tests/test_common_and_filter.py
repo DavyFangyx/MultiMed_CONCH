@@ -748,9 +748,32 @@ def test_filter_parser_out_suffix_and_r3_default():
 
     args = build_filter_parser().parse_args(["--landmark_time", "0", "--out_suffix", "t0stats"])
     assert args.out_suffix == "t0stats"
+    assert args.stats_csv is None  # 扶正后默认 None,由 run_field_filter 按 landmark-first 解析
     assert args.R3_coverage == 0.30
     assert args.R4_n_unique == 2
     assert args.R4_mode_share == 0.95
+
+
+def test_resolve_filter_stats_path_landmark_first(tmp_path, monkeypatch):
+    import discovery.filter as filter_mod
+
+    shared_raw = tmp_path / "field_stats.csv"
+    tagged = tmp_path / "landmark_0" / "field_stats.csv"
+    tagged.parent.mkdir(parents=True)
+    shared_raw.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(filter_mod, "shared_field_stats_path", lambda tag=None: (tagged if tag else shared_raw))
+
+    # 显式 --stats_csv 始终覆盖
+    explicit = tmp_path / "explicit.csv"
+    assert filter_mod.resolve_filter_stats_path(str(explicit), "landmark_0") == explicit
+    # landmark 开启且 tag 统计存在 → landmark-first
+    tagged.write_text("x", encoding="utf-8")
+    assert filter_mod.resolve_filter_stats_path(None, "landmark_0") == tagged
+    # tag 统计不存在 → 回退 raw
+    tagged.unlink()
+    assert filter_mod.resolve_filter_stats_path(None, "landmark_0") == shared_raw
+    # 无 landmark → raw
+    assert filter_mod.resolve_filter_stats_path(None, None) == shared_raw
 
 
 def test_paths_landmark_stats_and_out_suffix():

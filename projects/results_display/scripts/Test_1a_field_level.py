@@ -23,9 +23,10 @@ landmark-first 字段准入（规格 §5bis.1，2026-10-05）：
     t0 口径统计 rawdata_stats/{dataset}/landmark_0/field_stats.csv（Field Bank 同款 mask 提取，
     scripts/run_landmark_first_filter.py 生成，scripts/validate_t0stats_vs_masks.py 验收）。
   - t0_filter_status 来自 landmark-first 筛选排除日志
-    rawdata_stats/{dataset}/landmark_0_t0stats/fliter_log/exclusion_log.csv
-    （R3_coverage=0.30 / R4_n_unique=2 / R4_mode_share=0.95）；t0 口径下覆盖率崩塌或退化的字段
-    不计入头条统计。缺产物时状态列留空 = 视为准入（与 leak_rate 同样的优雅降级）。
+    rawdata_stats/{dataset}/landmark_0/fliter_log/exclusion_log.csv(官方目录,已扶正;历史
+    t0stats 后缀可用 --t0_filter_suffix 显式覆盖)
+    (R3_coverage=0.30 / R4_n_unique=2 / R4_mode_share=0.95);t0 口径下覆盖率崩塌或退化的字段
+    不计入头条统计。缺产物时状态列留空 = 视为准入(与 leak_rate 同样的优雅降级)。
   - 头条统计、Main_ 图、字段排名、influential 清单、Raw 矩阵、Meta 头条数字只在准入集上计算；
     被排除字段单独出 Appx_excluded_fields.csv；Appx_field_delta.csv 仍含全部行。
 
@@ -97,7 +98,7 @@ DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
 DEFAULT_RAW_STATS_ROOT = REPO_ROOT / "rawdata_stats"
 DEFAULT_T0_STATS_TAG = "landmark_0"  # landmark-first 统计目录(rawdata_stats/{ds}/landmark_0/field_stats.csv)
-DEFAULT_T0_FILTER_SUFFIX = "t0stats"  # landmark-first 筛选产物后缀(landmark_0_t0stats/)
+DEFAULT_T0_FILTER_SUFFIX = ""  # 扶正后筛选产物即官方 landmark_0/;历史 t0stats 后缀仅作显式覆盖用
 MIN_EVENT = 100  # R13
 CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 阈值（列名固定，不随 CLI 变）
 
@@ -342,8 +343,9 @@ def assemble(
         cov_t0 = load_field_coverage(t0_stats_path)
         if not cov_t0:
             pending.append({"dataset": dataset, "reason": "missing_t0_stats", "path": str(t0_stats_path)})
+        filter_dir_name = t0_stats_tag if not t0_filter_suffix else f"{t0_stats_tag}_{t0_filter_suffix}"
         excl_path = (
-            raw_stats_root / dataset / f"{t0_stats_tag}_{t0_filter_suffix}"
+            raw_stats_root / dataset / filter_dir_name
             / "fliter_log" / "exclusion_log.csv"
         )
         t0_filter = load_t0_filter_exclusions(excl_path)

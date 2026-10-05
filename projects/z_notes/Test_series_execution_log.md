@@ -11,8 +11,8 @@
 |---|---|---|
 | D9 | 数据集降级/剔除逐项确认（manifest v2） | 待确认 |
 | T29 | Test_5 报告与 Test_4 三档衔接 | 待执行 |
-| T30 | gt≤0 剔除后 Test_2b / Test_3 搜索与三臂 / Test_5 的重跑范围 | 待用户拍板 |
-| D10 | 官方 kept_fields 是否切换 landmark-first（选项 C） | 待定 |
+| T30 | gt≤0 剔除 + landmark-first 扶正后的重跑范围：field bank（35 数据集）+ Test_1a 两臂 + Test_1b 重出 + Test_2b / Test_3 搜索与三臂 / Test_5 | 待用户拍板 |
+| D10 | 官方 kept_fields 是否切换 landmark-first（选项 C） | ✅ 已拍板（2026-10-05）：切换，见 D13 |
 | D11 | 泛癌种方案是否继续全 33 TCGA | 未解决 |
 | D12 | 门槛锚点（U1，效应量先验反推） | 未解决 |
 
@@ -20,6 +20,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| D13 | landmark-first 扶正 + 旧 raw-first 运行清理（决策点，选项 C） | `eac1453` | 2026-10-05 | t0stats 产物扶正为官方 `landmark_0/kept_fields.json`（36 数据集）；`run_field_filter` 默认消费 landmark 统计；删除旧口径下游 23G（field bank 921M + `outputs/_raw` 17G + `results/Test_1a` 5.2G），旧 kept_fields 与两臂 field_cindex 移走 `z_notes/backup/landmark_first_promotion_20261005/`；清理清单 `z_notes/cleaned_runs_landmark_first_20261005.md` |
 | G6 | TCGA 处理流程一页地图 | `8b87e45` | 2026-10-05 | `z_notes/tcga_pipeline/README.md`：八阶段流程（扫描→统计→筛选→Field Bank→schemes→label→评估→报表）+ 两条筛选链对照（官方 raw-first vs landmark-first）+ 关键口径一句话版 |
 | T28 | 论文字段存在性审计 | `b5681fc` | 2026-10-05 | 论文字段缺失被静默占位符化：29 项根本不存在 + 60 项近零（`z_notes/temp/field_existence_audit.md`，字段轴链低估论据） |
 | T27 | Test_1a 存在性头条图 | `e9fc79f` | 2026-10-05 | 新增 Main_field_existence 图（coverage 崩塌散点 + 逐数据集准入构成）；头条命题改为「时间口径决定单字段是否存在」，172/468 在 t0 下不存在或退化 |
