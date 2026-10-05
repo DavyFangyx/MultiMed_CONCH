@@ -20,6 +20,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| G6 | TCGA 处理流程一页地图 | `8b87e45` | 2026-10-05 | `z_notes/tcga_pipeline/README.md`：八阶段流程（扫描→统计→筛选→Field Bank→schemes→label→评估→报表）+ 两条筛选链对照（官方 raw-first vs landmark-first）+ 关键口径一句话版 |
 | T28 | 论文字段存在性审计 | `b5681fc` | 2026-10-05 | 论文字段缺失被静默占位符化：29 项根本不存在 + 60 项近零（`z_notes/temp/field_existence_audit.md`，字段轴链低估论据） |
 | T27 | Test_1a 存在性头条图 | `e9fc79f` | 2026-10-05 | 新增 Main_field_existence 图（coverage 崩塌散点 + 逐数据集准入构成）；头条命题改为「时间口径决定单字段是否存在」，172/468 在 t0 下不存在或退化 |
 | G5 | 文档体系整理（决策点） | `7b46233` `90df0eb` `7b6e664` | 2026-10-05 | 删 9 个遗物文档；登记表统一为 D/T/P/G 编号；spec §9 提交协议修订（只有决策点才提交）；README 合一导航；旧日志归档 backup/ |
