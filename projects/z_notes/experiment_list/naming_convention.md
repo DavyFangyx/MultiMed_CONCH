@@ -12,7 +12,7 @@
 
 | 处 | 旧名 | 新名 | 说明 |
 |---|---|---|---|
-| `Clinic_Analyzer/configs/` | `univariate` | `Test_1a_t0` | S5 t0 臂(Test_1a 的 t0 数据源),33/33 done |
+| `Clinic_Analyzer/configs/` | `univariate` | `Test_1a_t0` | univariate t0 臂(Test_1a 的 t0 数据源),33/33 done |
 | `Clinic_Analyzer/configs/` | `univariate_raw` | `Test_1a_off` | Test_1a off 臂 |
 | `Clinic_Analyzer/configs/` | `A_manual` | `Test_2b_arms` + `Test_3_arms` | 拆分:Test_2b 两臂 conf 归档到 `Test_2b_arms`;Test_3 臂 B′/C conf 归 `Test_3_arms` |
 | `Clinic_Analyzer/configs/` | `E2_selection` | `Test_3_search` | Test_3 贪婪搜索队列 |

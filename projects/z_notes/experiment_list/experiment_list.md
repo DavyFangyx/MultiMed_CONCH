@@ -30,7 +30,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **评估**:5 折交叉验证的 val c-index(`cv_c_mean` 5 折均值),不伪造独立测试集。
 - **landmark = 经典三要件**(t0 = 诊断日):① 风险集只留 `ground_truth_time > T`;② 终点平移到 `gt − T`;③ 协变量只取 `t_hi ≤ T` 的槽位。默认 `landmark_0`。
 - **数据协议 A(n_event 四档)**:≥100 主图干净集;70–100 主图带 CI 不排名;30–70 补充材料;<30 低事件组定性。
-- **执行口径(训练 vs 报告)**:训练范围(R13,2026-10-02)= **n_event ≥ 100 的 15 个数据集**;70–100 / 30–70 / <30 档**不新增训练**(其已有结果——Test_2b 552 confs、S5 t0 臂 33 队列——保留磁盘,报告按协议 A 四档分层:≥100 主图定量,70–100 带 CI 不排名,30–70 补充,<30 定性)。Test_3 主集即这 15 个。
+- **执行口径(训练 vs 报告)**:训练范围(T12,2026-10-02)= **n_event ≥ 100 的 15 个数据集**;70–100 / 30–70 / <30 档**不新增训练**(其已有结果——Test_2b 552 confs、S5 t0 臂 33 队列——保留磁盘,报告按协议 A 四档分层:≥100 主图定量,70–100 带 CI 不排名,30–70 补充,<30 定性)。Test_3 主集即这 15 个。
 - **方案 × 数据集绑定(138 组合)**:泛癌种 4 方案(MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN)× 33 TCGA;HGCN_* 6 方案各绑定本癌种(KIRC / LIHC / ESCA / LUSC / LUAD / UCEC)。
 
 ## 实验清单总表
@@ -58,14 +58,14 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 ### Test_1a 单字段泄露对照(时间轴链动机)
 
 - **数据集**:33 TCGA × landmark_0 kept 字段集(逐字段)。
-- **两臂**:臂 off = 取值 mask 关闭(`raw` 变体);臂 t0 = mask 开(= S5 univariate 已完成);**两臂同患者集**(S4 派生 label,gt≤0 排除)。
-- **评估器**:`mlp_clinic_flatten`(univariate 单字段,与 S5 一致)。
+- **两臂**:臂 off = 取值 mask 关闭(`raw` 变体);臂 t0 = mask 开(= univariate 已完成);**两臂同患者集**(S4 派生 label,gt≤0 排除)。
+- **评估器**:`mlp_clinic_flatten`(univariate 单字段,与 t0 臂一致)。
 - **轮数 / 协议**:5 折 × seed 0 × 2 臂,逐字段;Δc_field = c(off) − c(t0) 与 Test_2a 的 leak_rate 交叉(leak_rate 列后填,依赖用户接手的新审计)。产物 `results_display/Test_1a_field_level/`。
 
 ### Test_1b 各数据集 Cindex 情况(字段轴链动机)
 
 - **数据集**:33 TCGA(报告按协议 A 四档分层)。
-- **评估器**:不新增训练——数据源 = S5 univariate 结果 `results/Test_1a/arm_t0/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(33/33 已完成)。
+- **评估器**:不新增训练——数据源 = univariate 结果(Test_1a t0 臂) `results/Test_1a/arm_t0/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(33/33 已完成)。
 - **轮数 / 协议**:三个量化指标:① 各数据集单字段 c-index 分布(原 E1 Fig2 升级);② 同一字段跨数据集 c-index 分布;③ top-k 字段重叠度(k ∈ {5,10,20},决策点 S5c)。验收:重跑 diff=0 + 抽查 3 个 (dataset, field)。产物 `results_display/Test_1b_dataset_cindex/`。
 
 ### Test_2a 泄露审计(时间轴链主体)
@@ -101,7 +101,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **命题**:Test_2b(时间轴链)与 Test_3(字段轴链)的结论在换编码(E)、换分析器(M)、换指标(Q)后依然成立。
 - **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图节点,**编码先落地、评估臂待 HGCN 模型接入后补跑**);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC,本轮不含 HGCN 模型);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
 - **四个子检查**:5E_2b / 5E_3(换编码,本轮只跑 baseline 臂)、5M_2b / 5M_3(换分析器),本轮约 388 新 confs(hgcn 评估臂 ≈188 待模型接入,全量 ≈546);锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
-- **HGCN**(用户指令 2026-10-03):编码先落地(S11:任意 scheme + landmark,pkl 格式不变 + L0-L5 等价性回归),模型暂不接入(用户移植的训练器为独立工作);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)冻结,已备份仓库外。
+- **HGCN**(用户指令 2026-10-03):编码先落地(P5:任意 scheme + landmark,pkl 格式不变 + L0-L5 等价性回归),模型暂不接入(用户移植的训练器为独立工作);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)冻结,已备份仓库外。
 
 ### 基础建设(非单一命题,已落地)
 
