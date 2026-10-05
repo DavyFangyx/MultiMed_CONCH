@@ -19,4 +19,4 @@
 
 ## Git 约定
 
-只有**明确的决策点**才提交（见 `z_notes/Test_series_spec.md` §9）；脚本小改、改名、决策点的单步实现不单独提交。每次改动在 `z_notes/Test_series_execution_log.md` 末尾"单步登记"表追加一行：改动名称 | git 提交 | 时间 | 简单描述。
+只有**明确的决策点**才提交（见 `z_notes/Test_series_spec.md` §9）；脚本小改、改名、决策点的单步实现不单独提交。每次改动在 `z_notes/Test_series_execution_log.md` 的"改动登记"表追加一行：改动名称 | git 提交 | 时间 | 简单描述。
