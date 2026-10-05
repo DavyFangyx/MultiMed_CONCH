@@ -41,11 +41,35 @@ def _read_patient_time_stats(root: Path, name: str) -> pd.DataFrame | None:
     return pd.read_csv(path)
 
 
+GT_LE_0_LIST_COLUMNS = [
+    "submitter_id",
+    "case_id",
+    "category",
+    "event",
+    "ground_truth_time",
+    "vital_status",
+    "days_to_last_follow_up",
+    "days_to_death",
+]
+
+
+def _gt_le_0_category(event, gt) -> str:
+    """gt<=0 患者分类:negative(负时间)/ event_0(事件@0)/ censored_0(删失@0)/ unknown_0(状态未知@0)。"""
+    if gt < 0:
+        return "negative"
+    if pd.isna(event):
+        return "unknown_0"
+    return "event_0" if event == 1 else "censored_0"
+
+
 def write_dataset_event_stats(df: pd.DataFrame, output_dir: Path) -> Path:
     """写出患者级事件表 {output_dir}/event_stats.csv。
 
     event 列在不同数据集中可能被 pandas 写成 int(1/0)或 float(1.0/0.0),
     统一归一成 1(死亡事件)/ 0(删失)/ 空(vital_status 未知)。
+
+    另有 {output_dir}/gt_le_0_patients.csv(仅当存在 gt<=0 患者时):
+    gt<=0 占位坑患者的排除清单(见 z_notes/time_axis/time_axis.md §2.3)。
     """
     cols = [c for c in EVENT_COLUMNS if c in df.columns]
     out = df[cols].copy()
@@ -55,11 +79,19 @@ def write_dataset_event_stats(df: pd.DataFrame, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "event_stats.csv"
     out.to_csv(path, index=False)
+
+    gt = pd.to_numeric(out.get("ground_truth_time", pd.Series(dtype=float)), errors="coerce")
+    le0 = gt.notna() & (gt <= 0)
+    if le0.any():
+        sub = out[le0].copy()
+        sub["category"] = [_gt_le_0_category(e, t) for e, t in zip(sub["event"], sub["ground_truth_time"])]
+        keep = [c for c in GT_LE_0_LIST_COLUMNS if c in sub.columns]
+        sub[keep].to_csv(output_dir / "gt_le_0_patients.csv", index=False)
     return path
 
 
 def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_dir: Path) -> Path | None:
-    """按数据集汇总事件数:总患者、事件、删失、未知、事件率,写到 {output_dir}/event_summary.csv。"""
+    """按数据集汇总事件数:总患者、事件、删失、未知、事件率、gt<=0 占位坑分类计数,写到 {output_dir}/event_summary.csv。"""
     if not dataset_frames:
         return None
 
@@ -76,6 +108,15 @@ def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_d
         n_event_no_time = int(((event == 1) & no_time).sum())
         n_censored_no_time = int(((event == 0) & no_time).sum())
 
+        # gt<=0 占位坑统计(分类计数,配套 gt_le_0_patients.csv 排除清单)
+        finite_le0 = time_num.notna() & (time_num <= 0)
+        gt_zero = finite_le0 & (time_num == 0)
+        n_gt_le_0 = int(finite_le0.sum())
+        n_gt_lt_0 = int((finite_le0 & (time_num < 0)).sum())
+        n_event_gt_0 = int(((event == 1) & gt_zero).sum())
+        n_censored_gt_0 = int(((event == 0) & gt_zero).sum())
+        n_unknown_gt_0 = int((event.isna() & gt_zero).sum())
+
         rows.append(
             OrderedDict(
                 dataset=name,
@@ -86,6 +127,11 @@ def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_d
                 event_rate=round(n_event / denom, 4) if denom else "",
                 n_event_no_time=n_event_no_time,
                 n_censored_no_time=n_censored_no_time,
+                n_gt_le_0=n_gt_le_0,
+                n_gt_lt_0=n_gt_lt_0,
+                n_event_gt_0=n_event_gt_0,
+                n_censored_gt_0=n_censored_gt_0,
+                n_unknown_gt_0=n_unknown_gt_0,
             )
         )
 

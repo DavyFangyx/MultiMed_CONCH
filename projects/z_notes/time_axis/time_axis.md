@@ -57,6 +57,7 @@ gt 与协变量槽位**同轴、同单位（天）**，这是 landmark 三要件
 ### 2.3 已知数据质量坑
 
 - **gt=0 占位**：全库 45 行 `gt=0 & event=1` 的 `days_to_death=0` 是 TCGA 源占位值（原始 JSON 为字面整数 0，非 null）。风险集 `gt > T` 会把它们从 T>0 的臂中剔除，而 T=0 臂保留——这是数据坑，不是口径错误。
+  - **全局剔除（2026-10-05 用户拍板）**：`gt ≤ 0`（含负末次随访行，如 `days_to_last_follow_up = −64/−2/−1`）的患者从**后续所有实验的所有臂**（含报告值对照臂 `landmark_none`）中剔除。落点：`Clinic_Analyzer/datasets/dataset_survival.py::_drop_nonpositive_time_labels`（读 label 后即过滤，NaN 时间保留，split 文件不动）；配套统计：`scripts/run_event_stats.py` 新增 `n_gt_le_0 / n_gt_lt_0 / n_event_gt_0 / n_censored_gt_0 / n_unknown_gt_0` 汇总列与 `rawdata_stats/{dataset}/gt_le_0_patients.csv` 排除清单。理由见 `Test_series_execution_log.md` S14。
 - **月/天换算**：Clinic_Analyzer 标签月数除数为 30.44（SurvPGC `pipeline.py:349-361`）；A_pipeline `landmark_labels.py` 用 `365.25/12 = 30.4375` 反推 gt 天数。T∈{0,365,730} 整数天口径下风险集排除数一致，无实际影响；只用 `DAYS_PER_MONTH` 判断 `gt_days <= T` 的边界。
 - **天数为负**：`days_to_*` 可为负（如术前化验 `days_to_test = -3`），负值不作异常处理，说明 index 不是本例最早事件。
 

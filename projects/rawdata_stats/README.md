@@ -238,6 +238,11 @@ kept_fields.json        R0-R6 后留下的字段、覆盖率和 n_patients
 fliter_log/
   exclusion_log.csv     该数据集被删字段及触发规则
   field_registry.csv    该数据集字段路径的去留、可移植性、覆盖率
+event_stats.csv         患者级事件表(event 归一 1/0/空)
+gt_le_0_patients.csv    gt≤0 占位坑患者排除清单(仅当存在时写出;列:
+                        submitter_id/case_id/category/event/ground_truth_time/
+                        vital_status/days_to_last_follow_up/days_to_death;
+                        category ∈ negative/event_0/censored_0/unknown_0)
 time_write/  and  time_record/
   patient_time_stats.csv / .png
   normalized_update_time.csv / .png / _boxplot.png
@@ -251,6 +256,9 @@ time_write/  and  time_record/
 field_stats.csv              9 个数据集 field_stats 纵向合并，1227 行
 kept_fields.json             --dataset all 时写出：数据集名 -> {n_patients, fields}
 patient_time_stats_all.png   9 个数据集 ground-truth 时间叠图
+event_summary.csv            逐数据集事件汇总;2026-10-05 起含 gt≤0 分类计数列:
+                             n_gt_le_0 / n_gt_lt_0 / n_event_gt_0 /
+                             n_censored_gt_0 / n_unknown_gt_0
 ```
 
 这些文件就是 JSON 预处理的终点。之后：

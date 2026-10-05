@@ -60,6 +60,11 @@ def test_write_event_summary(tmp_path):
         "event_rate": 0.5,
         "n_event_no_time": 0,
         "n_censored_no_time": 0,
+        "n_gt_le_0": 0,
+        "n_gt_lt_0": 0,
+        "n_event_gt_0": 0,
+        "n_censored_gt_0": 0,
+        "n_unknown_gt_0": 0,
     }
 
 
@@ -84,6 +89,54 @@ def test_write_event_summary_unknown_vital_and_missing_time(tmp_path):
     assert summary["n_event_no_time"] == 1
     assert summary["n_censored_no_time"] == 0
     assert summary["event_rate"] == round(2 / 3, 4)
+
+
+def test_gt_le_0_counts_and_patient_list(tmp_path):
+    """gt<=0 占位坑:event@0 / censored@0 / 负时间 / 状态未知@0 分类计数 + 排除清单。"""
+    cases = _synthetic_cases()
+
+    event0 = dict(cases[1])
+    event0["submitter_id"] = "TCGA-AA-0010"
+    event0["demographic"] = {"vital_status": "Dead", "days_to_death": 0}
+
+    censored0 = dict(cases[0])
+    censored0["submitter_id"] = "TCGA-AA-0011"
+    censored0["diagnoses"] = [dict(cases[0]["diagnoses"][0], days_to_last_follow_up=0)]
+
+    negative = dict(cases[1])
+    negative["submitter_id"] = "TCGA-AA-0012"
+    negative["demographic"] = {"vital_status": "Dead", "days_to_death": -5}
+
+    unknown0 = dict(cases[0])
+    unknown0["submitter_id"] = "TCGA-AA-0013"
+    unknown0["demographic"] = {"vital_status": "Not Reported", "days_to_death": None}
+    unknown0["diagnoses"] = [dict(cases[0]["diagnoses"][0], days_to_last_follow_up=0)]
+
+    records = [
+        extract_patient_time_record(case, dataset_name="synthetic")
+        for case in cases + [event0, censored0, negative, unknown0]
+    ]
+    write_df = pd.DataFrame(_expand_kind_columns(records, WRITE_KIND))
+
+    summary = pd.read_csv(run_event_stats.write_event_summary([("synthetic", write_df)], tmp_path)).iloc[0]
+    assert summary["n_patients"] == 6
+    assert summary["n_gt_le_0"] == 4
+    assert summary["n_gt_lt_0"] == 1
+    assert summary["n_event_gt_0"] == 1
+    assert summary["n_censored_gt_0"] == 1
+    assert summary["n_unknown_gt_0"] == 1
+
+    run_event_stats.write_dataset_event_stats(write_df, tmp_path)
+    lst = pd.read_csv(tmp_path / "gt_le_0_patients.csv")
+    assert list(lst["submitter_id"]) == ["TCGA-AA-0010", "TCGA-AA-0011", "TCGA-AA-0012", "TCGA-AA-0013"]
+    assert list(lst["category"]) == ["event_0", "censored_0", "negative", "unknown_0"]
+    assert list(lst["ground_truth_time"]) == [0.0, 0.0, -5.0, 0.0]
+
+
+def test_gt_le_0_list_absent_when_none(tmp_path):
+    write_df = _frames()  # 合成病例 gt 均为正,不应产生排除清单
+    run_event_stats.write_dataset_event_stats(write_df, tmp_path)
+    assert not (tmp_path / "gt_le_0_patients.csv").exists()
 
 
 def test_write_dataset_event_stats_normalizes_event(tmp_path):

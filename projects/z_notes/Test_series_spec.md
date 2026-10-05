@@ -67,6 +67,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
 - **三要件已全部落地（S3，2026-09-30）**：① mask 在 `A_pipeline/src/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位）；② 风险集与 ③ 平移在 `A_pipeline/src/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；`--landmark_shift off` 为平移不变性自检开关）。口径总表见 `z_notes/time_axis/time_axis.md` §3。
 - **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与三臂）默认 t0。
+- **患者资格（2026-10-05 用户拍板）**：`ground_truth_time ≤ 0` 的患者（`days_to_death=0` 占位坑 + 负末次随访，见 `time_axis.md` §2.3）从**所有实验的所有臂**（含报告值对照臂 `landmark_none`）中全局剔除；split 文件不动。实现落点 `Clinic_Analyzer/datasets/dataset_survival.py`（读 label 后即过滤，NaN 保留）；与 landmark 要件②的区别：要件②只作用于 landmark 臂（按 T），本条是跨臂全局数据质量过滤。
 - 365 / 730 作为敏感性；原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups，既非无处理也非规范处理）**更名 `static_only`**，**移出主图**，仅进补充材料。
 - 两个概念澄清（勿混用）：
   1. **取值 mask 状态**：`off`（无 mask，取值全集）/ `0` / `365` / `730`。Test_2a 审计的 leak_rate 用 off 与 0 对比；Test_2b 臂 A = off（报告值对照臂）。
@@ -215,6 +216,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 - **产物**：`results_display/Test_1a_field_level/`：leak_rate × c(off) × c(t0) × Δc_field 交叉表（逐 dataset 与跨数据集聚合）+ 散点/热图（x=leak_rate, y=Δc_field）；输出"理论上能动组合 Δc 的字段清单"（leak_rate 高且 |Δc_field| 非平凡）。
 - **实现**：新增 field bank 变体 `raw`（字段列表 = landmark_0 kept，取值 mask 关闭，提取 landmark=False），univariate 评估两臂共用同患者集（复用 S4 的派生 label 机制，gt≤0 排除）。
 - **验收**：抽查 3 个 (dataset, field) 手算一致；两臂患者集逐位一致；交叉表与 Test_2a 审计 leak_rate 数值一致。
+
 
 ## 5ter. Test_1b 各数据集 Cindex 情况（字段轴链动机）
 

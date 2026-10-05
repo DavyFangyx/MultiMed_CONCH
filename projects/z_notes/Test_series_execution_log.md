@@ -1598,3 +1598,74 @@ T3_ENC_GPU=1 T3_GPU=1 T3_WORKERS=8 T3_POLL=120 \
 - 状态：完成（两张新图已出，待用户目验后按反馈迭代）。
 - 提交：两个脚本 + 本条目；产物 PNG 与目录 README 被 `.gitignore` 忽略（`results_display/**`），
   留在磁盘不入库。
+
+## S14 gt≤0 患者全局剔除（口径修正 + 代码落地 + 统计，2026-10-05）
+
+- **背景**：Test_2b 中零泄露方案（MMSURV / INTEGRATIVE_DNN，leak_rate=0）的 Δc≠0 调查结论：
+  非泄露、非随机误差，而是 landmark 要件②导致两臂患者集不同——`landmark_none` 臂的 label
+  回退默认 metadata（含 gt≤0 占位坑患者），`landmark_0` 臂的派生 label 排除它们。
+  全库 45 行 `gt=0 & event=1`（`days_to_death=0` 字面占位）+ 负末次随访行（如 BLCA CF-A9FH
+  last_fu=−64 天、SKCM EB-A430 −2 天）。事件@0 患者进 Cox/MLP 损失（t=0 → 风险集=全员）
+  并制造 val concordance pair（t=0 < t_j ∀j），污染训练与评估。
+- **用户拍板（2026-10-05）**：gt≤0 患者从**后续所有实验的所有臂**（含报告值对照臂）全局剔除；
+  rawdata_stats 加入分类计数 + 排除清单；先落地代码与统计，**重跑范围后议**。
+- **连带发现与清理（用户指令"旧运行是错误,全部停掉并清理结果"）**：Test_3 贪婪搜索的内部评估
+  （`src/greedy/clinic_evaluator.py` 默认不带 `--label_file` → 用原始 metadata）同样混入 gt≤0
+  患者。已停掉在跑的 TCGA-BRCA 搜索三进程（queue 124535 / selection 124805 / inner eval 3327026），
+  并删除 15 个数据集的搜索产物与登记（`results/greedy/prompt` 12G、
+  `results/Test_3_greedy_vs_works/{search,cache.sqlite*,archive_sigstop_20261004,compare,logs,missed_fields.csv,three_arm.csv}`、
+  `Clinic_Analyzer/configs/Test_3_search/*`）。清单存档 `z_notes/cleaned_runs_20261005.md`。
+  Test_5 调度器此前已自行跑完（5E_2b 128 / 5E_3 62 / 5M_2b 128+2failed / 5M_3 66），未再停。
+- **代码落点**：
+  - `Clinic_Analyzer/datasets/dataset_survival.py`：新增 `_drop_nonpositive_time_labels`，
+    读 label 后即过滤（有限且 ≤0 的行删除、NaN 保留，镜像 `landmark_labels.py` 约定）；
+    所有臂所有入口统一生效（A_pipeline cindex / greedy / e2 / 直接 main.py）；
+    landmark 臂派生 label 已无 gt≤0 → 0 行被删（no-op）。split 文件不动。
+  - `Clinic_Analyzer/main.py`：`filter.log` 增 gt≤0 段（label_file / 行数 / 逐患者记录）。
+  - `scripts/run_event_stats.py`：`event_summary.csv` 新增列
+    `n_gt_le_0 / n_gt_lt_0 / n_event_gt_0 / n_censored_gt_0 / n_unknown_gt_0`；
+    新增 `rawdata_stats/{dataset}/gt_le_0_patients.csv` 排除清单
+    （submitter_id/case_id/category/event/ground_truth_time/vital_status/…，category ∈
+    negative / event_0 / censored_0 / unknown_0；无 gt≤0 时不写文件）。
+  - 测试：`tests/test_event_stats.py` 更新汇总断言 + 3 个新用例；
+    `tests/test_gt_le_0_filter.py`（drop 行为 / NaN 保留 / 无异常 / 构造级，torch 环境独立可跑）。
+- **统计结果（重跑 `run_event_stats.py`，旧列 diff=0 验收通过）**：
+  - 全库 event@0 合计 **45**（与 time_axis.md §2.3 记录一致），另有 censored@0 120、负时间 28。
+  - 15 主集内：STAD 23（2 ev/21 cen）、BRCA 21（2/18）、COAD 21（7/14）、LAML 13（12/1）、
+    SKCM 5（1/3）、BLCA 4（2/1）、KIRC 4（2/2）、LGG 3（0/2）、LUAD 4（1/3）、LUSC 2（1/1）、
+    GBM 1（0/1）、PAAD 1（0/1）、LIHC 4（0/4）；HNSC/OV 无。
+  - **协议 A 档位影响**：唯一档位变化 = **COAD n_event 102 → 95（event@0 7 个），main → main_ci**；
+    PAAD 恰为 100（其 gt≤0 是 censored）不动；SARC 99 不动（无 event@0）；其余均不跨界。
+    n_event 是否按剔除后重算、COAD 是否移出主集 → **重跑后议决策点**。
+- **冒烟验证（BLCA × MMSURV × clinic_cox，GPU0，新代码）**：none 臂与 landmark_0 臂
+  **患者集逐折逐位一致、c-index 5 折逐位一致**（此前 Δ=−0.0021，现在为 0）；
+  none 臂 filter.log 记录剔除 4 人（GC-A6I1/UY-A8OC event@0、CF-A9FH 负时间、GC-A6I3 censored@0），
+  lm0 臂 0 人。
+- **旧结果对账注**：旧 lm0 臂（09-30 跑，label 用已删的 `A_manual_landmark/labels/`）与 10-05
+  同配置重跑相比，fold0 逐位一致但 fold1-4 数值不同（患者集逐位一致、CLI/特征/代码除本条目改动外
+  相同）。旧派生 label 于 10-04 重生成（现行 `Test_2b/arm_B/labels/`），旧文件已删、无法对账——
+  旧臂结果的精确复现链已断，重跑后议时一并考虑。
+- **状态**：代码与统计已落地（未提交）；重跑范围待用户拍板。
+
+### S14 补记：MMSURV 全量重跑验证（132 confs，GPU0，2026-10-05）
+
+- **做法**（用户指令"重新运行 Test_2b_delta 的 MMSURV 部分看效果是否确实存在"）：复制
+  `configs/Test_2b_arms/done/*MMSURV*.conf`（132 = 33 数据集 × 两臂 × 2 分析器）到
+  `configs/Test_2b_mmsurv_rerun/`，lm0 conf 的 `LABEL_FILE_PATH` 由已删的 `A_manual_landmark/labels/`
+  改为现行 `Test_2b/arm_B/labels/`；`EXP_GROUP=Test_2b_mmsurv_rerun/runs`；10 workers × GPU0 排水，
+  **132/132 done、0 failed**。对照脚本 `results/Test_2b_mmsurv_rerun/compare_delta.py`
+  （旧 Δ 读 `results_display/Test_2b_delta/Appx_*`，新 Δ = none − lm0 逐折均值；产物 `delta_compare.csv`）。
+- **结果一（患者集统一生效）**：66 对（33 数据集 × 2 分析器）中 **59 对新 Δ = 0 逐位精确**
+  （含 MLP；旧口径下 ACC −0.0232、THCA mlp −0.0225、UCS mlp +0.0516、SKCM cox −0.0389 等全部归零）；
+  全部 66 对两臂患者集逐折逐位一致。
+- **结果二（7 对仍有残差 Δ，根因 = 特征工件不一致，非泄露非患者集）**：
+  KIRP / LUAD / LUSC / PAAD / PRAD / SKCM / STAD（cox 与 mlp 均有,幅度 0.001–0.09）。
+  逐文件对比两臂 embedding（`outputs/{ds}/A_manual/MMSURV/{embeddings,landmark_0/embeddings}/pt`）：
+  这 7 个数据集的 unmasked 与 landmark_0 工件在部分患者上**取值不同**——差异患者数
+  KIRP 25、LUAD 19、LUSC 25、PAAD 1、PRAD 31、SKCM 325、STAD 6（另有 HNSC 1 个差异文件但未改变结果）。
+  例：SKCM `TCGA-3N-A9WB` 的 T 分期 unmasked="TX"（占位）、landmark_0="T1a"（真实值）——同一字段
+  多个 t_hi≤0 槽位的取值解析不同（两批工件同生成于 2026-09-30,unmasked 00:53、landmark_0 01:07,
+  期间 S3 提取代码在工作区演进）。leak_rate=0 不受影响（两种取值都来自 t_hi≤0 槽位,审计口径没错）。
+- **推论（重跑口径）**：正式重跑 Test_2b 前,报告值臂（none）必须用**当前 A_pipeline 重新编码**
+  （mask off）,保证两臂特征工件同源;否则残差 Δ 会被读者误读为泄露效应。
+- 状态：MMSURV 重跑产物保留在 `results/Test_2b_mmsurv_rerun/`（gitignore 内）,待用户决定全量重跑范围。
