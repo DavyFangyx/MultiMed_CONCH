@@ -101,7 +101,7 @@ def main(argv=None) -> int:
     modalities = parse_modalities(args.analyzer)
     ensure_modalities_allowed(args.dataset, modalities)
 
-    tag = "landmark_none" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}"
+    tag = "static_only" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}"
     bank_dir = dataset_field_bank_dir(args.dataset, "prompt", tag)
     loaded = load_field_bank(bank_dir, encoding="prompt")
     fields = tuple(loaded["fields"])

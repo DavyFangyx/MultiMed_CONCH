@@ -60,7 +60,7 @@ def add_landmark_cli_args(parser, *, extraction: bool = True) -> None:
         help=(
             "全局 landmark 起点：天数、none、逗号列表或 all。none 关闭 Field Bank 取值时的患者级 landmark mask"
             if extraction
-            else "全局 landmark 起点：天数、none、逗号列表或 all。筛选产物按 landmark_{T} / landmark_none 分目录；none 时 R0 整层删除路径含 diagnoses / follow_ups 的字段"
+            else "全局 landmark 起点：天数、none、逗号列表或 all。筛选产物按 landmark_{T} / static_only 分目录；none 时 R0 整层删除路径含 diagnoses / follow_ups 的字段"
         ),
     )
 

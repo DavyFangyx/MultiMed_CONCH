@@ -13,7 +13,7 @@ WORKSPACE_ROOT = REPO_ROOT.parent
 VALID_ENCODINGS = ("prompt", "onehot")
 VALID_SCHEMES = ("L2", "L3", "L5")
 DEFAULT_L5_GROUPS_CSV = PROJECT_ROOT / "templates" / "field_bank" / "_shared" / "l5_semantic_groups.csv"
-LANDMARK_OFF_TAG = "landmark_none"
+LANDMARK_OFF_TAG = "static_only"  # 原 landmark_none,2026-10-05 更名(spec §2.5)
 _LANDMARK_TAG_RE = re.compile(rf"^(?:{LANDMARK_OFF_TAG}|landmark_(\d+))$")
 _SCHEME_RUN_TAG_RE = re.compile(
     rf"^(?:{LANDMARK_OFF_TAG}|landmark_(\d+))_({'|'.join(VALID_SCHEMES)})$"
@@ -45,48 +45,16 @@ RESULTS_DISPLAY_ROOT = PROJECT_ROOT / "results_display"
 
 # ---- Test 系列命名公约(z_notes/experiment_list/naming_convention.md) ----
 # 主键 = Test 编号;三处目录(configs/results/results_display)同名对应。
-# 物理迁移完成前新旧目录并存:resolve 一律新名优先、旧名回退,读/写都安全。
-# 旧名字符串只允许出现在下面的 *_LEGACY 映射与公约文档对照表中。
+# 旧名目录(univariate/A_manual/leak_audit/E2_selection)已随物理迁移全部消失,
+# 2026-10-05 起不再保留目录回退映射;旧路径字面量改写(LEGACY_TO_TEST_RESULTS)仍保留,
+# 因为历史 run_config.json 里写死的旧 results 路径还在盘上(Test_2b 展示脚本消费)。
 
 TEST_CONFIGS_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs"
-
-TEST_CONFIG_FAMILY_LEGACY = {
-    "Test_1a_t0": ("univariate",),
-    "Test_1a_off": ("univariate_raw",),
-    "Test_2b_arms": ("A_manual",),
-    "Test_3_arms": ("A_manual",),
-    "Test_3_search": ("E2_selection",),
-}
-
-TEST_RESULTS_LEGACY = {
-    "Test_1a/arm_t0": ("univariate",),
-    "Test_1a/arm_off": ("univariate_raw",),
-    "Test_2a_leak_audit": ("leak_audit",),
-    "Test_2b/arm_A": ("A_manual",),
-    "Test_2b/arm_B": ("A_manual_landmark",),
-    "Test_3_search": ("E2_selection",),
-}
-
-TEST_DISPLAY_LEGACY = {
-    "Test_2a_leak_audit": ("leak_audit",),
-}
-
-
-def _resolve_dir(base: Path, name: str, legacy_map: dict) -> Path:
-    """新名优先、旧名回退的目录解析(命名公约过渡规则)。"""
-    new = base / name
-    if new.is_dir():
-        return new
-    for legacy in legacy_map.get(name, ()):
-        old = base / legacy
-        if old.is_dir():
-            return old
-    return new
 
 
 def config_family_dir(family: str) -> Path:
     """configs 家族根目录(Test 名,含 queue/running/done/failed 桶)。"""
-    return _resolve_dir(TEST_CONFIGS_ROOT, family, TEST_CONFIG_FAMILY_LEGACY)
+    return TEST_CONFIGS_ROOT / family
 
 
 def config_family_bucket_dir(family: str, bucket: str) -> Path:
@@ -95,15 +63,17 @@ def config_family_bucket_dir(family: str, bucket: str) -> Path:
 
 def test_results_dir(name: str) -> Path:
     """results/ 下 Test 编号目录(可含 /arm_X 子层)。"""
-    return _resolve_dir(RESULTS_ROOT, name, TEST_RESULTS_LEGACY)
+    return RESULTS_ROOT / name
 
 
 def test_display_dir(name: str) -> Path:
     """results_display/ 下 Test 编号目录。"""
-    return _resolve_dir(RESULTS_DISPLAY_ROOT, name, TEST_DISPLAY_LEGACY)
+    return RESULTS_DISPLAY_ROOT / name
 
 
 # 历史数据文件(run_config.json 等)里写死的旧 results 绝对路径 → 新名。
+# 仍在使用(Test_2b 展示脚本 remap_legacy_result_path):results/Test_2b/arm_B 等
+# 历史 run_config 的 results_dir 字面量含旧路径;该改写随历史产物重生成后退役。
 # 顺序敏感: A_manual_landmark 必须先于 A_manual、univariate_raw 先于 univariate。
 LEGACY_TO_TEST_RESULTS = {
     "results/A_manual_landmark": "results/Test_2b/arm_B",
@@ -607,7 +577,7 @@ def dataset_field_stats_path(dataset_name: str, landmark_tag: str | None = None)
 
 
 def _tag_with_suffix(landmark_tag: str | None, out_suffix) -> str:
-    """官方 tag 校验后追加输出后缀(如 t0stats → landmark_0_t0stats)。
+    """tag 校验后追加输出后缀(如 t0stats → landmark_0_t0stats)。
 
     后缀目录不匹配 _LANDMARK_TAG_RE,iter_landmark_tags 不会误认为 landmark 变体。
     """

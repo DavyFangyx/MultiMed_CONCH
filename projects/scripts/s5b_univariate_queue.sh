@@ -63,8 +63,8 @@ rows = list(csv.DictReader(open(manifest, encoding="utf-8")))
 main = sorted(r["dataset"] for r in rows
               if r["dataset"].startswith(("TCGA-", "TCGA_")) and int(r["n_event"]) >= 100)
 all_ds = sorted(n for n in load_dataset_configs("datasets.json") if n.startswith(("TCGA-", "TCGA_")))
-missing = [n for n in main if not (Path("outputs/_raw") / n / "field_bank" / "prompt" / "landmark_none" / "field_index.json").exists()]
-print(f"[s5b] R13 主集 raw banks: {len(main) - len(missing)}/{len(main)}  (全 TCGA 33 个中已建 {sum(1 for n in all_ds if (Path('outputs/_raw')/n/'field_bank'/'prompt'/'landmark_none'/'field_index.json').exists())})")
+missing = [n for n in main if not (Path("outputs/_raw") / n / "field_bank" / "prompt" / "static_only" / "field_index.json").exists()]
+print(f"[s5b] R13 主集 raw banks: {len(main) - len(missing)}/{len(main)}  (全 TCGA 33 个中已建 {sum(1 for n in all_ds if (Path('outputs/_raw')/n/'field_bank'/'prompt'/'static_only'/'field_index.json').exists())})")
 if missing:
     print(f"[s5b] missing: {missing}")
     raise SystemExit(1)

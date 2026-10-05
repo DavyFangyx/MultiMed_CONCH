@@ -87,15 +87,15 @@ def test_parser_defaults_and_flags():
 def test_univariate_out_dir_nesting(tmp_path):
     parser = make_parser()
     args = parser.parse_args(["--dataset", "TCGA_LIHC", "--landmark_time", "none"])
-    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "landmark_none", "", "mlp_clinic_flatten")
-    assert out == dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_none") / "mlp_clinic_flatten"
+    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "static_only", "", "mlp_clinic_flatten")
+    assert out == dataset_univariate_results_dir("TCGA_LIHC", "prompt", "static_only") / "mlp_clinic_flatten"
 
     args = parser.parse_args(
         ["--dataset", "all", "--landmark_time", "none", "--out", str(tmp_path)]
     )
     args._multi_dataset = True
-    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "landmark_none", "", "clinic_cox")
-    assert out == tmp_path / "TCGA_LIHC" / "landmark_none" / "clinic_cox"
+    out = univariate_out_dir(args, "TCGA_LIHC", "prompt", "static_only", "", "clinic_cox")
+    assert out == tmp_path / "TCGA_LIHC" / "static_only" / "clinic_cox"
 
 
 def test_resolve_dataset_list_rejects_empty():

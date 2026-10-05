@@ -39,11 +39,11 @@ def _write_prompt_bank(bank: Path, fields: list[str], embeddings: dict[str, np.n
 
 
 def test_dataset_linear_probe_dir_prompt():
-    path = dataset_linear_probe_dir("TCGA_LIHC", "prompt", "landmark_none")
-    assert path == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "landmark_none"
-    results = dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_none")
-    assert results == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "landmark_none" / "TCGA_LIHC"
-    assert results.as_posix().endswith("results/linear_probe/prompt/landmark_none/TCGA_LIHC")
+    path = dataset_linear_probe_dir("TCGA_LIHC", "prompt", "static_only")
+    assert path == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "static_only"
+    results = dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "static_only")
+    assert results == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "static_only" / "TCGA_LIHC"
+    assert results.as_posix().endswith("results/linear_probe/prompt/static_only/TCGA_LIHC")
 
 
 def test_encoding_onehot_raises():

@@ -25,7 +25,8 @@ from .landmark import iter_landmark_args, landmark_dir_tag, parse_landmark_optio
 DEFAULT_R3_COVERAGE = 0.30
 DEFAULT_R4_N_UNIQUE = 2
 DEFAULT_R4_MODE_SHARE = 0.95
-POST_BASELINE_LAYERS = {"follow_ups", "other_clinical_attributes"}
+# R2(timepoint 结构标记:follow_up/baseline)已于 2026-10-05 移除——无下游消费者,
+# 且"按字段所在层判时点"与 time_axis 的槽位 t_hi 语义不一致;该语义由 landmark-first R3 承载。
 
 _RULES_CACHE: dict[str, dict] | None = None
 
@@ -36,13 +37,6 @@ def _leaf_name(field_path: str) -> str:
 
 def _norm(field_path: str) -> str:
     return str(field_path).replace("[]", "").lower()
-
-
-def timepoint(field_path: str) -> str:
-    parts = {p.replace("[]", "") for p in str(field_path).split(".")}
-    if parts & POST_BASELINE_LAYERS:
-        return "follow_up"
-    return "baseline"
 
 
 def load_filter_rules(path=None) -> dict:
@@ -128,7 +122,7 @@ def apply_rules(
     if leaf in _as_lower_set(r1.get("container_leaves")):
         return "R1_admin", f"container:{leaf}"
 
-    # R2 is a marker only; see timepoint().
+    # R2(已移除 2026-10-05):原为 timepoint 结构标记,无下游消费者;t0 时点语义由 landmark-first R3 承载。
 
     # R3: coverage threshold.
     coverage = float(row.get("coverage") or 0.0)
@@ -201,7 +195,6 @@ def _build_registry_row(field, src, kept, excluded, n_present, n_datasets, keep=
     inferred = _aggregate_inferred_type(inferred_src.get("inferred_type", pd.Series(dtype=object)))
     return {
         "field": field,
-        "timepoint": timepoint(field),
         "inferred_type": inferred,
         "portability": _portability(n_present, n_datasets),
         "n_datasets_present": n_present,
@@ -211,7 +204,7 @@ def _build_registry_row(field, src, kept, excluded, n_present, n_datasets, keep=
         "mode_share_median": round(float(mode_series.median()) if len(mode_series) else 0.0, 6),
         "excluded_by": excluded_by,
         "keep": keep,
-        "note": "R2 marks follow_up; R6 marks portability only",
+        "note": "R6 marks portability only",
     }
 
 
@@ -220,7 +213,7 @@ def resolve_filter_stats_path(explicit_csv, tag=None) -> Path:
 
     优先级:显式 --stats_csv 始终覆盖;landmark 开启(单 token)且对应
     rawdata_stats/_shared/{tag}/field_stats.csv 存在 → 用 landmark-first 统计;
-    否则回退 raw 共享统计(官方原始口径)。
+    否则回退 raw 共享统计(raw 口径)。
     """
     if explicit_csv:
         return Path(explicit_csv)
@@ -280,7 +273,6 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
             "mode_share": float(row.get("mode_share") or 0.0),
             "inferred_type": row.get("inferred_type") or "",
             "n_patients": int(row.get("total") or 0),
-            "timepoint": timepoint(row["field_path"]),
         }
         if rule:
             exclusion_rows.append(
@@ -292,7 +284,6 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
                     "coverage": item["coverage"],
                     "n_unique": item["n_unique"],
                     "mode_share": item["mode_share"],
-                    "timepoint": item["timepoint"],
                 }
             )
         else:

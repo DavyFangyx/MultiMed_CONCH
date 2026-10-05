@@ -1,8 +1,8 @@
-"""Landmark-first 字段筛选:先按 t0 mask 重算字段统计,再过 R0-R6(官方链,已扶正)。
+"""Landmark-first 字段筛选:先按 t0 mask 重算字段统计,再过 R0-R6(现行链,已扶正)。
 
 口径(Test_series_spec.md §5bis.1,2026-10-05 扶正):统计在 Field Bank 同款 landmark mask
 上计算(rawdata_stats/{ds}/landmark_0/field_stats.csv),筛选用 R3_coverage=0.30 /
-R4_n_unique=2 / R4_mode_share=0.95,产物写官方 rawdata_stats/{ds}/landmark_0/
+R4_n_unique=2 / R4_mode_share=0.95,产物写现行 rawdata_stats/{ds}/landmark_0/
 {kept_fields.json, fliter_log/}。raw-first 旧口径已废弃(清理记录
 z_notes/cleaned_runs_landmark_first_20261005.md)。
 

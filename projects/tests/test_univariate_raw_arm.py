@@ -106,34 +106,34 @@ def test_parser_accepts_raw_arm_argv():
 def test_resolve_extraction_mask_follows_tag_by_default():
     assert resolve_extraction_mask(ns(), "landmark_0") == "on"
     assert resolve_extraction_mask(ns(), "landmark_365") == "on"
-    assert resolve_extraction_mask(ns(), "landmark_none") == "off"
+    assert resolve_extraction_mask(ns(), "static_only") == "off"
 
 
 def test_resolve_extraction_mask_explicit_and_conflicts():
-    assert resolve_extraction_mask(ns(extraction_mask="off"), "landmark_none") == "off"
+    assert resolve_extraction_mask(ns(extraction_mask="off"), "static_only") == "off"
     assert resolve_extraction_mask(ns(extraction_mask="on"), "landmark_0") == "on"
     with pytest.raises(ValueError, match="冲突"):
         resolve_extraction_mask(ns(extraction_mask="off"), "landmark_0")
     with pytest.raises(ValueError, match="冲突"):
-        resolve_extraction_mask(ns(extraction_mask="on"), "landmark_none")
+        resolve_extraction_mask(ns(extraction_mask="on"), "static_only")
     with pytest.raises(ValueError, match="auto/on/off"):
-        resolve_extraction_mask(ns(extraction_mask="raw"), "landmark_none")
+        resolve_extraction_mask(ns(extraction_mask="raw"), "static_only")
 
 
 def test_raw_arm_requires_explicit_patient_set():
     with pytest.raises(ValueError, match="必须显式声明患者集"):
-        resolve_patient_label_tag(ns(extraction_mask="off"), "landmark_none", "off")
+        resolve_patient_label_tag(ns(extraction_mask="off"), "static_only", "off")
     got = resolve_patient_label_tag(
-        ns(extraction_mask="off", label_tag="landmark_0"), "landmark_none", "off"
+        ns(extraction_mask="off", label_tag="landmark_0"), "static_only", "off"
     )
     assert got == "landmark_0"
 
 
 def test_raw_arm_label_file_override_satisfies_patient_set():
     got = resolve_patient_label_tag(
-        ns(extraction_mask="off", label_file="/tmp/labels.csv"), "landmark_none", "off"
+        ns(extraction_mask="off", label_file="/tmp/labels.csv"), "static_only", "off"
     )
-    assert got == "landmark_none"
+    assert got == "static_only"
 
 
 def test_mask_on_arm_label_tag_follows_tag():
@@ -146,17 +146,17 @@ def test_mask_on_arm_label_tag_follows_tag():
 def test_resolve_field_bank_dir_precedence():
     explicit = "/data/custom/bank"
     assert (
-        resolve_field_bank_dir(ns(field_bank_dir=explicit), "TCGA-ACC", "prompt", "landmark_none", "")
+        resolve_field_bank_dir(ns(field_bank_dir=explicit), "TCGA-ACC", "prompt", "static_only", "")
         == Path(explicit)
     )
     rooted = resolve_field_bank_dir(
-        ns(field_bank_root="outputs/_raw"), "TCGA-ACC", "prompt", "landmark_none", ""
+        ns(field_bank_root="outputs/_raw"), "TCGA-ACC", "prompt", "static_only", ""
     )
-    assert rooted == Path("outputs/_raw") / "TCGA-ACC" / "field_bank" / "prompt" / "landmark_none"
-    canonical = resolve_field_bank_dir(ns(), "TCGA-ACC", "prompt", "landmark_none", "")
-    assert canonical == dataset_field_bank_dir("TCGA-ACC", "prompt", "landmark_none")
+    assert rooted == Path("outputs/_raw") / "TCGA-ACC" / "field_bank" / "prompt" / "static_only"
+    canonical = resolve_field_bank_dir(ns(), "TCGA-ACC", "prompt", "static_only", "")
+    assert canonical == dataset_field_bank_dir("TCGA-ACC", "prompt", "static_only")
     with pytest.raises(ValueError):
-        resolve_field_bank_dir(ns(field_bank_root="outputs/_raw"), "TCGA-ACC", "bad_encoding", "landmark_none", "")
+        resolve_field_bank_dir(ns(field_bank_root="outputs/_raw"), "TCGA-ACC", "bad_encoding", "static_only", "")
 
 
 def test_assert_field_bank_mask_both_directions():
@@ -173,7 +173,7 @@ def test_assert_field_bank_mask_both_directions():
 def test_raw_and_t0_job_keys_are_distinct():
     t0 = parse(["--dataset", "TCGA-ACC", "--landmark_time", "0", "--analyzer", "mlp_clinic_flatten"])
     raw = parse(RAW_ARGV)
-    raw.landmark_tag = "landmark_none"
+    raw.landmark_tag = "static_only"
     assert job_key_from_args(t0) != job_key_from_args(raw)
 
 
@@ -186,16 +186,16 @@ def test_raw_job_key_ignores_worker_local_args():
     assert job_key_from_args(a) == job_key_from_args(b)
 
 
-def test_raw_enqueue_uses_landmark_none_suffix_and_separate_root(tmp_path):
+def test_raw_enqueue_uses_static_only_suffix_and_separate_root(tmp_path):
     argv = list(RAW_ARGV)
     argv[argv.index("--queue_root") + 1] = str(tmp_path / "univariate_raw")
     args = parse(argv)
-    args.landmark_tag = "landmark_none"
+    args.landmark_tag = "static_only"
     args.landmark_time = "none"
     queued = enqueue_jobs(args, ["TCGA-ACC"])
     assert queued["root"] == tmp_path / "univariate_raw"
     names = [p.name for p in queued["created"]]
-    assert len(names) == 1 and names[0].endswith("__TCGA-ACC__landmark_none.conf")
+    assert len(names) == 1 and names[0].endswith("__TCGA-ACC__static_only.conf")
     again = enqueue_jobs(args, ["TCGA-ACC"])
     assert not again["created"] and len(again["existing"]) == 1
 
@@ -206,8 +206,8 @@ def test_raw_arm_patient_set_uses_label_tag(tmp_path):
     labels.mkdir()
     (labels / "tcga_acc__landmark_0.csv").write_text("patient_id\nTCGA-OR-A5J1\n", encoding="utf-8")
     args.landmark_labels_dir = str(labels)
-    mask_state = resolve_extraction_mask(args, "landmark_none")
-    label_tag = resolve_patient_label_tag(args, "landmark_none", mask_state)
+    mask_state = resolve_extraction_mask(args, "static_only")
+    label_tag = resolve_patient_label_tag(args, "static_only", mask_state)
     assert mask_state == "off" and label_tag == "landmark_0"
     got = resolve_univariate_label_file(args, tmp_path / "tcga_acc", label_tag)
     assert got == str(labels / "tcga_acc__landmark_0.csv")
@@ -215,13 +215,13 @@ def test_raw_arm_patient_set_uses_label_tag(tmp_path):
 
 def test_raw_arm_output_namespace_is_separate():
     args = parse(RAW_ARGV)
-    out_dir = univariate_out_dir(args, "TCGA-ACC", "prompt", "landmark_none", "", "mlp_clinic_flatten")
-    assert out_dir == Path("results/univariate_raw") / "univariate/prompt/landmark_none/TCGA-ACC/mlp_clinic_flatten"
+    out_dir = univariate_out_dir(args, "TCGA-ACC", "prompt", "static_only", "", "mlp_clinic_flatten")
+    assert out_dir == Path("results/univariate_raw") / "univariate/prompt/static_only/TCGA-ACC/mlp_clinic_flatten"
     t0 = parse(["--dataset", "TCGA-ACC", "--landmark_time", "0", "--analyzer", "mlp_clinic_flatten"])
     t0_dir = univariate_out_dir(t0, "TCGA-ACC", "prompt", "landmark_0", "", "mlp_clinic_flatten")
     assert t0_dir == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_0" / "TCGA-ACC" / "mlp_clinic_flatten"
     assert t0_dir != out_dir
-    assert "landmark_0" not in out_dir.parts and "landmark_none" in out_dir.parts
+    assert "landmark_0" not in out_dir.parts and "static_only" in out_dir.parts
 
 
 def test_raw_dataset_list_matches_tcga_registry():

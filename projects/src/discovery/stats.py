@@ -49,7 +49,7 @@ def _calc_variance(values: list) -> tuple:
 def _case_field_values(case, field_path, *, landmark_state=None, landmark_time=None):
     """返回 (valid_vals, states, raw_vals)。
 
-    landmark_state=None 走官方提取(extract_path_values + classify_raw_value,行为不变);
+    landmark_state=None 走既有提取(extract_path_values + classify_raw_value,行为不变);
     否则走 Field Bank 同款 mask 提取(与 outputs/*/field_bank/prompt/landmark_0 的 .pt mask
     严格同源),states 为 None。raw_vals 始终提取一次,供 masked_count 审计。
     """
@@ -132,7 +132,7 @@ def analyze_json_all_fields(
                 else:
                     null_count += 1
             if states is not None and len(raw_vals) > 1:
-                # 官方口径:多记录按 raw 值计数(与旧实现一致),含 valid 与 sentinel 患者
+                # 既有口径:多记录按 raw 值计数(与旧实现一致),含 valid 与 sentinel 患者
                 multi_record_count += 1
 
         total_count = patient_total
@@ -202,7 +202,7 @@ def analyze_json_all_fields(
             "_missing_rate": missing_rate,
         }
         if landmark_time is not None:
-            # landmark 口径专属审计列,官方 CSV schema 不变
+            # landmark 口径专属审计列,CSV schema 不变
             row["landmark_time"] = landmark_time
             row["masked_count"] = masked_count
         rows.append(row)
@@ -218,7 +218,7 @@ def run_field_stats(args):
     use_landmark, landmark_time = parse_landmark_options(args)
     tag = landmark_dir_tag(args) if use_landmark else None
     if tag is not None:
-        print(f"landmark 口径统计:tag={tag},产物写 rawdata_stats/{{dataset}}/{tag}/field_stats.csv(不覆盖官方 field_stats.csv)")
+        print(f"landmark 口径统计:tag={tag},产物写 rawdata_stats/{{dataset}}/{tag}/field_stats.csv(不覆盖根级 field_stats.csv)")
 
     datasets = load_dataset_configs(args.datasets_config)
     dataset_names = [] if not args.dataset else resolve_dataset_names(args.dataset, datasets)

@@ -173,7 +173,7 @@ def parse_conf_name(name: str) -> tuple[str, str]:
     """`{study}__{scheme}__landmark_*` -> (study, scheme) with the landmark kept.
 
     The landmark token is folded into `scheme` (e.g. 'SURVPGC__landmark_0') so
-    that landmark_0 / landmark_none confs of the same study never collide.
+    that landmark_0 / static_only confs of the same study never collide.
     """
     tokens = [token for token in str(name).split("__") if token]
     if not tokens:

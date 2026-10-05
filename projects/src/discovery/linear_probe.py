@@ -566,7 +566,7 @@ def main(argv=None):
     for name in names:
         for landmark_args in iter_landmark_args(
             args,
-            scan_roots=dataset_field_bank_dir(name, args.encoding, "landmark_none").parent,
+            scan_roots=dataset_field_bank_dir(name, args.encoding, "static_only").parent,
             context=f"linear probe {name}",
         ):
             landmark_jobs.append((name, landmark_args))

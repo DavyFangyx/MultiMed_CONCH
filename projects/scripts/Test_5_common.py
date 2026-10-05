@@ -359,7 +359,7 @@ def encoding_paths(dataset: str, scheme: str, encoding: str, landmark_tag: str) 
     # `A_manual/baseline/{scheme}` 子目录；先 bound_scheme_name 会得到 prompt 路径）。
     name = f"baseline__{scheme}" if encoding == "baseline" and not scheme.startswith("baseline__") \
         else scheme
-    subdir = "" if landmark_tag in ("", "landmark_none") else landmark_tag
+    subdir = "" if landmark_tag in ("", "static_only") else landmark_tag
     return scheme_output_dir(dataset, name, str(OUTPUTS), landmark_subdir=subdir)
 
 

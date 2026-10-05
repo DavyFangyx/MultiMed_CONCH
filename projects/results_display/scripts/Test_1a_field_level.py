@@ -6,7 +6,7 @@
 
 两臂（同患者集，唯一差异 = 取值 mask 状态）：
   - t0 臂：results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
-  - off 臂：results/Test_1a/arm_off/univariate/prompt/landmark_none/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - off 臂：results/Test_1a/arm_off/univariate/prompt/static_only/{dataset}/mlp_clinic_flatten/field_cindex.csv
   - Δc_field = c(off) − c(t0)
 
 数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event 派生
@@ -19,11 +19,11 @@ leak_rate 列（Test_2a 审计）：
   - 「理论上能动组合 Δc 的字段清单」= leak_rate > --leak_threshold 且 |Δc_field| >= --delta_threshold。
 
 landmark-first 字段准入（规格 §5bis.1，2026-10-05）：
-  - coverage_off 来自官方 raw 统计 rawdata_stats/{dataset}/field_stats.csv；coverage_t0 来自
+  - coverage_off 来自raw 统计 rawdata_stats/{dataset}/field_stats.csv；coverage_t0 来自
     t0 口径统计 rawdata_stats/{dataset}/landmark_0/field_stats.csv（Field Bank 同款 mask 提取，
     scripts/run_landmark_first_filter.py 生成，scripts/validate_t0stats_vs_masks.py 验收）。
   - t0_filter_status 来自 landmark-first 筛选排除日志
-    rawdata_stats/{dataset}/landmark_0/fliter_log/exclusion_log.csv(官方目录,已扶正;历史
+    rawdata_stats/{dataset}/landmark_0/fliter_log/exclusion_log.csv(现行目录,已扶正;历史
     t0stats 后缀可用 --t0_filter_suffix 显式覆盖)
     (R3_coverage=0.30 / R4_n_unique=2 / R4_mode_share=0.95);t0 口径下覆盖率崩塌或退化的字段
     不计入头条统计。缺产物时状态列留空 = 视为准入(与 leak_rate 同样的优雅降级)。
@@ -90,7 +90,7 @@ CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
 DEFAULT_T0_ROOT = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
 DEFAULT_OFF_ROOT = (
-    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "landmark_none"
+    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "static_only"
 )
 DEFAULT_MANIFEST = REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -98,7 +98,7 @@ DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
 DEFAULT_RAW_STATS_ROOT = REPO_ROOT / "rawdata_stats"
 DEFAULT_T0_STATS_TAG = "landmark_0"  # landmark-first 统计目录(rawdata_stats/{ds}/landmark_0/field_stats.csv)
-DEFAULT_T0_FILTER_SUFFIX = ""  # 扶正后筛选产物即官方 landmark_0/;历史 t0stats 后缀仅作显式覆盖用
+DEFAULT_T0_FILTER_SUFFIX = ""  # 扶正后筛选产物即现行 landmark_0/;历史 t0stats 后缀仅作显式覆盖用
 MIN_EVENT = 100  # R13
 CONSISTENCY_DELTA = 0.05  # Main_field_ranking.csv 的 frac_abs_delta_ge_0p05 阈值（列名固定，不随 CLI 变）
 
@@ -173,7 +173,7 @@ def load_value_diff(dataset: str, off_root: Path) -> dict[str, dict]:
     """
     # raw bank 目录与 off 臂结果目录同源于 outputs/_raw（见 scripts/s5b_build_raw_field_bank.py）
     path = (
-        REPO_ROOT / "outputs" / "_raw" / dataset / "field_bank" / "prompt" / "landmark_none"
+        REPO_ROOT / "outputs" / "_raw" / dataset / "field_bank" / "prompt" / "static_only"
         / "raw_value_diff.json"
     )
     if not path.exists():
@@ -337,7 +337,7 @@ def assemble(
         schemes = [scheme_for_field_idx(i) for i in sorted(idx_to_field)]
         leak = load_leak_rates(leak_root, dataset, schemes)
         value_diff = load_value_diff(dataset, off_root)
-        # landmark-first 准入:coverage_off(官方 raw 统计)、coverage_t0(t0 口径统计)、排除日志
+        # landmark-first 准入:coverage_off(raw 统计)、coverage_t0(t0 口径统计)、排除日志
         cov_off = load_field_coverage(raw_stats_root / dataset / "field_stats.csv")
         t0_stats_path = raw_stats_root / dataset / t0_stats_tag / "field_stats.csv"
         cov_t0 = load_field_coverage(t0_stats_path)

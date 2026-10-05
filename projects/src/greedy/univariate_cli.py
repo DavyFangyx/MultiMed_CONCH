@@ -452,13 +452,13 @@ def assert_field_bank_mask(field_bank_dir: Path, mask_state: str, index: dict | 
 
 def resolve_univariate_label_file(args, split_dir: Path, tag: str) -> str | None:
     """landmark 开启时强制使用 S4 派生的 {study}__landmark_{T}.csv（经典三要件风险集排除），
-    保证 univariate 与 Test_1b 臂 B / 未来 Test_1c 同患者集。landmark_none（static_only）不用派生 label。"""
+    保证 univariate 与 Test_1b 臂 B / 未来 Test_1c 同患者集。static_only 不用派生 label。"""
     if getattr(args, "label_file", None):
         path = Path(args.label_file)
         if not path.exists():
             raise FileNotFoundError(f"--label_file 不存在: {path}")
         return str(path)
-    if tag == "landmark_none":
+    if tag == "static_only":
         return None
     labels_dir = Path(getattr(args, "landmark_labels_dir", None) or "")
     candidate = labels_dir / f"{split_dir.name}__{tag}.csv"

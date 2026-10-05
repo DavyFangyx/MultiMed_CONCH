@@ -6,7 +6,7 @@
                但取值提取 `landmark=False`（不施加 t0 槽位 mask，取值全集）。
 
 产物（每个数据集）：
-    outputs/_raw/{dataset}/field_bank/prompt/landmark_none/
+    outputs/_raw/{dataset}/field_bank/prompt/static_only/
         prompts.csv          # 全患者 × lm0 字段表的 prompt（mask off 取值）
         embeddings/pt/*.pt   # CONCH 文本编码（matrix [n_fields,512], mask, patient_id）
         field_index.json     # landmark_policy=off, field_list_source=landmark_0, ...
@@ -54,7 +54,7 @@ from discovery.field_bank import generate_field_bank_prompt_row, load_field_bank
 from discovery.landmark import timed_family_for_field
 
 RAW_BANK_ROOT = PATHS_PROJECT_ROOT / "outputs" / "_raw"
-RAW_TAG = "landmark_none"  # 取值 mask 状态 off 的规范 tag
+RAW_TAG = "static_only"  # 取值 mask 状态 off 的规范 tag
 DIFF_CSV = RAW_BANK_ROOT / "_field_value_diff.csv"
 
 

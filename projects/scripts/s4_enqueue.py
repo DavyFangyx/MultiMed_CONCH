@@ -231,7 +231,7 @@ def cmd_list() -> None:
                 total += len(combos)
                 print(f"  slice {name}: {len(combos)} combos, "
                       f"encodes missing {len(missing)}")
-    print(f"total combos: {total} = 138 combos x 2 arms (A=landmark_none, B=landmark_0); "
+    print(f"total combos: {total} = 138 combos x 2 arms (A=static_only, B=landmark_0); "
           f"confs = 138 x 2 analyzers x 2 arms = 552")
     print("--- old tables coverage ---")
     missing_old = 0

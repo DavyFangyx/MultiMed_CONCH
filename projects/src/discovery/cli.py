@@ -53,9 +53,9 @@ def build_stats_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--landmark_time",
         default="none",
-        help="landmark 起点天数或 none。none = 官方口径(写 rawdata_stats/{dataset}/field_stats.csv,行为不变);"
+        help="landmark 起点天数或 none。none = 既有口径(写 rawdata_stats/{dataset}/field_stats.csv,行为不变);"
         "传天数(如 0)时按 Field Bank 同款 mask 计算覆盖率,写 rawdata_stats/{dataset}/landmark_{T}/field_stats.csv,"
-        "不覆盖官方 field_stats.csv。仅支持单个 token。",
+        "不覆盖根级 field_stats.csv。仅支持单个 token。",
     )
     return parser
 
@@ -108,7 +108,7 @@ def build_filter_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out_suffix",
         default="",
-        help="输出目录后缀：产物写 rawdata_stats/{dataset}/{landmark_tag}_{out_suffix}/（如 t0stats → landmark_0_t0stats/），不覆盖官方 {landmark_tag}/ 产物",
+        help="输出目录后缀：产物写 rawdata_stats/{dataset}/{landmark_tag}_{out_suffix}/（如 t0stats → landmark_0_t0stats/），不覆盖{landmark_tag}/ 产物",
     )
     add_landmark_cli_args(parser, extraction=False)
     return parser

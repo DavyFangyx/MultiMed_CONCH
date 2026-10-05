@@ -1,20 +1,20 @@
 # 清理记录 2026-10-05:landmark-first 扶正——旧 raw-first 口径运行产物(用户指令)
 
 **决策**:landmark 必须在 R3/R4 之前(选项 C 拍板)。之前的 raw-first 口径运行归为**错误**:
-官方 `landmark_0/kept_fields.json` 及其下游产物全部以 landmark-first(t0stats)替换;
+现行 `landmark_0/kept_fields.json` 及其下游产物全部以 landmark-first(t0stats)替换;
 旧运行产物该删除的删除、该移走的移走。重跑范围见待决事项 T30。
 
-## 扶正(替换官方产物)
+## 扶正(替换现行产物)
 
 - `rawdata_stats/{ds}/landmark_0_t0stats/{kept_fields.json, fliter_log/}` →
-  官方 `rawdata_stats/{ds}/landmark_0/`(36 数据集:33 TCGA + CPTAC + MMRF + `_shared`);
+  现行 `rawdata_stats/{ds}/landmark_0/`(36 数据集:33 TCGA + CPTAC + MMRF + `_shared`);
   `landmark_0/field_stats.csv` 本就是 landmark-first 统计,原位保留;t0stats 目录移除。
-- 旧官方 raw-first 产物(`landmark_0/kept_fields.json` + `fliter_log/`)移走至
+- 旧 raw-first 产物(`landmark_0/kept_fields.json` + `fliter_log/`)移走至
   `z_notes/backup/landmark_first_promotion_20261005/rawdata_stats_legacy/`。
 - 代码扶正:`run_field_filter` 在 landmark 开启且对应 landmark 统计存在时,
   默认消费 landmark-first 统计(显式 `--stats_csv` 仍可覆盖);
-  `scripts/run_landmark_first_filter.py` 改为直接写官方目录(去掉 `--out_suffix`);
-  Test_1a 报表默认读官方 `landmark_0/fliter_log/`。
+  `scripts/run_landmark_first_filter.py` 改为直接写现行目录(去掉 `--out_suffix`);
+  Test_1a 报表默认读现行 `landmark_0/fliter_log/`。
 
 ## 删除路径(旧 kept_fields 口径的下游,可重跑再生)
 
@@ -27,7 +27,7 @@
 - `results/Test_1a/{arm_t0,arm_off}/**/field_cindex.csv`(逐数据集)→
   `z_notes/backup/landmark_first_promotion_20261005/{arm_t0,arm_off}_field_cindex/`
 - `results/Test_1a/arm_off/_s5b_report.json`、`_audit_pairs.json` → 同上
-- 旧官方 `landmark_0/{kept_fields.json, fliter_log/}` → 见"扶正"节
+- 旧现行 `landmark_0/{kept_fields.json, fliter_log/}` → 见"扶正"节
 
 ## 未动(有专门归属)
 
