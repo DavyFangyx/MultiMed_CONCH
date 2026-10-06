@@ -15,6 +15,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| P19 | 接口修订：撤销一键串行设计 + usage GPU 前缀（决策点） | `4fc6dd2` | 2026-10-06 | 删除 scripts/runbook.sh：长序列运行、多处需人工核查审计，一键串行不适用（P17 的 runbook.sh 撤销，runbook.md 相应引用改为分步手动执行说明）；usage.md 删「一键串行」节；usage.md 需 GPU 命令（阶段 2 三条编码/建库 + 阶段 4 s4 encode）前缀 CUDA_VISIBLE_DEVICES=7，queue 训练类命令保持脚本内部 GPU env |
 | P18 | 接口修订：usage 速查 + 命令块注释化 + 筛选入口恢复开放两步（决策点） | `35be4b8` | 2026-10-06 | 新增 z_notes/experiment_list/usage.md（100 行速查：三句开场+一键串行+分步注释命令块）；runbook.md 命令块全部注释+命令即用风格；删除 scripts/run_landmark_first_filter.py（1443af6 引入的封闭入口），恢复 9f64feb 时代开放两步：run_field_stats --landmark_time 0 → run_field_filter --landmark_time 0 --R3_coverage/--R4_n_unique/--R4_mode_share（命令行可覆盖，默认 0.30/2/0.95）；runbook.sh/spec/tcga_pipeline 文档同步；pytest 302 passed 0 failed |
 | P17 | 接口整理 D1/D2：runbook 手册重排 + 串行入口（决策点） | `56ba9c0` | 2026-10-06 | runbook.md 重排为全链八阶段手册（闸门→审查→编码→Test_1a→Test_2→Test_3/4→Test_5→Test_6→报表），每阶段命令块+判据+产物三段式，命令路径随吸收更新为 scripts/run_a_manual.py；scripts/runbook.sh 新建：run_all/stage N/status，判据=队列四桶计数（期望数常量区集中），日志 results/_runbook/，幂等 SKIP；验证：stage 0 两闸门实跑 PASS、stage 8 展示层实跑、status 总览正常 |
 | P16 | 接口整理 T32：manual_pipeline 删除 L0-L5/D0-D5 注册（决策点） | `32912d9` | 2026-10-06 | L0-L5/D0-D5 在 gdc 线零消费，彻底删除：schemes.json 删注册+模板目录删；config 删 DEFAULT_TEXT_SCHEMES/D_SCHEME_BY_TEXT_SCHEME、VALID_SCHEME_SOURCES 收窄 gdc；baseline/cindex 删 D 组；hgcn_clinic 删占位符命名空间；三处 manual 主动报错引导；测试改写（代表方案 MULTISURV）；L5_PLACEHOLDER_BY_FIELD_PATH 保留（活代码：词表归一化+rawdata_stats 列，T31 对象）；pytest 302 passed 0 failed；T33 同批：PGC 仓库 hgcn_graph_build.py 路径改指 outputs_pgc（跨仓库盘上，未提交） |
