@@ -33,12 +33,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.constants import DAYS_PER_MONTH
 from common.paths import RESULTS_ROOT, test_results_dir
 
 from .paths import PROJECT_ROOT
 
 
-DAYS_PER_MONTH = 365.25 / 12.0
 DEFAULT_TIME_COL = "survival_months"
 DEFAULT_CENSORSHIP_COL = "censorship"
 DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"

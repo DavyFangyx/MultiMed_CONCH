@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+from common.constants import DAYS_PER_YEAR
 from common.types import to_numeric
 
 
@@ -48,7 +49,7 @@ def days_to_years(value) -> str:
     number = parse_number(value)
     if number is None:
         return _clean_text(value) or str(value)
-    years = int(number / 365.25) if number > 365 else int(number)
+    years = int(number / DAYS_PER_YEAR) if number > 365 else int(number)
     return str(years)
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from common.constants import DAYS_PER_YEAR
 from common.missingness import is_missing_token
 from common.paths import PROJECT_ROOT
 from common.types import infer_type, to_numeric
@@ -120,7 +121,7 @@ def _numeric_from_token(token: str, field_path: str) -> float | None:
     if number is None:
         return None
     if _is_age_at_diagnosis(field_path) and number > 365:
-        number = number / 365.25
+        number = number / DAYS_PER_YEAR
     return float(number)
 
 

@@ -9,6 +9,7 @@ import re
 
 import numpy as np
 
+from common.constants import DAYS_PER_YEAR
 from common.clinical_io import load_clinical_cases, normalize_json_paths
 from common.fields import DERIVED_FIELD_TYPES, HUMAN_SCHEME_FIELDS, field_gdc_path
 from common.missingness import is_missing_token
@@ -194,7 +195,7 @@ def _aggregate_continuous_value(field: str, raw_value) -> float | None:
     if not nums:
         return None
     if field == "diagnoses[].age_at_diagnosis":
-        nums = [x / 365.25 if x > 365 else x for x in nums]
+        nums = [x / DAYS_PER_YEAR if x > 365 else x for x in nums]
     return float(np.median(nums))
 
 

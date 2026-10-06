@@ -29,6 +29,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT / "src"))
+from common.constants import DAYS_PER_MONTH  # noqa: E402
 from common.paths import RESULTS_ROOT, test_results_dir as _resolve_results_dir  # noqa: E402
 
 # Test 系列命名公约: 结果臂目录(迁移前 = A_manual/A_manual_landmark,
@@ -431,7 +432,7 @@ def _fake_label_stats(study: str, landmark_time, excluded: int = 7) -> dict:
         "study": study,
         "landmark_time_days": int(landmark_time),
         "apply_shift": True,
-        "shift_months": landmark_time / (365.25 / 12),
+        "shift_months": landmark_time / DAYS_PER_MONTH,
         "cases_before": 100,
         "cases_after": 100 - excluded,
         "rows_before": 100,
@@ -612,7 +613,7 @@ def test_build_landmark_label_file_risk_set_and_shift(tmp_path):
     assert stats["excluded_cases"] == ["P0"]
     assert stats["excluded_rows"] == 1
     assert stats["event_rows_before"] == 2 and stats["event_rows_after"] == 2  # P60/P120
-    assert stats["shift_months"] == pytest.approx(365 / (365.25 / 12))
+    assert stats["shift_months"] == pytest.approx(365 / DAYS_PER_MONTH)
 
     df = pd.read_csv(out_file)
     assert df["case_id"].tolist() == ["P12", "P60", "P120"]
