@@ -1,9 +1,8 @@
 # 实验执行手册:全链路 runbook(审查 → 编码 → 实验 → 报表)
 
-> **只想快速开跑:见同目录 `usage.md`(精简速查,一键串行 `bash scripts/runbook.sh run_all`);本文件是完整版**,判据细节 / env 速查 / 已知坑以本文件为准。
+> **只想快速开跑:见同目录 `usage.md`(精简速查);本文件是完整版**,判据细节 / env 速查 / 已知坑以本文件为准。
 > **本文件是实验执行的权威手册**:阶段划分、命令、判据、产物以这里为准。
-> **`scripts/runbook.sh` 与本文件一一对应**:阶段编号相同、命令逐条相同、判据常量相同
-> (`bash scripts/runbook.sh run_all` 串行跑全链路 / `bash scripts/runbook.sh stage N` 只跑某阶段 / `bash scripts/runbook.sh status` 一屏总览)。
+> **分步手动执行**:长序列运行、部分节点需人工核查审计,不提供一键串行脚本(已撤销,见执行日志 P19);按下方阶段顺序逐阶段执行并核对判据。
 > 口径权威:`z_notes/experiment_list/experiment_list.md`(实验清单)、`z_notes/Test_series_spec.md`(规格)、
 > `z_notes/time_axis/time_axis.md`(时间轴协议);目录命名见 `z_notes/experiment_list/naming_convention.md`。
 > 所有命令都在 `projects/` 根目录执行。环境:训练 = conda env **SurvPGC**,编码 = conda env **conch**,
@@ -80,7 +79,7 @@ python scripts/cache_status.py
 - **判据**:两条命令**退出码 0**(`check_search_labels.py` 发现 gt≤0 会 `sys.exit(1)`)。
 - **产物**:无(只读报告)。`check_search_labels` 打印每数据集 `n_gt_le_0` 明细与总线;
   `cache_status` 打印 `cache: …/results/Test_3_search/cache.sqlite` 与按 schema 版本的行数。
-- 脚本缺失时 `runbook.sh` 打印警告并跳过该闸门(不阻塞);脚本存在但失败 = 阶段失败。
+- 闸门脚本缺失时先补脚本再投任何队列(不阻塞下游的话可记入已知坑);脚本存在但失败 = 阶段失败。
 
 ---
 
@@ -337,8 +336,6 @@ python results_display/scripts/Test_4_three_tiers.py
 | `T5_Q_OUT` | /tmp/test_5_q_metrics.csv | Test_5 Q 轴输出 |
 | `FIELD_BANK_GPU` | 7 | Field Bank 编码卡(阶段 2) |
 | `A_PIPELINE_GPU` | 7 | run_a_manual 编码卡(`--gpu` 优先) |
-| `RUNBOOK_POLL_INTERVAL` | 60 | `scripts/runbook.sh` 轮询间隔(秒) |
-| `RUNBOOK_STAGE_TIMEOUT` | 86400 | `scripts/runbook.sh` 单阶段轮询超时(秒,24h) |
 
 ## 已知坑清单
 
@@ -363,5 +360,5 @@ python results_display/scripts/Test_4_three_tiers.py
    `enqueue` 对缺编码的 (dataset, scheme, arm) 会 **SKIP 并列出**,不报错——看 `status` 的"缺编码"段。
 10. **Test_6 的 `--out` 必须含 ds(+algo)**:防不同 (ds, algo) 串目录;`t6_scheduler.sh` 已按此写好,手工补跑请照抄。
 11. **`results/Test_1a/arm_t0` 是指向 `results/univariate` 的软链**(命名公约迁移遗留),不是真目录;删改前先 `ls -la` 确认。
-12. **`scripts/runbook.sh` 只调用不改**:它不修改任何 queue 脚本、`run_a_manual.py` 或 `src/` 代码;
-    阶段判据的期望数集中在脚本顶部常量区(与本文件"一页速览/各阶段判据"一一对应)。
+12. **分步手动执行**:无自动串行脚本(一键串行设计已撤销,见执行日志 P19);每个阶段按命令块复制粘贴执行,
+    阶段判据以本文件"一页速览/各阶段判据"为准,判据满足再走下一步。

@@ -1,17 +1,8 @@
 # 实验全链路速查(usage)
 > **在 `projects/` 根目录执行**。环境三分:训练 = conda env **SurvPGC**,编码 = conda env **conch**,投递/监控 = **base python 3.13**(速查表见 runbook.md §env 变量速查)。
 > **结果在哪看**:训练落 `results/`、报表落 `results_display/`(各 Test 对应目录见 runbook.md「结果在哪看(总览)」表)。
-> **队列纪律**:上一步判据满足再走下一步(唯一并行例外:阶段 4 时间轴链 与 阶段 5 字段轴链)。
+> **队列纪律**:上一步判据满足再走下一步(唯一并行例外:阶段 4 时间轴链 与 阶段 5 字段轴链);长序列运行,关键节点须人工核查审计(runbook.md 各阶段判据)。
 
-## 一键串行(推荐)
-```bash
-# 按阶段 0→8 串行执行 + 判据轮询(判据已满足的阶段自动 SKIP);日志 results/_runbook/
-bash scripts/runbook.sh run_all
-# 只跑某个阶段 N(N = 0..8,编号同下方分步)
-bash scripts/runbook.sh stage N
-# 一屏总览:队列四桶计数 vs 期望 / 各阶段判据 / 最新产物 / 最近日志(只读)
-bash scripts/runbook.sh status
-```
 ## 分步手动(按阶段自己跑;每个阶段的完整子命令见 runbook.md 对应小节)
 ### 阶段 0:前置闸门
 ```bash
@@ -30,16 +21,17 @@ python scripts/run_field_stats.py --dataset all --landmark_time 0
 # R0-R6 筛选(R3/R4 阈值可改;自动消费上一步 landmark 统计,生成 kept_fields.json)
 python scripts/run_field_filter.py --dataset all --landmark_time 0 \
     --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
+
 # 判据:退出码 0 且 rawdata_stats/*/landmark_0/kept_fields.json 齐备(36 数据集;存在性审计 field_presence / 时间统计 time_stats 见 runbook.md 阶段 1)
 ```
-### 阶段 2:编码(一律 conch env;GPU 默认 7)
+### 阶段 2:编码(一律 conch env;GPU 用 CUDA_VISIBLE_DEVICES 指定,默认 7)
 ```bash
 # Field Bank 文本基座(Test_1a t0 臂 / Test_3 字段基座;失败 → 先补阶段 1)
-conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
+CUDA_VISIBLE_DEVICES=7 conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
 # 论文方案 gdc 线:方案拼句 + 编码(随后补 baseline / hgcn_clinic 子命令)
-conda run -n conch python scripts/run_a_manual.py pipeline --dataset all --scheme paper
+CUDA_VISIBLE_DEVICES=7 conda run -n conch python scripts/run_a_manual.py pipeline --dataset all --scheme paper
 # off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/)
-bash scripts/s5b_univariate_queue.sh bank
+CUDA_VISIBLE_DEVICES=7 bash scripts/s5b_univariate_queue.sh bank
 # 判据:退出码 0;bash scripts/s5b_univariate_queue.sh check 通过(raw bank 15/15)+ run_schemes.py 方案组合(见 runbook.md 阶段 2);15 主集 field_index.json 存在
 ```
 ### 阶段 3:Test_1a 单字段泄露对照
@@ -58,8 +50,8 @@ bash scripts/s5b_univariate_queue.sh drain
 ```bash
 # 2a 审计:逐字段 leak_rate(描述性,不训练)
 python scripts/run_leak_audit.py
-# 2b 编码:补齐缺失 embeddings(conch env,GPU 默认 7;已存在的跳过)
-bash scripts/s4_Test_2b_queue.sh encode
+# 2b 编码:补齐缺失 embeddings(conch env,GPU 用 CUDA_VISIBLE_DEVICES 指定,默认 7;已存在的跳过)
+CUDA_VISIBLE_DEVICES=7 bash scripts/s4_Test_2b_queue.sh encode
 # 2b 训练:后台自愈(自动分波投放 + drainer 续跑)
 bash scripts/s4_Test_2b_queue.sh watch
 # 判据:Test_2b_arms queue 空 && running 空 && done ≥ 256;再跑 bash scripts/s4_Test_2b_queue.sh validate(退出码 0)
