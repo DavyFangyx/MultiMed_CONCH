@@ -53,6 +53,43 @@ def test_extract_path_and_primary_diagnosis():
     assert get_primary_diagnosis(case["diagnoses"])["primary_diagnosis"] == "Adenocarcinoma"
 
 
+def test_primary_diagnosis_anchors_on_days_not_flag():
+    """主诊断 = days 最小记录;GDC 的 primary-disease 标记不是时间锚点(SKCM 型错位)。"""
+    diags = [
+        {"diagnosis_is_primary_disease": "true", "days_to_diagnosis": 426, "ajcc_pathologic_t": None},
+        {"diagnosis_is_primary_disease": "false", "days_to_diagnosis": 0, "ajcc_pathologic_t": "T1a"},
+        {"diagnosis_is_primary_disease": "false", "days_to_diagnosis": 457},
+    ]
+    picked = get_primary_diagnosis(diags)
+    assert picked["days_to_diagnosis"] == 0
+    assert picked["ajcc_pathologic_t"] == "T1a"
+
+
+def test_primary_diagnosis_negative_days_preferred():
+    """轴上更早(负 days)的记录优先;天数缺失排最后。"""
+    diags = [
+        {"diagnosis_is_primary_disease": "false", "days_to_diagnosis": None},
+        {"diagnosis_is_primary_disease": "true", "days_to_diagnosis": 0},
+        {"diagnosis_is_primary_disease": "false", "days_to_diagnosis": -64, "ajcc_pathologic_t": "T2b"},
+    ]
+    assert get_primary_diagnosis(diags)["ajcc_pathologic_t"] == "T2b"
+
+
+def test_primary_diagnosis_flag_tiebreak_and_fallback():
+    # 同 days 时 flag=True 优先
+    diags = [
+        {"diagnosis_is_primary_disease": "false", "days_to_diagnosis": 0, "ajcc_pathologic_t": "T2"},
+        {"diagnosis_is_primary_disease": "true", "days_to_diagnosis": 0, "ajcc_pathologic_t": "T1a"},
+    ]
+    assert get_primary_diagnosis(diags)["ajcc_pathologic_t"] == "T1a"
+    # 全部无 days 时退回 flag 优先(与原行为一致)
+    assert get_primary_diagnosis(
+        [{"diagnosis_is_primary_disease": "false"}, {"diagnosis_is_primary_disease": "true"}]
+    )["diagnosis_is_primary_disease"] == "true"
+    # 空列表
+    assert get_primary_diagnosis([]) == {}
+
+
 def test_missingness_three_state():
     assert classify_raw_value(None) == "null"
     assert classify_raw_value("") == "null"

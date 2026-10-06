@@ -135,12 +135,28 @@ def unique_join(values: list, fallback="not reported") -> str:
 
 
 def get_primary_diagnosis(diagnoses: list) -> dict:
+    """主诊断记录 = `days_to_diagnosis` 最小（含负值）的记录;天数缺失排最后。
+
+    GDC 的 `diagnosis_is_primary_disease` 是"本研究重点疾病"标记（词典原文:
+    "the disease that was the primary focus of the study"），是疾病归属概念、
+    **不是时间锚点**——SKCM 等队列中它常标在随访记录上（如 days=426 的转移
+    诊断），若按它选主诊断会把真实 t0 分期（T1a 等）覆盖成占位符（TX），
+    并造成 landmark 两臂取值不一致（time_axis.md §2.3）。因此只把它用作
+    同 days 时的 tie-break，不再作为主判据。
+    """
     if not diagnoses:
         return {}
-    for item in diagnoses:
-        if str(item.get("diagnosis_is_primary_disease", "")).lower() == "true":
-            return item
-    return diagnoses[0]
+
+    def _key(item: dict):
+        days = item.get("days_to_diagnosis")
+        try:
+            has_days, key_days = 0, float(days)
+        except (TypeError, ValueError):
+            has_days, key_days = 1, float("inf")
+        flag = 0 if str(item.get("diagnosis_is_primary_disease", "")).lower() == "true" else 1
+        return (has_days, key_days, flag)
+
+    return sorted(diagnoses, key=_key)[0]
 
 
 def get_treatments(case: dict) -> list:

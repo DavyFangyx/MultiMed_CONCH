@@ -61,6 +61,8 @@ gt 与协变量槽位**同轴、同单位（天）**，这是 landmark 三要件
 - **月/天换算**：Clinic_Analyzer 标签月数除数为 30.44（SurvPGC `pipeline.py:349-361`）；A_pipeline `landmark_labels.py` 用 `365.25/12 = 30.4375` 反推 gt 天数。T∈{0,365,730} 整数天口径下风险集排除数一致，无实际影响；只用 `DAYS_PER_MONTH` 判断 `gt_days <= T` 的边界。
 - **天数为负**：`days_to_*` 可为负（如术前化验 `days_to_test = -3`），负值不作异常处理，说明 index 不是本例最早事件。
 
+- **主诊断标记不是时间锚点（2026-10-06 修正）**：GDC `diagnosis_is_primary_disease` 的词典定义是"该诊断是否代表**本研究重点疾病**"（the primary focus of the study）——是**疾病归属概念，不是时间概念**。SKCM 队列 470 条 flag=True 中 352 条（75%）标在 days≠0 的随访/转移诊断上（例：TCGA-3N-A9WB 的 flag=True 记录 days=426、T 为空，day-0 记录才有 T1a）。若按 flag 选主诊断，管线会取随访槽位的空值占位（TX），真实 t0 分期被覆盖，且两 landmark 臂取值不一致。**主诊断判定 = `days_to_diagnosis` 最小（含负值；缺失排最后），flag 仅同 days 时 tie-break**（`common/fields.py::get_primary_diagnosis`）。受影响数据集的 arm A 工件需按新规则重编码（见登记表 D13）。
+
 ---
 
 ## 3. landmark：经典三要件与代码落点（协议主体）
