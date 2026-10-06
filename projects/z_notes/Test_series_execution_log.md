@@ -10,8 +10,8 @@
 | 编号 | 事项 | 状态 |
 |---|---|---|
 | T31 | D1-D5 重生成词表口径：现内核按 GDC 路径键出 22 字段 vs 冻结产物 17 占位符键（重生成多 6 维） | 待用户拍板（冻结产物维持现状） |
-| T32 | manual_pipeline schemes.json 是否彻底删除 L0-L5 注册（现为「来源未注册」跳过提示；测试断言与 hgcn 冻结产物树依赖） | 待用户拍板 |
-| T33 | PGC 仓库 hgcn_graph_build.py 的 A_PIPELINE_OUTPUT_ROOT 改指 outputs_pgc（HGCN 重生成前置） | 跨仓库，待用户同步 |
+| T32 | manual_pipeline schemes.json 是否彻底删除 L0-L5 注册（现为「来源未注册」跳过提示；测试断言与 hgcn 冻结产物树依赖） | ✅ 已拍板（2026-10-06）：删除，见 P16 |
+| T33 | PGC 仓库 hgcn_graph_build.py 的 A_PIPELINE_OUTPUT_ROOT 改指 outputs_pgc（HGCN 重生成前置） | ✅ 已执行（2026-10-06，跨仓库盘上改动，见 P16） |
 | D9 | 数据集降级/剔除逐项确认（manifest v2） | 待确认 |
 | T29 | Test_5 报告与 Test_4 三档衔接 | 待执行 |
 | T30 | gt≤0 剔除 + landmark-first 扶正后的重跑范围：field bank（35 数据集）+ Test_1a 两臂 + Test_1b 重出 + Test_2b / Test_3 搜索与三臂 / Test_5 | 待用户拍板 |
@@ -24,6 +24,8 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| P17 | 接口整理 D1/D2：runbook 手册重排 + 串行入口（决策点） | `56ba9c0` | 2026-10-06 | runbook.md 重排为全链八阶段手册（闸门→审查→编码→Test_1a→Test_2→Test_3/4→Test_5→Test_6→报表），每阶段命令块+判据+产物三段式，命令路径随吸收更新为 scripts/run_a_manual.py；scripts/runbook.sh 新建：run_all/stage N/status，判据=队列四桶计数（期望数常量区集中），日志 results/_runbook/，幂等 SKIP；验证：stage 0 两闸门实跑 PASS、stage 8 展示层实跑、status 总览正常 |
+| P16 | 接口整理 T32：manual_pipeline 删除 L0-L5/D0-D5 注册（决策点） | `32912d9` | 2026-10-06 | L0-L5/D0-D5 在 gdc 线零消费，彻底删除：schemes.json 删注册+模板目录删；config 删 DEFAULT_TEXT_SCHEMES/D_SCHEME_BY_TEXT_SCHEME、VALID_SCHEME_SOURCES 收窄 gdc；baseline/cindex 删 D 组；hgcn_clinic 删占位符命名空间；三处 manual 主动报错引导；测试改写（代表方案 MULTISURV）；L5_PLACEHOLDER_BY_FIELD_PATH 保留（活代码：词表归一化+rawdata_stats 列，T31 对象）；pytest 302 passed 0 failed；T33 同批：PGC 仓库 hgcn_graph_build.py 路径改指 outputs_pgc（跨仓库盘上，未提交） |
 | P15 | 接口整理：PGC 线独立化 + A_pipeline 吸收 + 冻结（决策点） | `337cf3e` | 2026-10-06 | PGC 线独立：A_pipeline_pgc 自包含子项目（内核+common 快照独立复制，无 landmark/cindex，--force 冻结闸门），117 个 L0-L5/D0-D5/HGCN_clinic 产物目录迁至 outputs_pgc/（2.3G），SurvPGC_Workspace 46,848 条 C 软链重指向+build_workspace.sh/Readme 更新（PGC 仓库 SurvPGC_Workspace 不入库，盘上生效）；A_pipeline 吸收：编码内核→src/manual_pipeline/，入口→scripts/run_a_manual.py，模板→templates/manual_schemes/，12 消费点（s4/Test_3/Test_5/leak）更新，三缺口修复（cindex 白名单/encode GPU/hgcn L0-L5 硬要求），A_pipeline/ 删除；冻结契约 z_notes/time_axis/frozen_schemes_contract.md（含 D1-D5 多 6 维、D13 一例差异登记）；验证：pytest 302 passed、json2prompt diff=0、s4/Test_3 冒烟；备注：工作区原有未提交 Test_3 模板改动与 .gitignore 用户行随批入库，Test_6/E2 在途文件未动 |
 | P14 | 接口整理 D3：脚本接口顺手清理 | `8d107c0` | 2026-10-06 | 提交 s5_univariate_queue.sh 工作区已有修复（manifest 派生 DS_LIST/EXPECTED、QUEUE_ROOT=Test_1a_t0）；check_search_labels 闸门 FAIL 补 sys.exit(1)（编排判据依赖退出码）；s5b 注释修正报告路径为 results/Test_1a/arm_off |
 | P13 | 接口整理 B3：slide 级 label 本地派生 | `a62e4c0` | 2026-10-06 | 新增 scripts/build_slide_metadata.py：P 特征文件名枚举 slide 清单（slide_id=stem+.svs、case_id=前 12 位，等价 PGC pipeline.py 做法），左连接本地 case 级 label；输出与 case 级表分离的 metadata_slide/{study}.csv（避免 clinic-only 链路的缓存哈希/闸门被 slide 行数波及，多模态 conf 解 park 时经 LABEL_FILE_PATH 显式指向）；已生成 5 个多模态 study（brca 1100/coad 417/kirc 350/kirp 278/lihc 360 行，kirc 丢弃 168 = P 目录增量，与调研一致） |
