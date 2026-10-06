@@ -54,7 +54,7 @@ def missing_encodings(sub: str, datasets: list[str]) -> list[tuple[str, str, str
 
 def cmd_enqueue(subs: list[str], datasets: list[str], only: tuple[str, ...],
                 dry_run: bool, include_multimodal: bool) -> int:
-    from src.cindex import enqueue_cindex_jobs
+    from manual_pipeline.cindex import enqueue_cindex_jobs
 
     rc = 0
     for sub in subs:
@@ -123,7 +123,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     C.load_all_schemes()
-    C.apply_test3_patches()
     subs = list(C.SUBS) if args.sub == "all" else [args.sub]
     datasets = ([x.strip() for x in args.datasets.split(",") if x.strip()]
                 if args.datasets else C.main_datasets())

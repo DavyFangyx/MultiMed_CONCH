@@ -5,8 +5,9 @@
 本轮要跑，E 轴的 baseline 档需要 outputs/{ds}/A_manual/baseline/Test_3_greedy_{ds}/。
 
 口径（与 S12a phase 3 完全相同，只换方案名单）：
-  * 走 scripts/Test_3_pipeline_one.apply_patches 的 in-process 白名单补丁（不改 A_pipeline
-    源文件），仅对"字段全部可由 GDC 字典定型的 greedy 方案"生效——含未定型字段
+  * 方案白名单已在源头放开（manual_pipeline.baseline 注册 templates/manual_schemes 下全部
+    已登记方案；原 A_pipeline 时代靠 Test_3_pipeline_one 进程内补 PAPER_SCHEMES）；
+    仅对"字段全部可由 GDC 字典定型的 greedy 方案"生效——含未定型字段
     （diagnoses[].calgb_risk_group 等）的方案 build_baseline_feature_schema 会抛错，
     这类 conf 按任务约定跳过并报告；
   * --landmark_time 0 --baseline_stats_dir outputs/{ds}/A_manual/baseline/metadata（S12a 已
@@ -29,7 +30,7 @@ for _p in (ROOT, ROOT / "scripts", ROOT / "src"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-SCHEMES_JSON = ROOT / "A_pipeline" / "templates" / "schemes.json"
+SCHEMES_JSON = ROOT / "templates" / "manual_schemes" / "schemes.json"
 OUTPUTS = ROOT / "outputs"
 
 
@@ -51,7 +52,6 @@ def greedy_templates() -> dict[str, tuple[str, list[str]]]:
 
 def baseline_encodable() -> tuple[dict[str, str], list[tuple[str, list[str]]]]:
     """返回 (encodable scheme -> dataset, [(skipped scheme, fields), ...])。"""
-    sys.path.insert(0, str(ROOT / "A_pipeline"))
     from common.fields import HUMAN_SCHEME_FIELDS  # noqa: E402
 
     human = set(HUMAN_SCHEME_FIELDS)
@@ -86,8 +86,6 @@ def main(argv=None) -> int:
         print("[test_5][baseline_c] 未给 --all/--datasets，仅列清单（dry）")
         return 0
 
-    import Test_3_pipeline_one as P
-
     fail = 0
     todo = []
     for name, dataset in plans:
@@ -103,12 +101,7 @@ def main(argv=None) -> int:
         todo.append((name, dataset, stats_dir, target))
 
     if todo and not args.dry_run:
-        # 关键：全部方案必须在首次 import src.cli 之前一次性补进白名单——src.baseline 在
-        # import 时把 PAPER_SCHEMES 快照成 PAPER_BASELINE_SCHEMES（模块级），之后逐次
-        # apply_patches 新增的方案拿不到 baseline 字段注册（会报"未知 baseline 方案"）。
-        summary = P.apply_patches(args.gpu, schemes=[name for name, _, _, _ in todo])
-        print(f"[test_5][baseline_c] patches={json.dumps(summary, ensure_ascii=False)}", flush=True)
-        from src.cli import main as ap_main  # noqa: E402
+        from manual_pipeline.cli import main as ap_main  # noqa: E402
 
     for name, dataset, stats_dir, target in todo:
         if args.dry_run:

@@ -22,7 +22,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-sys.path.insert(0, str(PROJECT_ROOT / "A_pipeline"))
 
 from common.paths import test_results_dir  # noqa: E402
 from greedy.clinic import read_cindex  # noqa: E402

@@ -2,7 +2,7 @@
 
 口径：
 ``leak_rate = #{值来源槽位 t_hi > 0 / lo_only} / #{管线产出有效值}``，
-取值走 ``A_pipeline/src/extract.py::extract_values``（无泄露处理），
+取值走 ``src/manual_pipeline/extract.py::extract_values``（无泄露处理），
 来源槽位时点走 ``src/time_stats.py`` 的 ``t_hi``（point/bounded 有限 t_hi、lo_only = +∞、
 unlocated/non_informative 无 t_hi）。
 """
@@ -57,10 +57,10 @@ from leak.provenance import (  # noqa: E402
 # 33 个 TCGA 注册队列的最小合成表：6 个 HGCN 绑定癌种 + 27 个占位队列
 _HGCN_CANCERS = ["TCGA-KIRC", "TCGA_LIHC", "TCGA-ESCA", "TCGA-LUSC", "TCGA-LUAD", "TCGA-UCEC"]
 
-STAGE_FIELD = "diagnoses[].ajcc_pathologic_stage"       # A_pipeline 取值表内（diagnoses 家族）
+STAGE_FIELD = "diagnoses[].ajcc_pathologic_stage"       # manual_pipeline 取值表内（diagnoses 家族）
 AGE_FIELD = "demographic.age_at_index"                  # 无时点家族
 THERAPY_FIELD = "derived.radiation_therapy"             # derived.* → 追底层 treatment 槽位
-BANK_ONLY_FIELD = "diagnoses[].tumor_of_origin"         # 不在 A_pipeline 取值表（Field Bank 口径）
+BANK_ONLY_FIELD = "diagnoses[].tumor_of_origin"         # 不在 manual_pipeline 取值表（Field Bank 口径）
 
 
 def _registry_33_tcga():
@@ -275,7 +275,7 @@ def test_derived_years_smoked_with_untimed_source_never_leaks():
 
 
 def test_field_bank_mode_is_used_outside_the_pipeline_universe():
-    """不在 A_pipeline extract_values 取值表内的字段走 Field Bank 口径（值 + 来源同规则）。"""
+    """不在 manual_pipeline extract_values 取值表内的字段走 Field Bank 口径（值 + 来源同规则）。"""
     assert a_pipeline_spec(BANK_ONLY_FIELD) is None
     assert BANK_ONLY_FIELD not in a_pipeline_field_names()
 
@@ -295,7 +295,7 @@ def test_field_bank_mode_is_used_outside_the_pipeline_universe():
 
 
 def test_pipeline_value_is_the_one_actually_used():
-    """审计取值必须等于 A_pipeline extract_values 的取值（sex 回退 gender、占位符一致）。"""
+    """审计取值必须等于 manual_pipeline extract_values 的取值（sex 回退 gender、占位符一致）。"""
     case = _case("P1")
     case["demographic"].pop("age_at_index")
     case["demographic"]["gender"] = "female"

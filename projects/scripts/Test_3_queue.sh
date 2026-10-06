@@ -7,9 +7,10 @@
 #
 # 分工（全部 base python 3.13.12；训练由各自队列内部拉起 SurvPGC/conch）：
 #   scripts/Test_3_search_queue.py   enqueue/status/recover/retry/drain/watch/report（每数据集一条 selection 队列作业）
-#   scripts/Test_3_arms.py           generate/encode/enqueue/drain/summarize/status（臂 B' / 臂 C 自定义方案 × A_pipeline cindex）
+#   scripts/Test_3_arms.py           generate/encode/enqueue/drain/summarize/status（臂 B' / 臂 C 自定义方案 × manual_pipeline cindex）
 #     - encode 需 conch env python（编码 CONCH 文本嵌入）；其余命令 base python。
-#     - A_pipeline 的两处缺口（方案白名单 / DEFAULT_GPU=7）由 scripts/Test_3_pipeline_one.py 进程内补，不改其源文件。
+#     - 方案白名单 / 可见 GPU 已在 manual_pipeline 源头支持（--gpu > A_PIPELINE_GPU > 7），
+#       scripts/Test_3_pipeline_one.py 只是透传 --gpu 的 thin wrapper。
 #   scripts/Test_3_compare.py        三臂 c-index 总表 + 遗漏字段清单（头条 Δc = C − B'）
 #
 # R13（用户指令，2026-10-02）：训练范围 = n_event >= 100 的 15 个主集（名单从

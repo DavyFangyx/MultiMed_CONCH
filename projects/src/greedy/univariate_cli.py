@@ -466,7 +466,7 @@ def resolve_univariate_label_file(args, split_dir: Path, tag: str) -> str | None
         raise FileNotFoundError(
             f"未找到 landmark 派生 label: {candidate}。"
             "univariate 必须与 Test_1b 臂 B 同患者集（S4 派生 label，经典三要件风险集排除）。"
-            "请确认 results/Test_2b/arm_B/labels/ 下该文件存在（可用 A_pipeline 的 "
+            "请确认 results/Test_2b/arm_B/labels/ 下该文件存在（可用 manual pipeline 的 "
             "landmark_labels 派生），或显式传 --label_file。"
         )
     return str(candidate)

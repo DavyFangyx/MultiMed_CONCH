@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-# 月→天反推与 landmark 平移月数(A_pipeline/src/landmark_labels.py 使用)。
+# 月→天反推与 landmark 平移月数(src/manual_pipeline/landmark_labels.py 使用)。
 DAYS_PER_MONTH = 365.25 / 12.0
 
 # PGC 外部标签生产除数(SurvPGC_github_init/dataset_deployment/scripts/pipeline.py

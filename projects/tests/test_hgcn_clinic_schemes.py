@@ -29,14 +29,10 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT / "src"))
 
-A_PIPELINE_ROOT = PROJECT_ROOT / "A_pipeline"
-if str(A_PIPELINE_ROOT) not in sys.path:
-    sys.path.insert(0, str(A_PIPELINE_ROOT))
-
 from common.fields import field_output_col, L5_PLACEHOLDER_BY_FIELD_PATH  # noqa: E402
 from discovery.onehot import _load_gdc_dictionary  # noqa: E402
 
-from src.baseline import (  # noqa: E402
+from manual_pipeline.baseline import (  # noqa: E402
     BASELINE_DICTIONARY_FIELD_TYPES,
     BASELINE_MISSING_TOKEN,
     BASELINE_OTHER_TOKEN,
@@ -46,15 +42,15 @@ from src.baseline import (  # noqa: E402
     _encode_ordinal_value,
     load_baseline_scheme_fields,
 )
-from src.config import (  # noqa: E402
+from manual_pipeline.config import (  # noqa: E402
     DEFAULT_TEXT_SCHEMES,
     PAPER_SCHEMES,
     SCHEME_FIELDS,
     load_custom_schemes,
     reset_scheme_registry,
 )
-from src.extract import extract_values  # noqa: E402
-from src.hgcn_clinic import (  # noqa: E402
+from manual_pipeline.extract import extract_values  # noqa: E402
+from manual_pipeline.hgcn_clinic import (  # noqa: E402
     HGCN_KEEP_NONE_TYPE,
     HGCN_SCHEME_FIELDS,
     artifact_field_name,
@@ -63,13 +59,21 @@ from src.hgcn_clinic import (  # noqa: E402
     resolve_hgcn_schemes,
     run_hgcn_clinic,
 )
-from src.json2prompt import run_json2prompt  # noqa: E402
-from src.paths import DEFAULT_TEMPLATE_DIR, dataset_hgcn_clinic_dir  # noqa: E402
+from manual_pipeline.json2prompt import run_json2prompt  # noqa: E402
+from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR, dataset_hgcn_clinic_dir, global_mapping_dir  # noqa: E402
 
 
 LEGACY_SCHEMES = list(DEFAULT_TEXT_SCHEMES)
 BACKUP_ROOT = Path("/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03")
-DATASETS_CONFIG = A_PIPELINE_ROOT / "datasets.json"
+# 冻结备份（仓库外）由 lizhe 源临床 JSON 产出；gdc raw_json 的 TCGA-KICH 患者集是其超集
+# （113 vs 109，多 KM-A7Q6..A7Q9），gdc 源无法逐患者复现备份，故回归固定用备份的原始来源
+# （仓库外数据，缺失即 skip；lizhe 数据源本体属 PGC 线）。
+BACKUP_SOURCE = {
+    "TCGA-KICH": (
+        "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json",
+        ["TCGA-KICH"],
+    ),
+}
 
 # 字段银行字段：GDC 字典是 enum，但不在 extract_values 的词表里 -> 无值可提。
 FIELD_BANK_FIELD = "diagnoses[].calgb_risk_group"
@@ -154,7 +158,7 @@ def test_field_type_name_new_dictionary_field_matches_d_vector_classification():
 
 def test_field_type_name_unresolvable_stays_keep_none_without_crashing():
     _load_scheme_fields()
-    # 字段银行字段（GDC 是 enum）在 A_pipeline 提取器里没有值 -> keep_none，不抛错
+    # 字段银行字段（GDC 是 enum）在 manual_pipeline 提取器里没有值 -> keep_none，不抛错
     assert field_type_name(FIELD_BANK_FIELD) == HGCN_KEEP_NONE_TYPE
     assert field_type_name("diagnoses[].icd_10_code") == HGCN_KEEP_NONE_TYPE
     assert field_type_name("follow_ups[].molecular_tests[].laboratory_test") == HGCN_KEEP_NONE_TYPE
@@ -348,7 +352,7 @@ def test_custom_scheme_landmark_routes_to_landmark_subdir(tmp_path):
 
 
 def _timed_case():
-    """同 A_pipeline/tests/test_landmark_time.py：确诊 400 天，随访 700 天封顶。"""
+    """同 tests/test_landmark_time.py：确诊 400 天，随访 700 天封顶。"""
     return {
         "submitter_id": "TCGA-XX-0001",
         "demographic": {
@@ -526,24 +530,29 @@ def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, e
 # --------------------------------------------------------------------------
 
 
-def _lizhe_dataset(dataset: str):
-    if not DATASETS_CONFIG.exists():
-        return None
-    entry = json.loads(DATASETS_CONFIG.read_text(encoding="utf-8")).get(dataset)
+def _backup_source_dataset(dataset: str):
+    entry = BACKUP_SOURCE.get(dataset)
     if not entry:
         return None
-    paths = [str(p) for p in entry.get("clinic_files") or []]
-    if not paths or any(not Path(p).exists() for p in paths):
+    json_path, project_ids = entry
+    if not Path(json_path).exists():
         return None
-    return paths, list(entry.get("project_ids") or [])
+    return [json_path], list(project_ids)
 
 
 @pytest.mark.skipif(not BACKUP_ROOT.is_dir(), reason="冻结备份不存在（仓库外）")
 def test_l0_l5_value_equivalent_to_frozen_backup(tmp_path):
+    # 备份是用**全局**（lizhe 9 队列 3904 患者）名义词表产出的：hgcn_clinic 优先复用
+    # global_mapping_dir()/category_mapping.json。该词表随 PGC 线走，未随 gdc 线吸收，
+    # 缺失时重新 fit 会出现 nominal index 平移，无法逐值复现备份 → skip。
+    global_mapping = global_mapping_dir() / "category_mapping.json"
+    if not global_mapping.exists():
+        pytest.skip(f"全局名义词表不存在（属 lizhe/PGC 线）：{global_mapping}")
+    _load_scheme_fields()
     dataset = "TCGA-KICH"
-    loaded = _lizhe_dataset(dataset)
+    loaded = _backup_source_dataset(dataset)
     if loaded is None:
-        pytest.skip(f"{dataset} 临床 JSON 或 datasets.json 不可用")
+        pytest.skip(f"{dataset} 备份来源临床 JSON 不可用")
     json_paths, project_ids = loaded
 
     out_root = dataset_hgcn_clinic_dir(dataset, base_root=str(tmp_path / "s11_hgcn_regress"))

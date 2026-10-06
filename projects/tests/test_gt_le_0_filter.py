@@ -4,7 +4,7 @@
 (days_to_death=0 字面占位 / 负末次随访,见 z_notes/time_axis/time_axis.md §2.3)
 从所有实验臂中全局剔除。落点:
 SurvivalDatasetFactory._drop_nonpositive_time_labels,读 label 后即过滤,
-NaN 时间保留(镜像 A_pipeline/src/landmark_labels.py 的 NaN 保留约定)。
+NaN 时间保留(镜像 src/manual_pipeline/landmark_labels.py 的 NaN 保留约定)。
 
 运行方式(本文件需要 torch,SurvPGC 环境):
     /data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python tests/test_gt_le_0_filter.py

@@ -10,6 +10,7 @@ __pycache__/
 
 # Generated process / result artifacts
 outputs/**
+outputs_pgc/**
 results/**
 results_display/**
 rawdata_stats/**
@@ -20,16 +21,17 @@ Clinic_Analyzer/configs/Test_*/**
 *.csv
 *.json
 *.pt
+*.pkl
 *.conf
+
+# Backup archives (audit-only rollback material, never committed)
+z_notes/backup/
 
 # Keep hand-written templates and dataset registry
 !datasets.json
 !templates/
 !templates/**/*.csv
 !templates/**/*.json
-!A_pipeline/templates/
-!A_pipeline/templates/**/*.csv
-!A_pipeline/templates/**/*.json
 !outputs/README.md
 !results/README.md
 !results_display/README.md

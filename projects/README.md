@@ -12,7 +12,7 @@
 | `z_notes/time_axis/time_axis.md` | 时间轴协议（landmark 三要件、t_record 判据） |
 | `z_notes/experiment_list/naming_convention.md` | configs/results/results_display 目录命名公约 |
 | `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md` | E2 评估器/缓存/搜索机制 |
-| `A_pipeline/README.md` + `A_pipeline/README_usage.md` | 特征提取与 landmark 编码管线 |
+| `scripts/run_a_manual.py`（`--help`）+ `src/manual_pipeline/` 包 docstring | 特征提取与 landmark 编码管线（原 `A_pipeline/`，已吸收进主项目） |
 | `Clinic_Analyzer/README.md` | 训练/评估器 |
 | `rawdata_stats/README.md` | rawdata_stats 统计阶段 |
 | `results/README.md`、`results_display/README.md` | 结果目录布局 |

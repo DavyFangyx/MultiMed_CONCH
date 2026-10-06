@@ -35,7 +35,7 @@ from common.paths import dataset_greedy_results_dir, test_results_dir
 CSV_STEM = "cindex_by_n_fields"
 SOURCE_COLUMNS = ["step", "n_fields", "added", "c_index_mean", "c_index_std", "c_index_se", "subset"]
 DEFAULT_MODALITY = "mlp_clinic_flatten"
-DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "A_pipeline" / "templates"
+DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates" / "manual_schemes"
 DEFAULT_PAPER_RESULTS_ROOT = test_results_dir("Test_2b/arm_A")
 FIG_DIRNAME = "FigA_Other_Paper_Works"
 
@@ -153,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--template_dir",
         default=str(DEFAULT_TEMPLATE_DIR),
-        help="Paper-scheme fields.json directory. Default: A_pipeline/templates.",
+        help="Paper-scheme fields.json directory. Default: templates/manual_schemes.",
     )
     return parser
 

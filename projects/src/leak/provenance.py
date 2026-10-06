@@ -7,7 +7,7 @@
 
 与旧实现（``1 − n_valid_t0/n_valid_none``，已作废）的三点区别：
 
-1. **取值逻辑 = 论文管线**：逐患者调用 ``A_pipeline/src/extract.py`` 的
+1. **取值逻辑 = 论文管线**：逐患者调用 ``src/manual_pipeline/extract.py``（原 A_pipeline）的
    ``extract_values(case, landmark_time=None)``（**不做任何泄露处理**），得到"实际进入模型的值"。
    本模块同时用一份**镜像实现**给出同一字段的**来源实体**（哪些 JSON 对象贡献了这个值），
    两者逐患者比对，不一致即报错——保证追溯对象与管线取值严格对应（``verify``）。
@@ -31,25 +31,22 @@
 不混入 leak_rate（口径=spec §2.1 的 `t_hi > 0`），但逐字段并列
 ``n_t0_blocked`` = 泄露 ∪ 未定位（= 该值在 t0 landmark 门控下会被丢弃的患者数）。
 
-``derived.*`` 字段追到底层槽位：按 A_pipeline 自己的派生逻辑
+``derived.*`` 字段追到底层槽位：按 manual pipeline 自己的派生逻辑
 （``_therapy_flag`` 按 ``treatment_type`` 精确匹配；``_years_smoked`` 按 exposures 分支），
 而不是旧实现的"源路径 raw 值"近似。
 
 两种取值模式（逐字段记录在 ``audit_mode``）：
 
-- ``a_pipeline``：字段在 ``A_pipeline/src/extract.py`` 的取值表内 → 用管线实际取值（spec §2.1 要求）；
+- ``a_pipeline``：字段在 ``src/manual_pipeline/extract.py`` 的取值表内 → 用管线实际取值（spec §2.1 要求）；
 - ``field_bank``：字段只在 Field Bank / univariate 宇宙（如 Test_1a 的 kept 字段、
   ``diagnoses[].tumor_focality``）→ 用 Field Bank 的 raw 取值逻辑
   （``extract_field_bank_raw_values(landmark=False)``，与 Test_1a off 臂同源），判据不变。
 
-本模块只读复用 A_pipeline / discovery 的代码，不改动它们的实现。
+本模块只读复用 manual_pipeline / discovery 的代码，不改动它们的实现。
 """
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
-import sys
 from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 
@@ -63,7 +60,6 @@ from common.fields import (
     unique_join,
 )
 from common.missingness import classify_raw_value, clean_value
-from common.paths import PROJECT_ROOT
 from common.types import to_numeric
 from discovery.field_bank import extract_field_bank_value
 from discovery.landmark import timed_family_for_field
@@ -80,24 +76,17 @@ MODE_FIELD_BANK = "field_bank"
 # 无时点家族（不在 time_stats 的六族里）：值不会因时点丢失，恒不泄露
 UNTIMED_FAMILIES = ("demographic", "exposures", "family_histories", "project")
 
-_A_PIPELINE_SRC = PROJECT_ROOT / "A_pipeline" / "src"
-_A_PIPELINE_PKG = "a_pipeline_src"
-
 
 def a_pipeline_extract():
-    """以包名 ``a_pipeline_src`` 加载 ``A_pipeline/src``（避免与 projects/src 的 ``src`` 冲突）。
+    """语义管线取值表 = ``src/manual_pipeline/extract.py``（原 ``A_pipeline/src/extract.py``）。
 
-    只读复用：不修改 A_pipeline 的任何文件；其 ``__init__`` 会把 projects/src 接进 sys.path。
+    该内核已吸收进主项目（``projects/src/manual_pipeline``），直接按包名 import 即可，
+    不再需要用 ``a_pipeline_src`` 别名绕开 projects/src 的 ``src`` 同名冲突。
+    只读复用：不写任何文件。
     """
-    if _A_PIPELINE_PKG not in sys.modules:
-        init = _A_PIPELINE_SRC / "__init__.py"
-        spec = importlib.util.spec_from_file_location(
-            _A_PIPELINE_PKG, init, submodule_search_locations=[str(_A_PIPELINE_SRC)]
-        )
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[_A_PIPELINE_PKG] = module
-        spec.loader.exec_module(module)
-    return importlib.import_module(_A_PIPELINE_PKG + ".extract")
+    from manual_pipeline import extract
+
+    return extract
 
 
 def a_pipeline_field_names() -> frozenset[str]:
@@ -236,7 +225,7 @@ def case_contexts(cases: list[dict], *, with_pipeline_values: bool = True) -> li
 
 
 # ---------------------------------------------------------------------------
-# 字段取值规格（镜像 A_pipeline/src/extract.py）
+# 字段取值规格（镜像 src/manual_pipeline/extract.py）
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ValueSpec:

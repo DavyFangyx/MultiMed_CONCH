@@ -1,4 +1,4 @@
-"""Test_3 三臂编排（全走 A_pipeline，同编码器/模型/划分/seed；spec §7.2）。
+"""Test_3 三臂编排（全走 manual pipeline，同编码器/模型/划分/seed；spec §7.2）。
 
   臂 B  = 工作完整组合 × scheme 模板 × landmark_0 —— 复用 Test_2b 产物（results/Test_2b/arm_B/），
           本脚本只读不跑。
@@ -7,11 +7,12 @@
           （recommended_subset = gain-only δ=0.005 参考点，D4 修订 2026-10-04；--arm best 用历史 best_subset 作附录对照）。
 
 链路：generate（schemes.json 登记）→ encode（conch 环境 python；landmark_0 槽位过滤 + bank 句子）
-      → enqueue（A_pipeline cindex conf，results/Test_2b/arm_B 路由）→ drain（Clinic_Analyzer/run.sh）
+      → enqueue（manual pipeline cindex conf，results/Test_2b/arm_B 路由）→ drain（Clinic_Analyzer/run.sh）
       → summarize（写 results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv，按行键合并，不动 Test_2b 行）。
 
 纪律：只新增 Test_3_* 子目录，绝不覆盖 outputs/*/A_manual 与 results/Test_2b/arm_B 既有产物；
-      仅登记 schemes.json，不改 A_pipeline 源文件（缺口用 Test_3_pipeline_one.apply_patches 进程内补）。
+      仅登记 schemes.json（不改内核源文件）。原「方案白名单 / DEFAULT_GPU」两处缺口已在吸收时
+      从源头修好（manual_pipeline.cindex 接受任意已注册方案；encode 走 --gpu / A_PIPELINE_GPU）。
 
 用法（projects/ 根目录）：
   python3 scripts/Test_3_arms.py generate --arm bp
@@ -25,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import os
 import subprocess
 import sys
@@ -34,17 +34,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT, ROOT / "src", ROOT / "scripts", ROOT / "A_pipeline"):
+for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
 import Test_3_common as C  # noqa: E402
-import Test_3_pipeline_one as P  # noqa: E402
-
-# 同 Test_3_pipeline_one：A_pipeline 的 `src` 包优先于 projects/src（E2 侧的 `src`）
-if str(ROOT / "A_pipeline") in sys.path:
-    sys.path.remove(str(ROOT / "A_pipeline"))
-sys.path.insert(0, str(ROOT / "A_pipeline"))
 
 from common.paths import config_family_dir, test_results_dir  # noqa: E402
 
@@ -123,13 +117,9 @@ def cmd_encode(arm: str, datasets: list[str], gpu: str, parallel: int) -> None:
             print(f"[test_3][arms] {message}", flush=True)
 
 
-def _apply_arm_patches(gpu: str) -> dict:
-    return P.apply_patches(gpu)
-
-
 def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
     from common.datasets import load_dataset_configs
-    from src.cindex import iter_cindex_jobs
+    from manual_pipeline.cindex import iter_cindex_jobs
 
     return iter_cindex_jobs(
         dataset_name=dataset,
@@ -147,9 +137,8 @@ def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
 
 
 def cmd_enqueue(arm: str, datasets: list[str]) -> None:
-    from src.cindex import enqueue_cindex_jobs
+    from manual_pipeline.cindex import enqueue_cindex_jobs
 
-    print(f"[test_3][arms] patches={json.dumps(_apply_arm_patches('1'), ensure_ascii=False)}", flush=True)
     created = existing = missing = 0
     for dataset, scheme, _work in scheme_pairs(arm, datasets):
         jobs = _cindex_jobs(dataset, scheme)
@@ -164,18 +153,16 @@ def cmd_enqueue(arm: str, datasets: list[str]) -> None:
 
 
 def cmd_drain(gpu: str, workers: int, poll: float) -> None:
-    from src.cindex import drain_queue
+    from manual_pipeline.cindex import drain_queue
 
-    _apply_arm_patches(gpu)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     print(f"[test_3][arms] drain queue={QUEUE_ROOT} gpu={gpu} workers={workers}", flush=True)
     drain_queue(Path(QUEUE_ROOT), reuse=True, poll_seconds=poll, workers=workers)
 
 
 def cmd_summarize(datasets: list[str], arm: str) -> None:
-    from src.cindex import summarize_dataset
+    from manual_pipeline.cindex import summarize_dataset
 
-    _apply_arm_patches("1")  # iter_cindex_jobs 需要 Test_3 方案在进程内白名单里
     for dataset, scheme, _work in scheme_pairs(arm, datasets):
         jobs = _cindex_jobs(dataset, scheme)
         # 表目录沿用 S4/Test_2b 约定 "{dataset}[gdc]"（s4_enqueue.table_key），
@@ -187,7 +174,7 @@ def cmd_summarize(datasets: list[str], arm: str) -> None:
 
 
 def cmd_status(arm: str, datasets: list[str]) -> None:
-    from src.cindex import conf_filename
+    from manual_pipeline.cindex import conf_filename
     from greedy.data import display_to_study
 
     root = Path(QUEUE_ROOT)

@@ -8,17 +8,17 @@
 
 纪律（spec §2.4 / §8bis.5）：
   * 数据集名单一律读 results/Test_0_dataset_availability/manifest.csv（n_event >= 100 的 15 主集）；
-  * 方案 × 数据集绑定一律读 A_pipeline/templates/*/fields.json 的 `datasets`（不硬编码名单；
+  * 方案 × 数据集绑定一律读 templates/manual_schemes/*/fields.json 的 `datasets`（不硬编码名单；
     code 里只有"子检查逻辑"常量：臂定义、模型名、编码名）；
   * 本轮 E/M 轴只换一个轴，其余与基线一致：landmark_0 / 5 折 / seed 0 / 协议 A 训练范围；
   * 本模块只读 + 建目录，不写任何 results/Test_2b|Test_3 产物。
 
 EXP_GROUP 映射（可复用 cindex 的既有机制，不新增目录约定）：
-  A_pipeline/src/cindex.py::analyzer_exp_group() 返回模块级常量 ANALYZER_EXP_GROUP /
+  manual_pipeline/cindex.py::analyzer_exp_group() 返回模块级常量 ANALYZER_EXP_GROUP /
   LANDMARK_ANALYZER_EXP_GROUP；iter_cindex_jobs 用它写入 conf 的 EXP_GROUP=，run.sh 按
   `$RESULTS_BASE/$EXP_GROUP/$RUN_NAME/$RESULTS_SUBDIR` 落 run dir，run_claimed_conf 再从
-  conf 读回。故本模块只在 enqueue/summarize 进程内覆写这两个常量（同 Test_3_pipeline_one
-  apply_patches 的 in-process 惯例），drainer 无需打补丁。
+  conf 读回。故本模块只在 enqueue/summarize 进程内覆写这两个常量（in-process 覆写惯例），
+  drainer 无需打补丁。
   runs   -> results/Test_5_invariance/{sub}/runs
   tables -> results/Test_5_invariance/{sub}/{dataset}[gdc]/cindex.csv
 """
@@ -33,13 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# 顺序关键：A_pipeline 的 `src` 必须优先于 projects/src（E2 侧同名 `src` 包）。
 for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
-if str(ROOT / "A_pipeline") in sys.path:
-    sys.path.remove(str(ROOT / "A_pipeline"))
-sys.path.insert(0, str(ROOT / "A_pipeline"))
 
 from common.paths import config_family_dir, test_results_dir  # noqa: E402
 
@@ -47,7 +43,7 @@ MANIFEST_CSV = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 OUTPUTS = ROOT / "outputs"
 RESULTS_ROOT = ROOT / "results"
 DATASETS_JSON = ROOT / "datasets.json"
-TEMPLATE_DIR = ROOT / "A_pipeline" / "templates"
+TEMPLATE_DIR = ROOT / "templates" / "manual_schemes"
 
 INVARIANCE_ROOT = RESULTS_ROOT / "Test_5_invariance"          # 本步唯一可写的 results 子树
 LOG_ROOT = INVARIANCE_ROOT / "logs"
@@ -103,20 +99,13 @@ def park_reason(modality: str) -> str:
 
 def load_all_schemes() -> None:
     """注册全部方案（论文 10 + 自定义 Test_3_* + HGCN 字段表），同 s4_enqueue 惯例。"""
-    from src.baseline import load_baseline_scheme_fields
-    from src.config import SCHEME_FIELDS, load_custom_schemes
-    from src.hgcn_clinic import load_hgcn_scheme_fields
+    from manual_pipeline.baseline import load_baseline_scheme_fields
+    from manual_pipeline.config import SCHEME_FIELDS, load_custom_schemes
+    from manual_pipeline.hgcn_clinic import load_hgcn_scheme_fields
 
     load_custom_schemes(str(TEMPLATE_DIR))
     load_baseline_scheme_fields(SCHEME_FIELDS)
     load_hgcn_scheme_fields(SCHEME_FIELDS)
-
-
-def apply_test3_patches() -> dict:
-    """把 schemes.json 里注册的 Test_3 方案加进进程内 PAPER_SCHEMES（cindex 白名单补丁）。"""
-    import Test_3_pipeline_one as P
-
-    return P.apply_patches("1")
 
 
 def main_datasets() -> list[str]:
@@ -138,7 +127,7 @@ def _datasets_config() -> dict:
 
 def paper_works() -> list[str]:
     """10 个论文工作方案（PAPER_SCHEMES 的基线部分；Test_3_* 是自定义复评方案，不算工作）。"""
-    from src.config import PAPER_SCHEMES
+    from manual_pipeline.config import PAPER_SCHEMES
 
     return [name for name in PAPER_SCHEMES if not name.startswith("Test_3")]
 
@@ -163,7 +152,7 @@ def work_bound_to(scheme: str, dataset: str) -> bool:
 
 def work_schemes(dataset: str) -> list[str]:
     """绑定到该数据集的论文工作方案（spec §2.4 绑定 + fields.json datasets 门）。"""
-    from src.config import scheme_applies_to_dataset
+    from manual_pipeline.config import scheme_applies_to_dataset
 
     datasets = _datasets_config()
     return sorted(s for s in paper_works()
@@ -172,14 +161,14 @@ def work_schemes(dataset: str) -> list[str]:
 
 def bp_schemes(dataset: str) -> list[str]:
     """Test_3 臂 B′ 方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
-    from src.config import SCHEME_CONFIG
+    from manual_pipeline.config import SCHEME_CONFIG
 
     return [name for name in (f"Test_3_{w}_{dataset}" for w in BP_WORKS) if name in SCHEME_CONFIG]
 
 
 def c_schemes(dataset: str) -> list[str]:
     """Test_3 臂 C（贪婪最优，模板/编码存在才算；否则空 = 该数据集本轮无 C）。"""
-    from src.config import SCHEME_CONFIG
+    from manual_pipeline.config import SCHEME_CONFIG
 
     name = f"Test_3_greedy_{dataset}"
     return [name] if name in SCHEME_CONFIG else []
@@ -187,7 +176,7 @@ def c_schemes(dataset: str) -> list[str]:
 
 def greedy_template_datasets() -> list[str]:
     """存在 Test_3_greedy_{dataset} 模板的数据集（数据驱动，供报告用）。"""
-    from src.config import SCHEME_CONFIG
+    from manual_pipeline.config import SCHEME_CONFIG
 
     return sorted(name[len("Test_3_greedy_"):] for name in SCHEME_CONFIG
                   if name.startswith("Test_3_greedy_"))
@@ -284,12 +273,12 @@ def arm_plans(sub: str, dataset: str) -> list[ArmPlan]:
 def _reuse_existing_landmark_labels() -> None:
     """把 cindex 的 build_landmark_label_file 替换为"存在即只读复用"（幂等装入）。
 
-    A_pipeline 原实现每次枚举 landmark 臂都无条件重写 results/Test_2b/arm_B/labels/*.csv
+    原实现每次枚举 landmark 臂都无条件重写 results/Test_2b/arm_B/labels/*.csv
     （内容确定：已核 blca/brca/laml/stad 与现文件逐字节一致，仅 mtime 变化）。本步对
     Test_2b 是只读范围，故在 Test_5 进程内避免重写；现成文件缺失才回退原实现（新建）。
     """
-    from src import cindex
-    from src import landmark_labels as LL
+    from manual_pipeline import cindex
+    from manual_pipeline import landmark_labels as LL
 
     current = getattr(cindex, "build_landmark_label_file", None)
     if current is not None and getattr(current, "_test5_reuse", False):
@@ -318,7 +307,7 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
     只读：不存在的编码目录由 iter_cindex_jobs 打印后跳过（不产生 conf）；landmark 派生
     label 文件已存在时只读复用（不重写 results/Test_2b/arm_B/labels/*，见上）。
     """
-    from src.cindex import iter_cindex_jobs
+    from manual_pipeline.cindex import iter_cindex_jobs
 
     _reuse_existing_landmark_labels()
     datasets = list(datasets or main_datasets())
@@ -353,7 +342,7 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
 
 def encoding_paths(dataset: str, scheme: str, encoding: str, landmark_tag: str) -> Path:
     """conf 的 CLINIC_DIR_PATH（与 cindex.scheme_output_dir 同口径，供缺件报告）。"""
-    from src.cindex import scheme_output_dir
+    from manual_pipeline.cindex import scheme_output_dir
 
     # 注意：必须保留 `baseline__` 前缀再交给 scheme_output_dir（它用前缀判定
     # `A_manual/baseline/{scheme}` 子目录；先 bound_scheme_name 会得到 prompt 路径）。
@@ -386,7 +375,7 @@ def park_jobs(jobs: list[dict], sub: str) -> dict:
     parked/ 不被 drainer 读取（cindex 只扫 queue/running/done/failed），= 暂缓投放、
     不丢 conf，S13 决定后可手工 mv 回 queue/。幂等：同名已存在即 existing。
     """
-    from src.cindex import _write_exclusive, conf_text
+    from manual_pipeline.cindex import _write_exclusive, conf_text
 
     root = queue_root(sub) / "parked"
     root.mkdir(parents=True, exist_ok=True)
@@ -445,7 +434,6 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     load_all_schemes()
-    apply_test3_patches()
     datasets = ([x.strip() for x in args.datasets.split(",") if x.strip()]
                 if args.datasets else main_datasets())
     if args.list:

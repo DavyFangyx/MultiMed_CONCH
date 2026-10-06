@@ -19,7 +19,7 @@
   - results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv、results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv
   - results/Test_3_greedy_vs_works/three_arm.csv（Test_3_compare.py 产物）
   - scripts/Test_3_common.py（主集名单 / 方案绑定 / n_event；硬编码禁令 R13）
-  - A_pipeline/templates/{work}/fields.json（工作组合字段数）
+  - templates/manual_schemes/{work}/fields.json（工作组合字段数）
 
 输出（默认 results_display/Test_4_three_tiers/；Main_ 前缀 = 头条）：
   - Main_three_tiers.csv   每 (dataset, work) 一行三档 + 档间 Δ（协议 A 档位 → 数据集 → 方案排序）
@@ -74,7 +74,7 @@ COL_REACH = "#3d8b52"  # 可达值（绿）
 OUT_MAIN_FIG = "Main_three_tiers.png"
 OUT_APPX_FIG = "Appx_three_tiers_by_work.png"
 THREE_ARM_CSV = C3.OUT_ROOT / "three_arm.csv"
-TEMPLATES = REPO_ROOT / "A_pipeline" / "templates"
+TEMPLATES = REPO_ROOT / "templates" / "manual_schemes"
 
 MLP = "mlp_clinic_flatten"  # 主口径（E2 唯一搜索目标模型）
 COX = "clinic_cox"          # 交叉列
@@ -386,7 +386,7 @@ def write_tables(rows: list[dict], out_dir: Path) -> list[Path]:
 
 # --------------------------------------------------------------------------- 审计
 def fold_mean_std(results_dir: str | Path) -> tuple[float, float, int]:
-    """run 目录折文件重算（与 A_pipeline.read_cindex 同算术：末行 val_cindex）。"""
+    """run 目录折文件重算（与 manual_pipeline.cindex/read_cindex 同算术：末行 val_cindex）。"""
     path = Path(results_dir)
     vals: list[float] = []
     for f in sorted(path.glob("val_result_fold*.csv")):

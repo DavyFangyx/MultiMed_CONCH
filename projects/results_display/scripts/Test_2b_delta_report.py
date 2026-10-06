@@ -159,7 +159,7 @@ def fold_values(results_dir: str) -> tuple[float, float, list[float], bool]:
 
     返回 (mean, std, folds, table_stale)。table_stale=True 表示 S4 汇总表冻结值
     与折文件不符（summarize 首次写入后不再更新，属 S4 汇总时序伪影）。
-    mean 用纯 python sum（与 A_pipeline read_cindex 同算术，同 python 3.13 下逐位一致）。
+    mean 用纯 python sum（与 manual_pipeline cindex 的 read_cindex 同算术，同 python 3.13 下逐位一致）。
     """
     vals: list[float] = []
     for f in sorted(Path(results_dir).glob("val_result_fold*.csv")):
@@ -178,7 +178,7 @@ def build_rows() -> list[dict]:
     """(dataset, scheme, analyzer) × 两臂配对；Δc = c(A) − c(B)，含折内配对 CI。
 
     c 值以 run 目录折文件为准（与 S4 汇总表同算术重算）；S4 汇总表冻结值
-    保留在 *_table 列供对照（A_pipeline 的 _merge_cindex_rows 首次写入后不再
+    保留在 *_table 列供对照（manual_pipeline cindex 的 _merge_cindex_rows 首次写入后不再
     更新，100/552 行为跑动中途快照，折文件才是 run 最终状态）。
     """
     events = load_event_summary()

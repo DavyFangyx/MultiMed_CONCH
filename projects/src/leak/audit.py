@@ -7,7 +7,8 @@
     leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的槽位}
                       / #{患者: 管线产出有效值}
 
-- **取值 = 论文管线**：直接调用 ``A_pipeline/src/extract.py`` 的 ``extract_values(case, landmark_time=None)``
+- **取值 = 论文管线**：直接调用 ``src/manual_pipeline/extract.py``（原 ``A_pipeline/src/extract.py``，
+  已吸收进主项目）的 ``extract_values(case, landmark_time=None)``
   （无泄露处理），得到"实际进入模型的值"；来源实体由 ``leak.provenance`` 镜像追溯并逐患者比对
   （不一致即报错）。**不再**用旧的 ``1 − n_valid_t0/n_valid_none``（S2b 旧数已作废）。
 - **判据 = 来源槽位时点**：来源实体映射到 ``src/time_stats.py`` 的时间槽（``t_hi`` = t_record 上界）。
@@ -31,7 +32,7 @@
 - TCGA 之外的外部数据集（CPTAC、MMRF）一律不纳入；
 - 组合数 = 4 × 33 + 6 = 138。
 
-绑定关系由本模块声明，**不读** ``A_pipeline/templates/{scheme}/fields.json`` 的 ``datasets`` 键
+绑定关系由本模块声明，**不读** ``templates/manual_schemes/{scheme}/fields.json`` 的 ``datasets`` 键
 （那是旧的错误全绑定：每个方案都写 33 个 TCGA）。
 
 产物
@@ -64,7 +65,7 @@ from . import provenance
 from .provenance import case_contexts, field_provenance
 
 
-# spec §2.4：A_pipeline 的 10 个论文方案（与 results_display/scripts/FigA_Other_Paper_Works.py 一致）
+# spec §2.4：manual pipeline 的 10 个论文方案（与 results_display/scripts/FigA_Other_Paper_Works.py 一致）
 LEAK_SCHEMES = (
     "MULTISURV",
     "SURVPGC",
@@ -82,7 +83,7 @@ LEAK_SCHEMES = (
 # 方案 × 数据集绑定（spec §2.4 + 用户决议 2026-09-30 / 执行日志 R1）
 #
 # HGCN_* 六方案各绑定其对应癌种；泛癌种四方案暂按全部 33 TCGA；CPTAC / MMRF 剔除。
-# 注意：这里**不读** A_pipeline/templates/{scheme}/fields.json 的 "datasets" 键——
+# 注意：这里**不读** templates/manual_schemes/{scheme}/fields.json 的 "datasets" 键——
 # 该键是旧的全绑定（每个方案都列 33 个 TCGA），已作废。
 # ---------------------------------------------------------------------------
 TCGA_PREFIX = "TCGA"
@@ -107,7 +108,7 @@ BINDING_SPEC = "spec"  # 按 §2.4 绑定（默认）
 BINDING_ALL = "all"    # 仅用于 ad-hoc 方案：全部 TCGA × 全部方案（CPTAC/MMRF 仍剔除）
 BINDING_KINDS = ("hgcn_cancer", "pan_cancer", "pan_cancer_default", "all")
 
-DEFAULT_TEMPLATES_ROOT = PROJECT_ROOT / "A_pipeline" / "templates"
+DEFAULT_TEMPLATES_ROOT = PROJECT_ROOT / "templates" / "manual_schemes"
 DEFAULT_OUTPUT_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_EVENT_SUMMARY = PROJECT_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 SUMMARY_FILENAME = "leak_audit_summary.csv"
@@ -296,7 +297,7 @@ def load_scheme_fields(scheme: str, templates_root: Path | str = DEFAULT_TEMPLAT
 def audit_field(contexts: list, field_path: str) -> dict:
     """审计单个 (dataset, field)：值来源槽位 ``t_hi > 0`` 的患者比例。
 
-    ``contexts`` = ``provenance.case_contexts(cases)``（含 A_pipeline 管线取值）。
+    ``contexts`` = ``provenance.case_contexts(cases)``（含 manual pipeline 管线取值）。
     """
     field = str(field_path or "").strip()
     audited_path = provenance.audited_slot_path(field)

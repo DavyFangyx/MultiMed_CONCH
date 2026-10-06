@@ -1,8 +1,7 @@
 """Test_3 三臂链路测试：bank 模板方案生成 / greedy 字段读取 / 三臂 Δc 与遗漏字段。
 
 覆盖 scripts/Test_3_custom_scheme.py 与 scripts/Test_3_compare.py；
-A_pipeline 进程内补丁（Test_3_pipeline_one）以子进程方式验证，避免测试进程 sys.path 被翻转
-（A_pipeline 与 projects 都有 `src` 包，导入顺序敏感）。
+Test_3_pipeline_one 的 thin wrapper（白名单 / GPU 已在 manual_pipeline 源头）以子进程方式验证。
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-for item in (ROOT, ROOT / "src", ROOT / "scripts", ROOT / "A_pipeline"):
+for item in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
@@ -172,24 +171,32 @@ def test_batch_writes_table_missed_and_figure(tmp_path, monkeypatch):
         assert Path(result["figure"]).exists()
 
 
-def test_pipeline_one_patches_are_in_memory_only():
-    """子进程验证：方案白名单追加 + DEFAULT_GPU 改写，且 schemes.json 不被改写。"""
-    schemes_json = ROOT / "A_pipeline" / "templates" / "schemes.json"
+def test_pipeline_one_is_thin_wrapper():
+    """Test_3_pipeline_one 已退化为 thin wrapper：白名单 / GPU 都在 manual_pipeline 源头，无进程内补丁。
+
+    子进程验证 --print-schemes 列出 schemes.json 登记的 Test_3_* 方案且磁盘零改动；
+    进程内验证 cindex 白名单直接接受已注册自定义方案（不再需要 append 补丁）。
+    """
+    import Test_3_pipeline_one as P
+    assert not hasattr(P, "apply_patches")                   # 补丁入口已退休
+
+    schemes_json = ROOT / "templates" / "manual_schemes" / "schemes.json"
     before = schemes_json.read_bytes()
-    code = (
-        "import json,sys;"
-        f"sys.path.insert(0, {str(ROOT / 'scripts')!r});"
-        "import Test_3_pipeline_one as P;"
-        "from src import config, paths, encode;"
-        "n=len(config.PAPER_SCHEMES);"
-        "s=P.apply_patches('1');"
-        "assert all(name in config.PAPER_SCHEMES for name in s['added_schemes']);"
-        "assert config.PAPER_SCHEMES is config.ALL_TEXT_SCHEMES or n <= len(config.ALL_TEXT_SCHEMES);"
-        "assert paths.DEFAULT_GPU=='1' and encode.DEFAULT_GPU=='1';"
-        "print(json.dumps({'added':len(s['added_schemes']),'gpu':s['gpu']}))"
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "Test_3_pipeline_one.py"), "--print-schemes"],
+        cwd=ROOT, capture_output=True, text=True,
     )
-    proc = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-800:]
-    summary = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert summary["added"] > 0 and summary["gpu"] == "1"
+    registered = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert registered and all(name.startswith("Test_3") for name in registered)
     assert schemes_json.read_bytes() == before               # 磁盘文件零改动
+
+    from manual_pipeline.cindex import expand_cindex_jobs
+    from manual_pipeline.config import SCHEME_CONFIG, load_custom_schemes
+    from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR
+    load_custom_schemes(DEFAULT_TEMPLATE_DIR)
+    custom = registered[0]
+    assert custom in SCHEME_CONFIG
+    jobs = expand_cindex_jobs([custom], encoding="text")
+    assert [job["scheme"] for job in jobs] == [custom]       # 开到源头后白名单直接放行
+    assert all(job["encoding"] == "prompt" for job in jobs)

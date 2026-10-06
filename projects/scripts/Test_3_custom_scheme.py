@@ -1,4 +1,4 @@
-"""Test_3 三臂对照: 从 field bank 模板生成 A_pipeline 自定义方案。
+"""Test_3 三臂对照: 从 field bank 模板生成 manual pipeline 自定义方案。
 
 用途(见 z_notes/Test_series_spec.md §7.2):
   臂 B' = 工作完整组合 × bank 模板 × landmark_0   (--from-scheme <WORK>)
@@ -9,8 +9,8 @@
 字段无 landmark_0 bank 模板时回退到该工作自身 template.csv 的句子（记录进 Test_3_meta.json
 的 fallback_fields），保证字段集与工作组合完全一致(控制变量)，只换模板。
 
-生成的方案目录写入 A_pipeline/templates/{name}/ 并登记进该目录 schemes.json 的 `_schemes`
-（A_pipeline load_custom_schemes 只按名单加载；不登记则方案不可用，见 R14 笔记）。
+生成的方案目录写入 templates/manual_schemes/{name}/ 并登记进该目录 schemes.json 的 `_schemes`
+（manual_pipeline load_custom_schemes 只按名单加载；不登记则方案不可用，见 R14 笔记）。
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT, ROOT / "src", ROOT / "scripts", ROOT / "A_pipeline"):
+for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -30,7 +30,7 @@ import Test_3_common as C  # noqa: E402
 from common.fields import field_output_col  # noqa: E402
 
 BANK_TEMPLATES = ROOT / "templates" / "field_bank"
-A_TEMPLATES = ROOT / "A_pipeline" / "templates"
+A_TEMPLATES = ROOT / "templates" / "manual_schemes"
 SCHEMES_JSON = A_TEMPLATES / "schemes.json"
 LANDMARK_TAG = f"landmark_{C.LANDMARK_TIME}"
 
@@ -53,7 +53,7 @@ def load_scheme(scheme: str) -> tuple[list[str], dict[str, str]]:
     fields_path = A_TEMPLATES / scheme / "fields.json"
     tpl_path = A_TEMPLATES / scheme / "template.csv"
     if not fields_path.exists() or not tpl_path.exists():
-        raise SystemExit(f"[test_3] 方案 {scheme} 不存在于 A_pipeline/templates/")
+        raise SystemExit(f"[test_3] 方案 {scheme} 不存在于 templates/manual_schemes/")
     cfg = json.loads(fields_path.read_text(encoding="utf-8"))
     fields = [str(f).strip() for f in cfg.get("fields", [])]
     df = pd.read_csv(tpl_path)
@@ -77,7 +77,7 @@ def load_greedy_fields(result_json: Path) -> tuple[list[str], str]:
 
 
 def register_scheme(name: str, schemes_json: Path = SCHEMES_JSON) -> bool:
-    """把方案名登记进 schemes.json 的 _schemes（幂等）；A_pipeline 只加载名单内的方案。"""
+    """把方案名登记进 schemes.json 的 _schemes（幂等）；manual pipeline 只加载名单内的方案。"""
     payload = json.loads(schemes_json.read_text(encoding="utf-8"))
     names = list(payload.get("_schemes") or [])
     if name in names:

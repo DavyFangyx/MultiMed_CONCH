@@ -41,7 +41,7 @@ def job_finished(sub: str, job: dict) -> bool:
 
 
 def summarize_sub(sub: str, datasets: list[str], allow_partial: bool = False) -> dict[str, int]:
-    from src.cindex import existing_result_dir, summarize_dataset
+    from manual_pipeline.cindex import existing_result_dir, summarize_dataset
 
     # out_dir 由 job 携带（build_jobs 在 runs 覆写下算好），故先建 job 再切表覆写。
     jobs = C.build_jobs(sub, datasets)
@@ -92,7 +92,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     C.load_all_schemes()
-    C.apply_test3_patches()
     subs = list(C.SUBS) if args.sub == "all" else [args.sub]
     datasets = ([x.strip() for x in args.datasets.split(",") if x.strip()]
                 if args.datasets else C.main_datasets())

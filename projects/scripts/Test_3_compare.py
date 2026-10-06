@@ -23,14 +23,14 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT, ROOT / "src", ROOT / "scripts", ROOT / "A_pipeline"):
+for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
 import Test_3_common as C  # noqa: E402
 from common.paths import test_results_dir  # noqa: E402
 
-A_TEMPLATES = ROOT / "A_pipeline" / "templates"
+A_TEMPLATES = ROOT / "templates" / "manual_schemes"
 # 命名公约过渡（见 common/paths.py）：新名优先、旧名回退，迁移前后都能跑。
 ARM_B_RESULTS = test_results_dir("Test_2b/arm_B")  # 臂 B 汇总表根（迁移前回退 results/A_manual_landmark）
 OUT_ROOT = C.OUT_ROOT
