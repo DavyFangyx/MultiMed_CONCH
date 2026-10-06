@@ -27,7 +27,7 @@
 #   bash scripts/s5b_univariate_queue.sh drain       # 每 GPU 起一个后台 drainer
 #   bash scripts/s5b_univariate_queue.sh watch       # 后台 watch 自愈循环（全完成自动 report 并退出）
 #   bash scripts/s5b_univariate_queue.sh status      # 队列桶 + 每数据集 field_cindex.csv 行数
-#   bash scripts/s5b_univariate_queue.sh report      # 最终汇总（并写 results/univariate_raw/_s5b_report.json）
+#   bash scripts/s5b_univariate_queue.sh report      # 最终汇总（并写 results/Test_1a/arm_off/_s5b_report.json）
 set -euo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"

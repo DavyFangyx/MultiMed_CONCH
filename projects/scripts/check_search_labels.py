@@ -74,6 +74,7 @@ def main(argv=None):
     print(f"\n总 gt≤0 患者数:{leaked}")
     if leaked > 0:
         print("[闸门 FAIL] label 文件仍含 gt≤0 患者;先修复 label(landmark_labels 排除口径)再投 Test_6 队列。")
+        sys.exit(1)
     else:
         print("[闸门 PASS] 所有 label 文件无已知 gt≤0 患者,可投队列。")
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# S5 univariate 补跑队列（33 TCGA x landmark_0 x mlp_clinic_flatten x seed 0）
+# S5 univariate 补跑队列（R13：15 主集 n_event>=100 x landmark_0 x mlp_clinic_flatten x seed 0）
 #
 # 分工：
 #   scripts/s5_univariate_enqueue.py   enqueue/status/retry/recover/report（base python 3.13.12，不训练）
@@ -8,7 +8,7 @@
 #   watch 循环                         drainer 死后拉起 / failed 重试(≤3) / 全 done 后汇总退出
 #
 # 用法（在 projects/ 根目录）：
-#   bash scripts/s5_univariate_queue.sh enqueue    # 预投放 33 个 conf（幂等）
+#   bash scripts/s5_univariate_queue.sh enqueue    # 预投放 15 主集 conf（幂等）
 #   bash scripts/s5_univariate_queue.sh drain      # 每 GPU 起一个后台 drainer
 #   bash scripts/s5_univariate_queue.sh watch      # 后台 watch 循环（自动续跑，全完成退出）
 #   bash scripts/s5_univariate_queue.sh status     # 队列桶 + 每数据集 field_cindex.csv 行数
@@ -20,17 +20,30 @@ cd "$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON3="${S5_PYTHON3:-python3}"           # base 3.13.12（投放/监控，不训练）
 GPUS="${S5_GPUS:-2,3,4}"                   # 训练 GPU（drainer），逗号分隔
 WORKERS="${S5_WORKERS:-8}"                 # 单 drainer 内并行字段数
-QUEUE_ROOT="Clinic_Analyzer/configs/univariate"
-EXPECTED=33
+QUEUE_ROOT="Clinic_Analyzer/configs/Test_1a_t0"
+MANIFEST="results/Test_0_dataset_availability/manifest.csv"
 PID_DIR="/tmp/s5_univariate"
 DRAIN_LOG="/tmp/s5_drain.log"
 WATCH_LOG="/tmp/s5_watch.log"
-DS_LIST="$(python3 - <<'EOF'
-import sys
-sys.path.insert(0, "src")
-from common.datasets import load_dataset_configs
-names = [n for n in load_dataset_configs("datasets.json") if n.startswith("TCGA-") or n.startswith("TCGA_")]
-print(",".join(sorted(names)))
+DS_LIST="$(python3 - "$MANIFEST" <<'EOF'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8")))
+names = sorted(
+    str(r["dataset"]).strip() for r in rows
+    if str(r.get("dataset") or "").startswith(("TCGA-", "TCGA_"))
+    and int(float(r.get("n_event") or 0)) >= 100
+)
+if not names:
+    raise SystemExit("[S5] R13 主集为空;先跑 scripts/run_Test_0_availability.py")
+print(",".join(names))
+EOF
+)"
+EXPECTED="$(python3 - "$MANIFEST" <<'EOF'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8")))
+print(sum(1 for r in rows
+          if str(r.get("dataset") or "").startswith(("TCGA-", "TCGA_"))
+          and int(float(r.get("n_event") or 0)) >= 100))
 EOF
 )"
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 BLIS_NUM_THREADS=1
