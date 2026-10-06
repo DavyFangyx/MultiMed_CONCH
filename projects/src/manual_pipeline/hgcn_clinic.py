@@ -1,4 +1,4 @@
-"""Encode L0-L5 / registered-scheme clinic fields as HGCN-style graph nodes."""
+"""Encode registered-scheme clinic fields as HGCN-style graph nodes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 import joblib
 import numpy as np
 
-from .config import DEFAULT_TEXT_SCHEMES, resolve_scheme_names
+from .config import resolve_scheme_names
 from .baseline import (
     BASELINE_CONTINUOUS_FIELDS,
     BASELINE_DICTIONARY_FIELD_TYPES,
@@ -30,7 +30,6 @@ from common.clinical_io import load_clinical_cases, normalize_json_paths
 from common.fields import (
     HUMAN_SCHEME_FIELDS,
     L5_FIELD_PATH_BY_PLACEHOLDER,
-    L5_PLACEHOLDER_BY_FIELD_PATH,
 )
 
 
@@ -42,9 +41,6 @@ HGCN_NOMINAL_ENCODING = "integer_index_from_d_series_mapping"
 # 提取器（extract_values / 32 字段词表）解析不了的方案字段保持缺观测：
 # 对角 0 行、coverage 记 0% observed，不抛错也不造类别 0。
 HGCN_KEEP_NONE_TYPE = "keep_none"
-
-# L0-L5 = 冻结命名空间：产物节点名沿用备份里的占位符（AGE / SEX_AT_BIRTH / …）。
-HGCN_LEGACY_PLACEHOLDER_SCHEMES = tuple(DEFAULT_TEXT_SCHEMES)
 
 HGCN_SCHEME_FIELDS = {}
 
@@ -59,11 +55,10 @@ ORDINAL_ENCODER_NAMES = {
 
 
 def load_hgcn_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> None:
-    """注册全部已加载方案：L0-L5 + 论文方案 + templates 下的自定义方案。
+    """注册全部已加载方案：论文方案 + templates 下的自定义方案。
 
     与 baseline 同一条装载路径（config.load_custom_schemes → SCHEME_FIELDS），
-    字段列表全部来自各方案自己的 fields.json。L0-L5 是否在册由模板目录决定
-    （吸收后 L0-L5 属 PGC 线；模板里有没有就注册多少，不再硬性要求）。
+    字段列表全部来自各方案自己的 fields.json（L0-L5 已随 PGC 线移除）。
     """
     HGCN_SCHEME_FIELDS.clear()
     for name, fields in text_scheme_fields.items():
@@ -76,21 +71,15 @@ MISSING_DIAGONAL_NOTE = (
 
 
 def resolve_hgcn_schemes(scheme: str) -> list[str]:
-    """L0-L5 与今天完全一致；此外接受任意已注册方案（fields.json 驱动）。
+    """接受任意已注册方案（fields.json 驱动）。
 
-    `manual` / `all` 都只展开 L0-L5（`all` 保持旧行为）：既有产物树
-    outputs/{ds}/A_manual/HGCN_clinic/ 属于 L0-L5，论文 / 自定义方案必须显式
-    点名（或 `--scheme paper`），避免默认命令把新方案写进冻结目录。
+    `manual`（L0-L5）已随 PGC 线独立化移除；`all` = 论文方案。
     """
-    if scheme in ("manual", "all"):
-        legacy = [name for name in HGCN_LEGACY_PLACEHOLDER_SCHEMES if name in HGCN_SCHEME_FIELDS]
-        if not legacy:
-            raise ValueError(
-                "L0-L5 未在册（templates/manual_schemes 下没有 L0-L5 模板）；"
-                "hgcn_clinic 的 manual/all 只展开 L0-L5，论文 / 自定义方案请显式点名"
-                "（如 --scheme paper / --scheme MULTISURV）。"
-            )
-        return legacy
+    if scheme == "manual":
+        raise ValueError(
+            "L0-L5 已随 PGC 线独立化移除（templates/manual_schemes 下无 L0-L5 模板）；"
+            "请显式点名方案（如 --scheme paper / --scheme MULTISURV）。"
+        )
     names = resolve_scheme_names(scheme)
     unsupported = [name for name in names if name not in HGCN_SCHEME_FIELDS]
     if unsupported:
@@ -101,12 +90,8 @@ def resolve_hgcn_schemes(scheme: str) -> list[str]:
 def artifact_field_name(scheme: str, field: str) -> str:
     """节点在产物里的名字（coverage / encoding_table / field_schema / summary）。
 
-    L0-L5 = 冻结命名空间：沿用备份产物的占位符（AGE / SEX_AT_BIRTH / …），与
-    outputs/{ds}/A_manual/HGCN_clinic/L{0-5}/ 的冻结产物逐字一致；
-    其余方案 = 新命名空间：直接用 fields.json 的字段路径。
+    统一用 fields.json 的字段路径（L0-L5 占位符命名空间已随 PGC 线移除）。
     """
-    if scheme in HGCN_LEGACY_PLACEHOLDER_SCHEMES:
-        return L5_PLACEHOLDER_BY_FIELD_PATH.get(field, field)
     return field
 
 
@@ -301,7 +286,7 @@ def _scheme_extra_nominal_mappings(
 
 
 def _artifact_named_mapping(mapping: dict, scheme: str) -> dict:
-    """把映射键换成产物节点名（L0-L5 → 占位符；其余 → 字段路径），保持插入顺序。"""
+    """把映射键换成产物节点名（统一 fields.json 字段路径），保持插入顺序。"""
     return {artifact_field_name(scheme, key): value for key, value in mapping.items()}
 
 
@@ -446,7 +431,7 @@ def run_hgcn_clinic(
         scheme_dir = landmark_dir(out_root_path / scheme, landmark_subdir)
         scheme_dir.mkdir(parents=True, exist_ok=True)
 
-        # 方案里不在共享/冻结词表内的 nominal 字段：按当前患者补拟合（L0-L5 恒为空）。
+        # 方案里不在共享词表内的 nominal 字段：按当前患者补拟合。
         extra_mappings = _scheme_extra_nominal_mappings(
             patient_rows, fields, nominal_mappings, nominal_min_count
         )

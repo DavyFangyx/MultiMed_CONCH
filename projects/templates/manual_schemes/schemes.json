@@ -1,5 +1,5 @@
 {
-  "_comment": "L0-L5 是默认人工方案；论文方案需显式指定，不包含在 all 中。每个方案的字段列表在 templates/{scheme}/fields.json，句子模板在 templates/{scheme}/template.csv。",
+  "_comment": "论文方案与自定义方案注册（L0-L5 已随 PGC 线独立化移除，见 A_pipeline_pgc/）。每个方案的字段列表在 templates/{scheme}/fields.json，句子模板在 templates/{scheme}/template.csv。",
   "_available_fields": [
     "demographic.age_at_index",
     "demographic.ethnicity",
@@ -34,12 +34,6 @@
     "project.project_id"
   ],
   "_schemes": [
-    "L0",
-    "L1",
-    "L2",
-    "L3",
-    "L4",
-    "L5",
     "MULTISURV",
     "SURVPGC",
     "MMSURV",

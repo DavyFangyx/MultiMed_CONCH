@@ -1,16 +1,13 @@
-"""S11：hgcn_clinic 任意方案编码 / landmark 取值一致性 / 冻结备份等价回归。
+"""S11：hgcn_clinic 任意方案编码 / landmark 取值一致性回归。
 
-覆盖四件事：
+覆盖三件事（L0-L5 已随 PGC 线独立化移除，冻结备份等价由 PGC 线负责）：
 
-1. 方案解析：L0-L5 与今天一致（manual/all 仍只展开 L0-L5），论文方案 /
-   templates 自定义方案显式点名可用；
+1. 方案解析：论文方案 / templates 自定义方案显式点名可用（manual 报错）；
 2. 字段分类：冻结三分法优先，其余按 D 向量同一份 GDC dictionary 结论
    （enum/boolean→nominal，integer/number→continuous）；提取器解析不了的字段
    保持 keep_none（对角 0 行），不抛错；
 3. landmark 取值一致性：同患者同字段，hgcn 节点值的"有/无观测 + 原始值"
-   与 prompt / baseline 链路（extract_values → prompts.csv）逐字段一致；
-4. 冻结备份等价：L0-L5 重新编码的产物与仓库外备份逐值相等
-   （备份/临床 JSON 缺失时 skip）。
+   与 prompt / baseline 链路（extract_values → prompts.csv）逐字段一致。
 
 全部用例只写 tmp_path，不碰 outputs/。
 """
@@ -29,7 +26,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT / "src"))
 
-from common.fields import field_output_col, L5_PLACEHOLDER_BY_FIELD_PATH  # noqa: E402
+from common.fields import field_output_col  # noqa: E402
 from discovery.onehot import _load_gdc_dictionary  # noqa: E402
 
 from manual_pipeline.baseline import (  # noqa: E402
@@ -43,7 +40,6 @@ from manual_pipeline.baseline import (  # noqa: E402
     load_baseline_scheme_fields,
 )
 from manual_pipeline.config import (  # noqa: E402
-    DEFAULT_TEXT_SCHEMES,
     PAPER_SCHEMES,
     SCHEME_FIELDS,
     load_custom_schemes,
@@ -63,18 +59,6 @@ from manual_pipeline.json2prompt import run_json2prompt  # noqa: E402
 from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR, dataset_hgcn_clinic_dir, global_mapping_dir  # noqa: E402
 
 
-LEGACY_SCHEMES = list(DEFAULT_TEXT_SCHEMES)
-BACKUP_ROOT = Path("/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03")
-# 冻结备份（仓库外）由 lizhe 源临床 JSON 产出；gdc raw_json 的 TCGA-KICH 患者集是其超集
-# （113 vs 109，多 KM-A7Q6..A7Q9），gdc 源无法逐患者复现备份，故回归固定用备份的原始来源
-# （仓库外数据，缺失即 skip；lizhe 数据源本体属 PGC 线）。
-BACKUP_SOURCE = {
-    "TCGA-KICH": (
-        "/data/lizhe/Medteam_projects/kindey_cancer_TCGA/clinical/clinical.cart.2026-03-17.json",
-        ["TCGA-KICH"],
-    ),
-}
-
 # 字段银行字段：GDC 字典是 enum，但不在 extract_values 的词表里 -> 无值可提。
 FIELD_BANK_FIELD = "diagnoses[].calgb_risk_group"
 
@@ -91,12 +75,12 @@ def _load_scheme_fields() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_resolve_hgcn_schemes_keeps_legacy_and_accepts_registered():
+def test_resolve_hgcn_schemes_accepts_registered():
     _load_scheme_fields()
-    assert resolve_hgcn_schemes("manual") == LEGACY_SCHEMES
-    # `all` 保持旧行为：冻结产物树 outputs/{ds}/A_manual/HGCN_clinic/ 只属于 L0-L5
-    assert resolve_hgcn_schemes("all") == LEGACY_SCHEMES
-    # 论文方案 / templates 自定义方案显式点名（新命名空间）
+    with pytest.raises(ValueError):
+        resolve_hgcn_schemes("manual")  # L0-L5 已随 PGC 线移除
+    assert resolve_hgcn_schemes("all") == list(PAPER_SCHEMES)
+    # 论文方案 / templates 自定义方案显式点名
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
     assert resolve_hgcn_schemes("Test_3_greedy_TCGA-LAML") == ["Test_3_greedy_TCGA-LAML"]
@@ -107,22 +91,15 @@ def test_resolve_hgcn_schemes_keeps_legacy_and_accepts_registered():
 def test_load_hgcn_scheme_fields_registers_every_loaded_scheme():
     _load_scheme_fields()
     assert set(HGCN_SCHEME_FIELDS) == set(SCHEME_FIELDS)
-    for scheme in LEGACY_SCHEMES + ["MULTISURV", "Test_3_greedy_TCGA-LAML"]:
+    for scheme in ["MULTISURV", "Test_3_greedy_TCGA-LAML"]:
         assert HGCN_SCHEME_FIELDS[scheme] == list(SCHEME_FIELDS[scheme])
 
 
-def test_artifact_field_name_keeps_frozen_placeholder_vocabulary():
+def test_artifact_field_name_uses_field_path():
     _load_scheme_fields()
-    # L0-L5 = 冻结命名空间：沿用备份产物里的占位符
-    assert artifact_field_name("L0", "demographic.age_at_index") == "AGE"
-    assert artifact_field_name("L5", "follow_ups[].other_clinical_attributes[].bmi") == "BMI"
-    assert artifact_field_name("L5", "diagnoses[].ajcc_pathologic_stage") == "AJCC_PATHOLOGIC_STAGE"
-    # 其余方案 = 新命名空间：fields.json 字段路径
+    # L0-L5 占位符命名空间已随 PGC 线移除：节点名统一为 fields.json 字段路径
     assert artifact_field_name("MULTISURV", "project.project_id") == "project.project_id"
     assert artifact_field_name("Test_3_greedy_TCGA-LAML", FIELD_BANK_FIELD) == FIELD_BANK_FIELD
-    # L0-L5 的字段全部落在占位符表内（不会退化成字段路径）
-    for field in SCHEME_FIELDS["L5"]:
-        assert L5_PLACEHOLDER_BY_FIELD_PATH.get(field), field
 
 
 # --------------------------------------------------------------------------
@@ -187,7 +164,7 @@ def _write_scheme(template_dir: Path) -> None:
         json.dumps({"_schemes": [SCHEME_NAME]}), encoding="utf-8"
     )
     (scheme_dir / "fields.json").write_text(
-        json.dumps({"fields": SCHEME_FIELDS_MIXED, "source": "lizhe"}), encoding="utf-8"
+        json.dumps({"fields": SCHEME_FIELDS_MIXED, "source": "gdc"}), encoding="utf-8"
     )
     header = ",".join(field_output_col(f) for f in SCHEME_FIELDS_MIXED)
     (scheme_dir / "template.csv").write_text(header + "\n", encoding="utf-8")
@@ -418,13 +395,13 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
     cases_file = tmp_path / "cases.json"
     cases_file.write_text(json.dumps([_timed_case()]), encoding="utf-8")
     subdir = "" if landmark_time is None else f"landmark_{landmark_time}"
-    fields = list(SCHEME_FIELDS["L5"])
+    fields = list(SCHEME_FIELDS["MULTISURV"])
 
     # prompt 链路：与 hgcn 同一个 extract_values，写 prompts.csv
     prompts_csv = Path(
         run_json2prompt(
             json_path=str(cases_file),
-            scheme="L5",
+            scheme="MULTISURV",
             template_dir=DEFAULT_TEMPLATE_DIR,
             prompt_dir=str(tmp_path / "prompts"),
             landmark_time=landmark_time,
@@ -432,7 +409,7 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
         )
     )
     prompts = pd.read_csv(prompts_csv).set_index("patient_id")
-    tpl_df = pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "L5" / "template.csv")
+    tpl_df = pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "MULTISURV" / "template.csv")
     templates = {
         field: str(tpl_df[field_output_col(field)].dropna().iloc[0]).strip() for field in fields
     }
@@ -440,12 +417,12 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
     out_root = tmp_path / "HGCN_clinic"
     run_hgcn_clinic(
         json_paths=str(cases_file),
-        schemes=["L5"],
+        schemes=["MULTISURV"],
         out_root=str(out_root),
         landmark_time=landmark_time,
         landmark_subdir=subdir,
     )
-    scheme_dir = out_root / "L5" / subdir if subdir else out_root / "L5"
+    scheme_dir = out_root / "MULTISURV" / subdir if subdir else out_root / "MULTISURV"
     ttt = joblib.load(scheme_dir / "ttt_cli_feas.pkl")
     table = json.loads((scheme_dir / "encoding_table.json").read_text(encoding="utf-8"))
 
@@ -459,7 +436,7 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
         if expected is None or expected == BASELINE_MISSING_TOKEN:
             assert node is None, f"{field} @T={landmark_time}"
         elif field_type_name(field) == "nominal":
-            mapping = table["nominal_mappings"][L5_PLACEHOLDER_BY_FIELD_PATH[field]]
+            mapping = table["nominal_mappings"][field]
             assert node == float(mapping.get(expected, mapping[BASELINE_OTHER_TOKEN]))
         else:
             assert node == expected, f"{field} @T={landmark_time}"
@@ -482,7 +459,7 @@ def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, e
     prompts_csv = Path(
         run_json2prompt(
             json_path=str(cases_file),
-            scheme="L5",
+            scheme="MULTISURV",
             template_dir=DEFAULT_TEMPLATE_DIR,
             prompt_dir=str(tmp_path / "prompts"),
             landmark_time=landmark_time,
@@ -494,20 +471,20 @@ def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, e
     out_root = tmp_path / "HGCN_clinic"
     run_hgcn_clinic(
         json_paths=str(cases_file),
-        schemes=["L5"],
+        schemes=["MULTISURV"],
         out_root=str(out_root),
         landmark_time=landmark_time,
         landmark_subdir=subdir,
     )
-    scheme_dir = out_root / "L5" / subdir if subdir else out_root / "L5"
+    scheme_dir = out_root / "MULTISURV" / subdir if subdir else out_root / "MULTISURV"
     ttt = joblib.load(scheme_dir / "ttt_cli_feas.pkl")
 
     values = extract_values(_timed_case(), landmark_time=landmark_time)
     assert values["diagnoses[].ajcc_pathologic_stage"] == ("Stage IV" if expected_present else "Stage X")
-    fields = list(SCHEME_FIELDS["L5"])
+    fields = list(SCHEME_FIELDS["MULTISURV"])
     templates = {
         field: str(
-            pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "L5" / "template.csv")[
+            pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "MULTISURV" / "template.csv")[
                 field_output_col(field)
             ]
             .dropna()
@@ -524,78 +501,3 @@ def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, e
     # 无槽位的 demographic 字段两臂一致
     assert ttt["TCGA-XX-0001"][0] == 60.0
 
-
-# --------------------------------------------------------------------------
-# 5. 冻结备份等价（值级）
-# --------------------------------------------------------------------------
-
-
-def _backup_source_dataset(dataset: str):
-    entry = BACKUP_SOURCE.get(dataset)
-    if not entry:
-        return None
-    json_path, project_ids = entry
-    if not Path(json_path).exists():
-        return None
-    return [json_path], list(project_ids)
-
-
-@pytest.mark.skipif(not BACKUP_ROOT.is_dir(), reason="冻结备份不存在（仓库外）")
-def test_l0_l5_value_equivalent_to_frozen_backup(tmp_path):
-    # 备份是用**全局**（lizhe 9 队列 3904 患者）名义词表产出的：hgcn_clinic 优先复用
-    # global_mapping_dir()/category_mapping.json。该词表随 PGC 线走，未随 gdc 线吸收，
-    # 缺失时重新 fit 会出现 nominal index 平移，无法逐值复现备份 → skip。
-    global_mapping = global_mapping_dir() / "category_mapping.json"
-    if not global_mapping.exists():
-        pytest.skip(f"全局名义词表不存在（属 lizhe/PGC 线）：{global_mapping}")
-    _load_scheme_fields()
-    dataset = "TCGA-KICH"
-    loaded = _backup_source_dataset(dataset)
-    if loaded is None:
-        pytest.skip(f"{dataset} 备份来源临床 JSON 不可用")
-    json_paths, project_ids = loaded
-
-    out_root = dataset_hgcn_clinic_dir(dataset, base_root=str(tmp_path / "s11_hgcn_regress"))
-    run_hgcn_clinic(
-        json_paths=json_paths,
-        schemes=["L0", "L5"],
-        out_root=out_root,
-        project_ids=project_ids,
-        dataset_name=dataset,
-    )
-
-    for scheme in ("L0", "L5"):
-        produced = Path(out_root) / scheme
-        backup = BACKUP_ROOT / dataset / scheme
-        assert backup.is_dir(), backup
-
-        # pickle：逐患者、逐节点严格相等（含 None 位置）
-        for name in ("ttt_cli_feas.pkl", "t_cli_feas.pkl", "x_cli.pkl"):
-            left = joblib.load(produced / name)
-            right = joblib.load(backup / name)
-            assert set(left) == set(right), name
-            for key in left:
-                if isinstance(left[key], np.ndarray):
-                    assert np.array_equal(left[key], right[key]), f"{name}:{key}"
-                else:
-                    assert left[key] == right[key], f"{name}:{key}"
-        assert np.array_equal(
-            joblib.load(produced / "edge_index_cli.pkl"),
-            joblib.load(backup / "edge_index_cli.pkl"),
-        )
-
-        # JSON 元数据：逐键值相等
-        for name in ("coverage.json", "encoding_table.json", "field_schema.json"):
-            left = json.loads((produced / name).read_text(encoding="utf-8"))
-            right = json.loads((backup / name).read_text(encoding="utf-8"))
-            assert left == right, name
-
-        # summary.md：只允许 "- output:" 一行不同（它记录本次输出根目录）
-        def _lines(path):
-            return [
-                line
-                for line in path.read_text(encoding="utf-8").splitlines()
-                if not line.startswith("- output:")
-            ]
-
-        assert _lines(produced / "summary.md") == _lines(backup / "summary.md")

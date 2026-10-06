@@ -36,7 +36,7 @@ from manual_pipeline.baseline import (  # noqa: E402
 )
 from manual_pipeline.cindex import claim_conf, conf_text, enqueue_cindex_jobs, expand_cindex_jobs, parse_conf, resolve_cindex_schemes, result_table_dir, run_claimed_conf, scheme_output_dir, summarize_dataset  # noqa: E402
 from manual_pipeline.cli import main as manual_main  # noqa: E402
-from manual_pipeline.config import ALL_TCGA_DATASETS, ALL_TEXT_SCHEMES, DEFAULT_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, SCHEME_TEMPLATE, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
+from manual_pipeline.config import ALL_TCGA_DATASETS, ALL_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, SCHEME_TEMPLATE, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
 from manual_pipeline.config import SCHEME_CONFIG, scheme_source  # noqa: E402
 from manual_pipeline.datasets import dataset_jobs, expand_source_jobs, load_dataset_configs, load_source_dataset_configs, resolve_dataset_names  # noqa: E402
 from manual_pipeline.extract import extract_values  # noqa: E402
@@ -64,7 +64,8 @@ def _load_scheme_fields():
 def test_scheme_dirs_load_fields_and_templates():
     _load_scheme_fields()
     paper = ["MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN", "HGCN_KIRC", "HGCN_LIHC", "HGCN_ESCA", "HGCN_LUSC", "HGCN_LUAD", "HGCN_UCEC"]
-    for name in DEFAULT_TEXT_SCHEMES + paper:
+    assert list(PAPER_SCHEMES) == paper  # L0-L5 已随 PGC 线移除：全部文本方案 = 论文方案
+    for name in ALL_TEXT_SCHEMES:
         assert name in SCHEME_FIELDS
         assert SCHEME_TEMPLATE[name] == f"{name}/template.csv"
         scheme_dir = Path(DEFAULT_TEMPLATE_DIR) / name
@@ -75,37 +76,33 @@ def test_scheme_dirs_load_fields_and_templates():
 
 def test_scheme_dataset_bindings():
     _load_scheme_fields()
-    assert SCHEME_DATASETS["L0"] is None
-    assert SCHEME_DATASETS["L5"] is None
+    assert "L0" not in SCHEME_DATASETS  # L0-L5 已随 PGC 线移除
     assert "D0" not in SCHEME_DATASETS
     assert len(ALL_TCGA_DATASETS) == 33
     for name in PAPER_SCHEMES:
         assert SCHEME_DATASETS[name] == list(ALL_TCGA_DATASETS)
     datasets = {name: {} for name in ALL_TCGA_DATASETS}
-    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-KIRC", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
-    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-READ", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
-    assert schemes_for_dataset(["L0", "HGCN_KIRC", "MMSURV"], "TCGA-ESCA", datasets) == ["L0", "HGCN_KIRC", "MMSURV"]
-    assert schemes_for_dataset(["D0", "HGCN_KIRC"], "TCGA-KIRC", datasets) == ["D0", "HGCN_KIRC"]
-    assert schemes_for_dataset(["D0", "HGCN_KIRC"], "TCGA-READ", datasets) == ["D0", "HGCN_KIRC"]
+    assert schemes_for_dataset(["MULTISURV", "HGCN_KIRC", "MMSURV"], "TCGA-KIRC", datasets) == ["MULTISURV", "HGCN_KIRC", "MMSURV"]
+    assert schemes_for_dataset(["MULTISURV", "HGCN_KIRC", "MMSURV"], "TCGA-READ", datasets) == ["MULTISURV", "HGCN_KIRC", "MMSURV"]
+    assert schemes_for_dataset(["MULTISURV", "HGCN_KIRC", "MMSURV"], "TCGA-ESCA", datasets) == ["MULTISURV", "HGCN_KIRC", "MMSURV"]
     assert schemes_for_dataset(["HGCN_LIHC"], "TCGA-LIHC", datasets) == ["HGCN_LIHC"]
     assert schemes_for_dataset(["HGCN_KIRC"], None, datasets) == ["HGCN_KIRC"]
 
 
-def test_scheme_sources_are_lizhe_or_gdc():
+def test_scheme_sources_are_all_gdc():
     _load_scheme_fields()
-    for name in DEFAULT_TEXT_SCHEMES:
-        assert SCHEME_CONFIG[name]["source"] == "lizhe"
-        assert scheme_source(name) == "lizhe"
-        d_name = name.replace("L", "D", 1)
-        assert scheme_source(d_name) == "lizhe"
-    for name in PAPER_SCHEMES:
-        assert SCHEME_CONFIG[name]["source"] == "gdc"
+    for name in SCHEME_CONFIG:
         assert scheme_source(name) == "gdc"
+    assert scheme_source("NOT_REGISTERED") is None
 
 
 def test_scheme_loader_skips_field_bank():
     _load_scheme_fields()
-    assert resolve_scheme_names("manual") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    try:
+        resolve_scheme_names("manual")
+        raise AssertionError("manual (L0-L5) should be rejected")
+    except ValueError as exc:
+        assert "PGC 线" in str(exc)
     assert resolve_scheme_names("paper") == list(PAPER_SCHEMES)
     assert resolve_scheme_names("all") == list(ALL_TEXT_SCHEMES)
     assert resolve_scheme_names("MULTISURV") == ["MULTISURV"]
@@ -129,7 +126,7 @@ def test_default_datasets_are_gdc_official():
 
 
 def test_expand_source_jobs_uses_scheme_source():
-    """gdc 线只有 gdc 来源；L0（lizhe 源）无数据集注册表 → 跳过而不是报错。"""
+    """gdc 线只有 gdc 来源；未注册方案（如 L0，已随 PGC 线移除）→ 跳过而不是报错。"""
     _load_scheme_fields()
     source_datasets = load_source_dataset_configs(gdc_config=DEFAULT_GDC_DATASETS_CONFIG)
     assert list(source_datasets) == ["gdc"]
@@ -147,7 +144,7 @@ def test_expand_source_jobs_uses_scheme_source():
     assert ("gdc", "TCGA-BRCA") in by_key
     assert "MULTISURV" in by_key[("gdc", "TCGA-BRCA")]["schemes"]
     assert "gdc_clinical/raw_json" in by_key[("gdc", "TCGA-BRCA")]["json_paths"][0]
-    assert "L0" not in by_key[("gdc", "TCGA-BRCA")]["schemes"]     # L0 属 lizhe 源，已跳过
+    assert "L0" not in by_key[("gdc", "TCGA-BRCA")]["schemes"]     # L0 未注册，已跳过
     assert by_key[("gdc", "TCGA-ESCA")]["schemes"] == ["MULTISURV", "HGCN_ESCA"]
     assert "MULTISURV" in by_key[("gdc", "TCGA-GBM")]["schemes"]
     assert "HGCN_ESCA" in by_key[("gdc", "TCGA-GBM")]["schemes"]
@@ -197,14 +194,16 @@ def test_dataset_jobs_write_to_a_manual():
     assert "greedy" not in jobs[0]["out_dir"]
 
 
-def test_baseline_schemes_are_d0_d5():
+def test_baseline_schemes_are_paper_only():
     _load_scheme_fields()
-    assert resolve_baseline_schemes("manual") == ["D0", "D1", "D2", "D3", "D4", "D5"]
+    try:
+        resolve_baseline_schemes("manual")
+        raise AssertionError("manual (D0-D5) should be rejected")
+    except ValueError as exc:
+        assert "PGC 线" in str(exc)
     assert resolve_baseline_schemes("paper") == list(PAPER_SCHEMES)
-    assert resolve_baseline_schemes("all") == ["D0", "D1", "D2", "D3", "D4", "D5"] + list(PAPER_SCHEMES)
-    assert resolve_baseline_schemes("D0") == ["D0"]
+    assert resolve_baseline_schemes("all") == list(PAPER_SCHEMES)
     assert resolve_baseline_schemes("MULTISURV") == ["MULTISURV"]
-    assert str(baseline_scheme_output_dir("/tmp/out", "D0")) == "/tmp/out/D0"
     assert str(baseline_scheme_output_dir("/tmp/out", "HGCN_UCEC")) == "/tmp/out/baseline/HGCN_UCEC"
 
 
@@ -213,8 +212,7 @@ def test_global_mapping_dir_lives_in_manual_templates():
     assert mapping_dir == TEMPLATES_ROOT / "baseline_onehot_mapping_tables"
     assert mapping_dir.parent == TEMPLATES_ROOT
     assert "outputs" not in mapping_dir.parts[-3:]
-    assert global_mapping_dir("lizhe") == mapping_dir
-    assert global_mapping_dir("gdc") == mapping_dir / "gdc"
+    assert global_mapping_dir() == mapping_dir
 
 
 def test_json2prompt_writes_a_manual(tmp_path):
@@ -245,13 +243,13 @@ def test_json2prompt_writes_a_manual(tmp_path):
     _load_scheme_fields()
     out = run_json2prompt(
         json_path=str(json_path),
-        scheme="L0",
+        scheme="MULTISURV",
         template_dir=DEFAULT_TEMPLATE_DIR,
         prompt_dir=str(prompt_dir),
         dataset_name="TCGA-READ",
     )
     csv_path = Path(out)
-    assert csv_path == prompt_dir / "L0" / "prompts.csv"
+    assert csv_path == prompt_dir / "MULTISURV" / "prompts.csv"
     text = csv_path.read_text(encoding="utf-8")
     assert "TCGA-XX-0001" in text
     assert "The patient is 60 years old at index." in text
@@ -385,7 +383,6 @@ def test_d_group_uses_gdc_dictionary_onehot_ordinary():
     schema_fields = set()
     for fields in BASELINE_SCHEME_FIELDS.values():
         schema_fields.update(fields)
-    assert set(L5_FIELDS).issubset(schema_fields)
     assert set(PAPER_FIELDS).issubset(schema_fields)
     for scheme in PAPER_BASELINE_SCHEMES:
         assert scheme in BASELINE_SCHEME_FIELDS
@@ -414,8 +411,12 @@ def test_hgcn_keeps_old_field_types_and_cli():
         "diagnoses[].pathology_details[].lymph_nodes_positive",
         "follow_ups[].other_clinical_attributes[].bmi",
     }
-    assert resolve_hgcn_schemes("all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
-    assert resolve_hgcn_schemes("manual") == ["L0", "L1", "L2", "L3", "L4", "L5"]
+    assert resolve_hgcn_schemes("all") == list(PAPER_SCHEMES)
+    try:
+        resolve_hgcn_schemes("manual")
+        raise AssertionError("manual (L0-L5) should be rejected")
+    except ValueError as exc:
+        assert "PGC 线" in str(exc)
     # S11：论文 / templates 自定义方案显式点名可编码（节点名 = fields.json 字段路径）
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
@@ -478,19 +479,18 @@ def test_cindex_jobs_follow_scheme_bindings():
     _load_scheme_fields()
     datasets = {"TCGA-KIRC": {}, "TCGA-READ": {}, "TCGA_LIHC": {}}
     schemes = resolve_cindex_schemes("all", "all")
-    assert schemes[:6] == ["L0", "L1", "L2", "L3", "L4", "L5"]
     assert "D0" not in schemes
+    assert "L0" not in schemes  # L0-L5 已随 PGC 线移除
     assert "MULTISURV" in schemes
     assert "HGCN_KIRC" in schemes
     assert resolve_cindex_schemes("all", "text") == schemes
     assert resolve_cindex_schemes("all", "baseline") == schemes
-    assert resolve_cindex_schemes("manual", "all") == ["L0", "L1", "L2", "L3", "L4", "L5"]
-    assert [job["scheme"] for job in expand_cindex_jobs(resolve_cindex_schemes("manual", "text"), "text")] == [
-        "L0", "L1", "L2", "L3", "L4", "L5"
-    ]
-    assert [job["scheme"] for job in expand_cindex_jobs(resolve_cindex_schemes("manual", "baseline"), "baseline")] == [
-        "D0", "D1", "D2", "D3", "D4", "D5"
-    ]
+    for encoding in ("all", "text", "baseline"):
+        try:
+            resolve_cindex_schemes("manual", encoding)
+            raise AssertionError("manual (L0-L5 / D0-D5) should be rejected")
+        except ValueError as exc:
+            assert "PGC 线" in str(exc)
     assert resolve_cindex_schemes("paper", "text") == [
         "MULTISURV",
         "SURVPGC",
@@ -503,24 +503,18 @@ def test_cindex_jobs_follow_scheme_bindings():
         "HGCN_LUAD",
         "HGCN_UCEC",
     ]
-    assert schemes_for_dataset(["L0", "D0", "HGCN_KIRC"], "TCGA-KIRC", datasets) == ["L0", "D0", "HGCN_KIRC"]
-    assert schemes_for_dataset(["L0", "D0", "HGCN_KIRC"], "TCGA-READ", datasets) == ["L0", "D0", "HGCN_KIRC"]
+    assert schemes_for_dataset(["MULTISURV", "SURVPGC", "HGCN_KIRC"], "TCGA-KIRC", datasets) == ["MULTISURV", "SURVPGC", "HGCN_KIRC"]
+    assert schemes_for_dataset(["MULTISURV", "SURVPGC", "HGCN_KIRC"], "TCGA-READ", datasets) == ["MULTISURV", "SURVPGC", "HGCN_KIRC"]
     jobs = expand_cindex_jobs(["HGCN_KIRC"], "all")
     assert [job["scheme"] for job in jobs] == ["HGCN_KIRC", "baseline__HGCN_KIRC"]
     jobs = expand_cindex_jobs(["HGCN_KIRC"], "baseline")
     assert [job["scheme"] for job in jobs] == ["baseline__HGCN_KIRC"]
-    jobs = expand_cindex_jobs(["L4"], "all")
-    assert [job["scheme"] for job in jobs] == ["L4", "D4"]
-    jobs = expand_cindex_jobs(["L4"], "baseline")
-    assert [job["scheme"] for job in jobs] == ["D4"]
 
 
 def test_cindex_output_paths():
-    prompt_dir = scheme_output_dir("TCGA-READ", "L0", "/tmp/outputs")
-    baseline_dir = scheme_output_dir("TCGA-READ", "D0", "/tmp/outputs")
+    prompt_dir = scheme_output_dir("TCGA-READ", "MULTISURV", "/tmp/outputs")
     paper_baseline_dir = scheme_output_dir("TCGA-KIRC", "baseline__HGCN_KIRC", "/tmp/outputs")
-    assert str(prompt_dir).endswith("/outputs/TCGA-READ/A_manual/L0/embeddings/pt")
-    assert str(baseline_dir) == "/tmp/outputs/TCGA-READ/A_manual/D0/embeddings/pt"
+    assert str(prompt_dir).endswith("/outputs/TCGA-READ/A_manual/MULTISURV/embeddings/pt")
     assert str(paper_baseline_dir) == "/tmp/outputs/TCGA-KIRC/A_manual/baseline/HGCN_KIRC/embeddings/pt"
     table_dir = result_table_dir("TCGA-READ")
     assert table_dir.as_posix().endswith(f"/results/{ARM_A}/TCGA-READ")

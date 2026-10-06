@@ -22,8 +22,8 @@ from greedy.clinic import (
 )
 from greedy.data import DEFAULT_ANALYZER_SPLIT_ROOT, display_to_study
 
-from .baseline import DEFAULT_BASELINE_SCHEMES, resolve_baseline_schemes
-from .config import D_SCHEME_BY_TEXT_SCHEME, DEFAULT_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_CONFIG, resolve_scheme_names, schemes_for_dataset
+from .baseline import resolve_baseline_schemes
+from .config import PAPER_SCHEMES, SCHEME_CONFIG, resolve_scheme_names, schemes_for_dataset
 from .landmark import LANDMARK_NONE_TAG, landmark_dir
 from .landmark_labels import build_landmark_label_file, format_risk_set_summary
 from .paths import PROJECT_ROOT, dataset_baseline_embedding_dir, dataset_embedding_dir
@@ -75,16 +75,7 @@ def expand_cindex_jobs(schemes: list[str], encoding: str) -> list[dict[str, str]
     for scheme in schemes:
         name = bound_scheme_name(scheme)
         candidates = []
-        if name in DEFAULT_TEXT_SCHEMES:
-            if encoding in {"all", "text"}:
-                candidates.append({"encoding": "prompt", "scheme": name, "bound_scheme": name})
-            if encoding in {"all", "baseline"}:
-                d_name = D_SCHEME_BY_TEXT_SCHEME[name]
-                candidates.append({"encoding": "baseline", "scheme": d_name, "bound_scheme": name})
-        elif name in DEFAULT_BASELINE_SCHEMES:
-            if encoding in {"all", "baseline"}:
-                candidates.append({"encoding": "baseline", "scheme": name, "bound_scheme": name})
-        elif name in PAPER_SCHEMES:
+        if name in PAPER_SCHEMES:
             if encoding in {"all", "text"}:
                 candidates.append({"encoding": "prompt", "scheme": name, "bound_scheme": name})
             if encoding in {"all", "baseline"}:
@@ -117,12 +108,9 @@ def scheme_output_dir(
     landmark_subdir: str = "",
 ) -> Path:
     name = bound_scheme_name(scheme)
-    if scheme.startswith("baseline__") or name in DEFAULT_BASELINE_SCHEMES:
+    if scheme.startswith("baseline__"):
         root = Path(dataset_baseline_embedding_dir(dataset_name, baseline_out))
-        if name in DEFAULT_BASELINE_SCHEMES:
-            path = root / name
-        else:
-            path = root / "baseline" / name
+        path = root / "baseline" / name
     else:
         path = Path(dataset_embedding_dir(dataset_name)) / name
     return landmark_dir(path, landmark_subdir) / "embeddings" / "pt"

@@ -1,4 +1,8 @@
-"""Load L0-L5 and paper-scheme configs. FIELD_BANK is not a scheme."""
+"""Load paper-scheme and custom-scheme configs. FIELD_BANK is not a scheme.
+
+L0-L5 / D0-D5 已随 PGC 线独立化移除(2026-10-06,决策 T32):本包只注册
+templates/manual_schemes 下的论文方案与自定义方案,数据源只有 gdc。
+"""
 
 from __future__ import annotations
 
@@ -17,11 +21,10 @@ SCHEME_FIELDS = {}
 SCHEME_DATASETS = {}
 SCHEME_CONFIG = {}
 
-VALID_SCHEME_SOURCES = ("lizhe", "gdc")
+VALID_SCHEME_SOURCES = ("gdc",)
 
 RESERVED_SCHEME_NAMES = {"FIELD_BANK"}
 
-DEFAULT_TEXT_SCHEMES = ["L0", "L1", "L2", "L3", "L4", "L5"]
 PAPER_SCHEMES = [
     "MULTISURV",
     "SURVPGC",
@@ -69,15 +72,7 @@ ALL_TCGA_DATASETS = [
     "TCGA-UCS",
     "TCGA-UVM",
 ]
-ALL_TEXT_SCHEMES = list(DEFAULT_TEXT_SCHEMES) + list(PAPER_SCHEMES)
-D_SCHEME_BY_TEXT_SCHEME = {
-    "L0": "D0",
-    "L1": "D1",
-    "L2": "D2",
-    "L3": "D3",
-    "L4": "D4",
-    "L5": "D5",
-}
+ALL_TEXT_SCHEMES = list(PAPER_SCHEMES)
 
 
 def reset_scheme_registry() -> None:
@@ -218,7 +213,9 @@ def resolve_scheme_names(scheme: str) -> list[str]:
         )
     known = list(SCHEME_CONFIG.keys())
     if scheme == "manual":
-        names = list(DEFAULT_TEXT_SCHEMES)
+        raise ValueError(
+            "'manual' 方案组（L0-L5）已随 PGC 线独立化移除；可用 paper 或显式方案名"
+        )
     elif scheme == "paper":
         names = list(PAPER_SCHEMES)
     elif scheme == "all":
@@ -233,26 +230,14 @@ def resolve_scheme_names(scheme: str) -> list[str]:
     return names
 
 
-def bound_text_scheme(scheme: str) -> str:
-    for src, dst in D_SCHEME_BY_TEXT_SCHEME.items():
-        if scheme == dst:
-            return src
-    return scheme
-
-
 def scheme_bound_datasets(scheme: str) -> list[str] | None:
-    return SCHEME_DATASETS.get(bound_text_scheme(scheme))
+    return SCHEME_DATASETS.get(scheme)
 
 
-def scheme_source(scheme: str) -> str:
-    text_scheme = bound_text_scheme(scheme)
-    cfg = SCHEME_CONFIG.get(text_scheme) or {}
+def scheme_source(scheme: str) -> str | None:
+    cfg = SCHEME_CONFIG.get(scheme) or {}
     source = cfg.get("source")
-    if source in VALID_SCHEME_SOURCES:
-        return source
-    if text_scheme in PAPER_SCHEMES or scheme in PAPER_SCHEMES:
-        return "gdc"
-    return "lizhe"
+    return source if source in VALID_SCHEME_SOURCES else None
 
 
 def scheme_applies_to_dataset(scheme: str, dataset_name: str | None, datasets: dict | None = None) -> bool:

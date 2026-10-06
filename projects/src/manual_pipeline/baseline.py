@@ -1,4 +1,8 @@
-"""Encode D0-D5 and paper-scheme mixed baseline vectors from clinical JSON."""
+"""Encode paper / custom-scheme mixed baseline vectors from clinical JSON.
+
+D0-D5 已随 PGC 线独立化移除：baseline 方案集 = 论文方案（MULTISURV/SURVPGC/MMSURV/
+INTEGRATIVE_DNN/HGCN_*）+ templates/manual_schemes 下的自定义方案。
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,7 @@ from discovery.onehot import (
     gdc_lookup_key,
     parse_gdc_types,
 )
-from .config import DEFAULT_TEXT_SCHEMES, D_SCHEME_BY_TEXT_SCHEME, PAPER_SCHEMES
+from .config import PAPER_SCHEMES
 from .extract import extract_values
 from .landmark import landmark_dir
 from .paths import global_mapping_dir as shared_global_mapping_dir
@@ -61,7 +65,6 @@ BASELINE_NOMINAL_FIELDS = {
     "diagnoses[].ajcc_staging_system_edition",
 }
 
-DEFAULT_BASELINE_SCHEMES = ["D0", "D1", "D2", "D3", "D4", "D5"]
 PAPER_BASELINE_SCHEMES = list(PAPER_SCHEMES)
 
 # project.project_id is not in the GDC dictionary dump used here.
@@ -75,10 +78,6 @@ BASELINE_SCHEME_FIELDS = {}
 
 def load_baseline_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> None:
     BASELINE_SCHEME_FIELDS.clear()
-    for text_scheme, d_scheme in D_SCHEME_BY_TEXT_SCHEME.items():
-        if text_scheme not in text_scheme_fields:
-            raise ValueError(f"缺少文本方案 {text_scheme}，无法派生 {d_scheme}")
-        BASELINE_SCHEME_FIELDS[d_scheme] = list(text_scheme_fields[text_scheme])
     for name in PAPER_BASELINE_SCHEMES:
         if name not in text_scheme_fields:
             raise ValueError(f"缺少论文方案 {name}，无法注册 baseline 字段")
@@ -87,7 +86,7 @@ def load_baseline_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> Non
     # 原 A_pipeline 时代由 Test_3_pipeline_one 进程内 append 进 PAPER_SCHEMES 绕过（且必须
     # 在 import 本模块前完成）；吸收后白名单直接在源头放开，Test_5_baseline_c 无需补丁。
     for name in text_scheme_fields:
-        if name in DEFAULT_TEXT_SCHEMES or name in BASELINE_SCHEME_FIELDS:
+        if name in BASELINE_SCHEME_FIELDS:
             continue
         BASELINE_SCHEME_FIELDS[name] = list(text_scheme_fields[name])
 
@@ -130,11 +129,11 @@ BASELINE_ONEHOT_FIELDS = {
 def resolve_baseline_schemes(scheme: str) -> list[str]:
     known = list(BASELINE_SCHEME_FIELDS.keys())
     if scheme == "manual":
-        return list(DEFAULT_BASELINE_SCHEMES)
+        raise ValueError("'manual' 方案组（D0-D5）已随 PGC 线独立化移除；可用 paper 或显式方案名")
     if scheme == "paper":
         return list(PAPER_BASELINE_SCHEMES)
     if scheme == "all":
-        return list(DEFAULT_BASELINE_SCHEMES) + list(PAPER_BASELINE_SCHEMES)
+        return list(PAPER_BASELINE_SCHEMES)
     if scheme not in BASELINE_SCHEME_FIELDS:
         raise ValueError(f"未知 baseline 方案: '{scheme}'。可用方案: {sorted(known)}")
     return [scheme]
@@ -146,10 +145,7 @@ def baseline_scheme_output_dir(
     landmark_subdir: str = "",
 ) -> Path:
     root = Path(out_root)
-    if scheme in DEFAULT_BASELINE_SCHEMES:
-        path = root / scheme
-    else:
-        path = root / "baseline" / scheme
+    path = root / "baseline" / scheme
     return landmark_dir(path, landmark_subdir)
 
 

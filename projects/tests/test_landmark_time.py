@@ -264,18 +264,18 @@ def test_json2prompt_landmark_layout_and_values(tmp_path):
     legacy_out = Path(
         run_json2prompt(
             json_path=str(json_path),
-            scheme="L5",
+            scheme="MULTISURV",
             template_dir=DEFAULT_TEMPLATE_DIR,
             prompt_dir=str(prompt_root),
             dataset_name="TCGA-KIRC",
         )
     )
-    assert legacy_out == prompt_root / "L5" / "prompts.csv"
+    assert legacy_out == prompt_root / "MULTISURV" / "prompts.csv"
 
     masked_out = Path(
         run_json2prompt(
             json_path=str(json_path),
-            scheme="L5",
+            scheme="MULTISURV",
             template_dir=DEFAULT_TEMPLATE_DIR,
             prompt_dir=str(prompt_root),
             dataset_name="TCGA-KIRC",
@@ -283,7 +283,7 @@ def test_json2prompt_landmark_layout_and_values(tmp_path):
             landmark_subdir="landmark_0",
         )
     )
-    assert masked_out == prompt_root / "L5" / "landmark_0" / "prompts.csv"
+    assert masked_out == prompt_root / "MULTISURV" / "landmark_0" / "prompts.csv"
 
     legacy_df = pd.read_csv(legacy_out)
     masked_df = pd.read_csv(masked_out)
@@ -294,14 +294,12 @@ def test_json2prompt_landmark_layout_and_values(tmp_path):
 
     changed = [col for col in legacy_df.columns if legacy_df[col][0] != masked_df[col][0]]
     assert changed == [
-        # diagnoses[] and follow_ups[] are timed families -> masked at t0
-        "diagnoses_primary_diagnosis_template",
-        "diagnoses_prior_malignancy_template",
+        # diagnoses[] is a timed family -> masked at t0；derived.* 随治疗时点一并消失
         "diagnoses_ajcc_pathologic_stage_template",
-        "follow_ups_ecog_performance_status_template",
-        "follow_ups_other_clinical_attributes_bmi_template",
+        "diagnoses_prior_malignancy_template",
+        "derived_pharmaceutical_therapy_template",
     ]
-    # demographic.* is untimed: byte-identical across the arms
+    # demographic.* 等无时点字段：两臂逐字相同
     assert masked_df["demographic_age_at_index_template"][0] == legacy_df["demographic_age_at_index_template"][0]
     assert masked_df["demographic_age_at_index_template"][0] == "The patient is 60 years old at index."
 
@@ -335,9 +333,10 @@ def test_generate_prompt_row_passes_landmark_through():
 
 def test_baseline_scheme_output_dir_landmark_subdir(tmp_path):
     root = tmp_path / "outputs"
-    assert baseline_scheme_output_dir(root, "D0") == root / "D0"
+    # D0-D5 已随 PGC 线移除：baseline 目录只剩论文方案（root/baseline/<scheme>）
+    assert baseline_scheme_output_dir(root, "MULTISURV") == root / "baseline" / "MULTISURV"
     assert baseline_scheme_output_dir(root, "HGCN_UCEC") == root / "baseline" / "HGCN_UCEC"
-    assert baseline_scheme_output_dir(root, "D0", "landmark_0") == root / "D0" / "landmark_0"
+    assert baseline_scheme_output_dir(root, "MULTISURV", "landmark_0") == root / "baseline" / "MULTISURV" / "landmark_0"
     assert (
         baseline_scheme_output_dir(root, "HGCN_UCEC", "landmark_365")
         == root / "baseline" / "HGCN_UCEC" / "landmark_365"
@@ -364,18 +363,18 @@ def test_landmark_paths_never_touch_legacy_a_manual(tmp_path):
     assert analyzer_exp_group("landmark_0") == f"{ARM_B}/runs"
 
     # landmark_none = the reported-value arm: same embedding dir as today.
-    assert str(scheme_output_dir("TCGA-READ", "L0", str(tmp_path), landmark_subdir="")).endswith(
-        "/outputs/TCGA-READ/A_manual/L0/embeddings/pt"
+    assert str(scheme_output_dir("TCGA-READ", "MULTISURV", str(tmp_path), landmark_subdir="")).endswith(
+        "/outputs/TCGA-READ/A_manual/MULTISURV/embeddings/pt"
     )
     assert str(
-        scheme_output_dir("TCGA-READ", "L0", str(tmp_path), landmark_subdir="landmark_0")
-    ).endswith("/outputs/TCGA-READ/A_manual/L0/landmark_0/embeddings/pt")
-    assert scheme_output_dir("TCGA-READ", "D0", str(tmp_path), landmark_subdir="") == Path(
+        scheme_output_dir("TCGA-READ", "MULTISURV", str(tmp_path), landmark_subdir="landmark_0")
+    ).endswith("/outputs/TCGA-READ/A_manual/MULTISURV/landmark_0/embeddings/pt")
+    assert scheme_output_dir("TCGA-READ", "baseline__MULTISURV", str(tmp_path), landmark_subdir="") == Path(
         str(tmp_path)
-    ) / "TCGA-READ" / "A_manual" / "D0" / "embeddings" / "pt"
-    assert scheme_output_dir("TCGA-READ", "D0", str(tmp_path), landmark_subdir="landmark_0") == Path(
+    ) / "TCGA-READ" / "A_manual" / "baseline" / "MULTISURV" / "embeddings" / "pt"
+    assert scheme_output_dir("TCGA-READ", "baseline__MULTISURV", str(tmp_path), landmark_subdir="landmark_0") == Path(
         str(tmp_path)
-    ) / "TCGA-READ" / "A_manual" / "D0" / "landmark_0" / "embeddings" / "pt"
+    ) / "TCGA-READ" / "A_manual" / "baseline" / "MULTISURV" / "landmark_0" / "embeddings" / "pt"
 
 
 def test_landmark_scheme_and_conf_names():
@@ -443,8 +442,8 @@ def _fake_label_stats(study: str, landmark_time, excluded: int = 7) -> dict:
 def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     _load_scheme_fields()
     baseline_out = tmp_path / "outputs"
-    legacy_dir = scheme_output_dir("TCGA-READ", "D0", str(baseline_out))
-    masked_dir = scheme_output_dir("TCGA-READ", "D0", str(baseline_out), landmark_subdir="landmark_0")
+    legacy_dir = scheme_output_dir("TCGA-READ", "baseline__MULTISURV", str(baseline_out))
+    masked_dir = scheme_output_dir("TCGA-READ", "baseline__MULTISURV", str(baseline_out), landmark_subdir="landmark_0")
     _touch_clinic_dir(legacy_dir)
     _touch_clinic_dir(masked_dir)
 
@@ -462,7 +461,7 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     datasets = {"TCGA-READ": {}}
     legacy_jobs = iter_cindex_jobs(
         dataset_name="TCGA-READ",
-        schemes=["D0"],
+        schemes=["MULTISURV"],
         datasets=datasets,
         baseline_out=str(baseline_out),
         encoding="baseline",
@@ -472,14 +471,14 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     assert len(legacy_jobs) == 1
     assert legacy_jobs[0]["clinic_dir"] == legacy_dir
     assert legacy_jobs[0]["label_file"] is None
-    assert legacy_jobs[0]["row_scheme"] == "D0"
+    assert legacy_jobs[0]["row_scheme"] == "baseline__MULTISURV"
     assert legacy_jobs[0]["exp_group"] == f"{ARM_A}/runs"
-    assert f"{ARM_A}/runs/tcga_read__D0/clinic_cox" in str(legacy_jobs[0]["out_dir"])
+    assert f"{ARM_A}/runs/tcga_read__baseline__MULTISURV/clinic_cox" in str(legacy_jobs[0]["out_dir"])
     assert calls == []  # landmark off -> no label surgery at all
 
     jobs = iter_cindex_jobs(
         dataset_name="TCGA-READ",
-        schemes=["D0"],
+        schemes=["MULTISURV"],
         datasets=datasets,
         baseline_out=str(baseline_out),
         encoding="baseline",
@@ -493,16 +492,16 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     assert calls == [{"study": "tcga_read", "landmark_time": 0, "results_root": tmp_path / "results", "apply_shift": True}]
     assert job["clinic_dir"] == masked_dir
     assert job["label_file"] == label_file
-    assert job["row_scheme"] == "D0__landmark_0"
-    assert job["run_name"] == "tcga_read__D0__landmark_0"
+    assert job["row_scheme"] == "baseline__MULTISURV__landmark_0"
+    assert job["run_name"] == "tcga_read__baseline__MULTISURV__landmark_0"
     assert job["exp_group"] == f"{ARM_B}/runs"
-    assert job["conf_name"] == "tcga_read__D0__landmark_0__clinic_cox.conf"
-    assert f"{ARM_B}/runs/tcga_read__D0__landmark_0/clinic_cox" in str(job["out_dir"])
+    assert job["conf_name"] == "tcga_read__baseline__MULTISURV__landmark_0__clinic_cox.conf"
+    assert f"{ARM_B}/runs/tcga_read__baseline__MULTISURV__landmark_0/clinic_cox" in str(job["out_dir"])
 
     # landmark_none: legacy embedding dir, but the cindex table is the landmark one
     none_jobs = iter_cindex_jobs(
         dataset_name="TCGA-READ",
-        schemes=["D0"],
+        schemes=["MULTISURV"],
         datasets=datasets,
         baseline_out=str(baseline_out),
         encoding="baseline",
@@ -518,7 +517,9 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
 def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
     _load_scheme_fields()
     baseline_out = tmp_path / "outputs"
-    _touch_clinic_dir(scheme_output_dir("TCGA-READ", "D0", str(baseline_out), landmark_subdir="landmark_365"))
+    _touch_clinic_dir(
+        scheme_output_dir("TCGA-READ", "baseline__MULTISURV", str(baseline_out), landmark_subdir="landmark_365")
+    )
     monkeypatch.setattr(
         "manual_pipeline.cindex.build_landmark_label_file",
         lambda **kwargs: (
@@ -528,7 +529,7 @@ def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
     )
     jobs = iter_cindex_jobs(
         dataset_name="TCGA-READ",
-        schemes=["D0"],
+        schemes=["MULTISURV"],
         datasets={"TCGA-READ": {}},
         baseline_out=str(baseline_out),
         encoding="baseline",
@@ -538,11 +539,11 @@ def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
         landmark_time=365,
         landmark_shift=False,
     )
-    assert jobs[0]["row_scheme"] == "D0__landmark_365__noshift"
-    assert jobs[0]["conf_name"] == "tcga_read__D0__landmark_365__noshift__clinic_cox.conf"
+    assert jobs[0]["row_scheme"] == "baseline__MULTISURV__landmark_365__noshift"
+    assert jobs[0]["conf_name"] == "tcga_read__baseline__MULTISURV__landmark_365__noshift__clinic_cox.conf"
     # the embedding dir is the shifted arm's: only the label origin differs
     assert jobs[0]["clinic_dir"] == scheme_output_dir(
-        "TCGA-READ", "D0", str(baseline_out), landmark_subdir="landmark_365"
+        "TCGA-READ", "baseline__MULTISURV", str(baseline_out), landmark_subdir="landmark_365"
     )
 
 
@@ -724,7 +725,7 @@ def test_cli_hgcn_clinic_landmark_and_out_root_routing(tmp_path, monkeypatch):
     # 4) 单 JSON 模式 + --hgcn_out_root -> {root}/HGCN_clinic
     manual_main(
         [
-            "hgcn_clinic", "--json_path", str(_write_json_dir(tmp_path)), "--scheme", "L0",
+            "hgcn_clinic", "--json_path", str(_write_json_dir(tmp_path)), "--scheme", "MULTISURV",
             "--hgcn_out_root", str(regress_root),
         ]
     )
@@ -744,14 +745,14 @@ def test_cli_hgcn_clinic_landmark_and_out_root_routing(tmp_path, monkeypatch):
 
 def test_cli_rejects_bad_landmark_time(capsys):
     with pytest.raises(SystemExit) as exc:
-        manual_main(["json2prompt", "--dataset", "TCGA-READ", "--scheme", "L0", "--landmark_time", "abc"])
+        manual_main(["json2prompt", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_time", "abc"])
     assert exc.value.code == 2
     assert "--landmark_time" in capsys.readouterr().err
 
 
 def test_cli_landmark_shift_choices(capsys):
     with pytest.raises(SystemExit) as exc:
-        manual_main(["cindex", "--dataset", "TCGA-READ", "--scheme", "L0", "--landmark_shift", "maybe"])
+        manual_main(["cindex", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_shift", "maybe"])
     assert exc.value.code == 2
     assert "--landmark_shift" in capsys.readouterr().err
 

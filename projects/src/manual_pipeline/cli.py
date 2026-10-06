@@ -50,14 +50,14 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--scheme",
         default="all",
-        help="方案组或单方案。所有命令相同：manual=L0-L5，paper=论文方案，all=L0-L5+论文方案。也可指定 L0 / MULTISURV 等单个方案。"
-        "hgcn_clinic 例外：manual/all 都只展开 L0-L5（保冻结产物树），论文/自定义方案请点名。",
+        help="方案组或单方案。所有命令相同：paper=论文方案，all=论文方案；也可指定 MULTISURV 等单个方案。"
+        "manual=L0-L5 已随 PGC 线独立化移除。"
+        "hgcn_clinic 例外：论文/自定义方案请显式点名。",
     )
     parser.add_argument(
         "--dataset",
         default=None,
         help="数据集。所有命令相同：all 或逗号分隔列表，读 projects/datasets.json（gdc 官方 33 队列）。"
-        "论文方案展开官方 33 个 TCGA；L0-L5 / D0-D5 属 lizhe 源（随 PGC 线走），本包不注册该源、按跳过处理。"
         "为空时使用 --json_path 单 JSON 模式。",
     )
     parser.add_argument("--gdc_datasets_config", default=DEFAULT_GDC_DATASETS_CONFIG)
@@ -152,10 +152,9 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "人工方案通路（原 A_pipeline gdc 线，已吸收进主项目；入口 scripts/run_a_manual.py）。\n"
-            "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: manual=L0-L5（lizhe 源，随 PGC 线走，本包不注册数据源），paper=论文方案，all=两组。"
+            "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: paper=论文方案，all=论文方案；manual=L0-L5 已随 PGC 线独立化移除（PGC 线入口 A_pipeline_pgc/run.py）。"
             "encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。\n"
             "数据集只有 gdc 一个来源：projects/datasets.json（官方 33 队列）；方案在 templates/manual_schemes/{scheme}/fields.json 写 source=gdc。\n"
-            "hgcn_clinic 默认（manual/all）只落 L0-L5 冻结产物树；论文方案 / templates 自定义方案显式点名（如 --scheme paper / --scheme MULTISURV）即可编码。\n"
             "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed} 再抢活；"
             "汇总表写到 results/Test_2b/arm_A（landmark 臂 arm_B）。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。\n"
             "后台跑（等价旧 bg.sh）：nohup python scripts/run_a_manual.py cindex ... > run.log 2>&1 &\n"

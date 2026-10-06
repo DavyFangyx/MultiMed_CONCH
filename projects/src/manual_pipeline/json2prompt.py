@@ -1,4 +1,7 @@
-"""Generate L0-L5 / paper-scheme prompt CSVs from clinical JSON."""
+"""Generate paper / custom-scheme prompt CSVs from clinical JSON.
+
+L0-L5 模板已随 PGC 线独立化移除：方案集 = templates/manual_schemes 下的已注册方案。
+"""
 
 from __future__ import annotations
 
