@@ -21,6 +21,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| P12 | 接口整理 B1/B2/B4：label/clinical/split 解耦去 PGC 回退 | `3a21acd` | 2026-10-06 | landmark_labels.resolve_label_file 与 greedy.data（load_survival_table/default_label_file_for）删 PGC 回退——仅本地、缺失即报错；test_survival_metrics 对照源改为 tests/_vendored 快照（122 行原版 vendored），不再读 PGC 仓库，SurvPGC env 下 21 测试全过；Clinic_Analyzer 不入库（P3 裁定）：run.sh（删 prefer_existing_path）、registry.py、defaults.conf 同步去回退、SURVPGC_ROOT 语义收窄为外部特征根（P/G/omics/HGCN），仅盘上生效 |
 | P11 | 接口整理 A2：死分支删除 | `f324753` | 2026-10-06 | linear_probe 旧 mask 口径（t_record_le_last_time，以 gt 为 last_time，CLI 无路径可达）整支删除，landmark_policy 参数随死分支移除；check_search_labels 死常量 MONTHS_TO_DAYS（30.44）删除、月空间比较注释修正（该文件首次入库） |
 | P10 | 接口整理 A1：协议数值常量集中 | `b8c851d` | 2026-10-06 | 新增 src/common/constants.py：DAYS_PER_MONTH（月→天反推）、LABEL_MONTHS_TO_DAYS（30.44，仅登记为 PGC 外部标签除数）、DAYS_PER_YEAR、LANDMARK_TIMES；landmark_labels/baseline/onehot/converters 与测试内联 365.25 全部改引用 |
 | P9 | 收尾：R2 移除 + legacy 回退映射删除 + static_only 更名 + 术语修订（决策点） | `4fac584` `5afccf3` | 2026-10-05 | R2（timepoint 标记）移除——无下游消费者，时点语义由 landmark-first R3 承载；paths.py 三组 \*\_LEGACY 目录回退映射删除（旧名目录已不存在），LEGACY_TO_TEST_RESULTS 保留（历史 run_config 字面量仍被 Test_2b 展示消费）；landmark_none → static_only 全量更名（36 rawdata_stats + 35 outputs bank 目录，代码/测试同步，Clinic_Analyzer registry 盘上同步）；「官方」称谓废弃（唯一官方 = TCGA GDC 词典），kept_fields 等一律称「现行」 |
