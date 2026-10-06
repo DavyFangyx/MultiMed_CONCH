@@ -1,0 +1,338 @@
+# 实验执行手册:全链路 runbook(审查 → 编码 → 实验 → 报表)
+
+> **本文件是实验执行的权威手册**:阶段划分、命令、判据、产物以这里为准。
+> **`scripts/runbook.sh` 与本文件一一对应**:阶段编号相同、命令逐条相同、判据常量相同
+> (`run_all` 串行跑全链路 / `stage N` 只跑某阶段 / `status` 一屏总览)。
+> 口径权威:`z_notes/experiment_list/experiment_list.md`(实验清单)、`z_notes/Test_series_spec.md`(规格)、
+> `z_notes/time_axis/time_axis.md`(时间轴协议);目录命名见 `z_notes/experiment_list/naming_convention.md`。
+> 所有命令都在 `projects/` 根目录执行。环境:训练 = conda env **SurvPGC**,编码 = conda env **conch**,
+> 投递/监控 = **base python 3.13**。队列纪律:**上一步判据满足再走下一步**(不要并行 stage,除非明确说可并行)。
+
+---
+
+## 一页速览:全链路八阶段(阶段 0 = 前置闸门)
+
+| # | 阶段 | 入口(projects/ 根目录执行) | 判据 | 产物落点 |
+|---|---|---|---|---|
+| 0 | 前置闸门 | `python scripts/check_search_labels.py`;`python scripts/cache_status.py` | 退出码 0 | 只读报告,无产物 |
+| 1 | 原始文件审查(扫描/统计/筛选) | `scripts/run_scan_fields.py` → `run_field_presence.py` → `run_landmark_first_filter.py` | 退出码 0;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(36 数据集) | `rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
+| 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/s5b_univariate_queue.sh bank` | 退出码 0;15 主集 Field Bank 基座齐备;off 臂 raw bank 15/15(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
+| 3 | Test_1a 单字段泄露对照 | `bash scripts/s5_univariate_queue.sh enqueue/watch`(t0 臂)+ `bash scripts/s5b_univariate_queue.sh enqueue/drain/watch`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 15 | `results/Test_1a/{arm_t0,arm_off}/` |
+| 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/s4_Test_2b_queue.sh encode/enqueue/drain/watch/validate` | `Test_2b_arms` queue+running 空 且 done ≥ 256 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/` |
+| 5 | Test_3 字段轴链(+ Test_4 三档收口) | `bash scripts/Test_3_queue.sh search_enqueue/search_watch/arms_*/compare`;`python results_display/scripts/Test_4_three_tiers.py` | `Test_3_search` done ≥ 15;`Test_3_arms` done ≥ 60;`three_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
+| 6 | Test_5 不变性 | `bash scripts/Test_5_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 128/66/128/66;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
+| 7 | Test_6 搜索算法选型 | `bash scripts/t6_scheduler.sh`;`python scripts/run_bakeoff_report.py` | `Test_6_search` queue+running 空 且 done ≥ 24;`decision.json` 落盘(人工确认) | `results/Test_6_search/`、`results_display/Test_6_search/` |
+| 8 | 报表(展示层,不训练) | `python results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report,Test_4_three_tiers}.py` | 退出码 0(脚本幂等,可反复跑) | `results_display/` 4 个目录 |
+
+**依赖关系(串行顺序的由来)**:
+
+```
+阶段 1 审查 ─→ 阶段 2 编码 ─→ 阶段 3 Test_1a ─┬─→ 阶段 4 Test_2(2a → 2b)
+                                              ├─→ 阶段 5 Test_3(搜索 → 三臂 → Test_4)
+                                              ├─→ 阶段 6 Test_5(需 2b / 3 先落盘)
+                                              └─→ 阶段 7 Test_6(需 Test_1a 先验;建议最后跑)
+阶段 8 报表 ← 上游 results/ 落盘后随时可跑(纯汇总)
+```
+
+- **并行例外**:阶段 4(时间轴链)与阶段 5(字段轴链)互不依赖,允许同时投放;其余按编号串行。
+- **GPU 纪律**:Test_5 硬约束只用 GPU 0-3 且放置时为空闲卡(4-7 不碰);编码默认走 GPU 7;最多 4 个 drainer;不 kill 他人进程。
+- **训练范围(R13,2026-10-02)**:训练/搜索限 **n_event ≥ 100 的 15 个 TCGA 主集**(名单读 `results/Test_0_dataset_availability/manifest.csv`,脚本内派生,不硬编码);
+  15 主集 = BLCA / BRCA / COAD / GBM / HNSC / KIRC / LAML / LGG / LUAD / LUSC / OV / PAAD / SKCM / STAD / LIHC。
+  70-100 / 30-70 / <30 档的历史结果保留磁盘,报告按协议 A 四档分层。
+- **队列四桶**:conf 生命周期在 `Clinic_Analyzer/configs/{家族}/{queue,running,done,failed}`(+ `parked/` = 撤下但保留,不被 drainer 读取);
+  判据一律 "queue 空 && running 空 && done ≥ 期望数"(桶里可能含历史超集,见"已知坑" 8)。
+
+---
+
+## 结果在哪看(总览)
+
+| Test / 阶段 | `results/` | `results_display/` | 队列家族目录(`Clinic_Analyzer/configs/`) |
+|---|---|---|---|
+| 阶段 1 审查 | —(`rawdata_stats/{ds}/`) | — | — |
+| 阶段 2 编码 | —(`outputs/{ds}/`、`outputs/_raw/{ds}/`) | — | — |
+| Test_1a 单字段 | `results/Test_1a/arm_t0/`(软链 → `results/univariate/`)、`results/Test_1a/arm_off/` | `Test_1a_field_level/` | `Test_1a_t0`、`Test_1a_off` |
+| Test_1b 各数据集分布 | (数据源 = `results/Test_1a/arm_t0/`) | `Test_1b_dataset_cindex/` | — |
+| Test_2a 泄露审计 | `results/Test_2a_leak_audit/` | `Test_2a_leak_audit/` | — |
+| Test_2b 去泄露对照 | `results/Test_2b/arm_A/`(报告值)、`arm_B/`(去泄露值) | `Test_2b_delta/` | `Test_2b_arms` |
+| Test_3 搜索 + 三臂 | `results/Test_3_greedy_vs_works/`(+ `results/Test_3_search/cache.sqlite` 缓存) | `Test_3_greedy_vs_works/` | `Test_3_search`、`Test_3_arms` |
+| Test_4 三档收口 | (汇总,无独立训练) | `Test_4_three_tiers/` | — |
+| Test_5 不变性 | `results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/` | `Test_5_invariance/`(q_metrics.csv) | `Test_5_5E_2b`、`Test_5_5E_3`、`Test_5_5M_2b`、`Test_5_5M_3` |
+| Test_6 算法选型 | `results/Test_6_search/` | `Test_6_search/`(decision.json) | `Test_6_search` |
+| 阶段 8 报表 | — | `Test_1a_field_level/`、`Test_1b_dataset_cindex/`、`Test_2b_delta/`、`Test_4_three_tiers/` | — |
+
+展示层文件前缀角色:`Main_` = 头条(回答命题)、`Appx_` = 附录、`Raw_` = 原始矩阵、`Meta_` = 元数据与审计。
+`results/`、`results_display/`、`outputs/`、`rawdata_stats/` 均 gitignore(只入库 `results_display/scripts/`)。
+
+---
+
+## 阶段 0:前置闸门
+
+```bash
+# 在 projects/ 根目录;base python 3.13;两条都只读
+python scripts/check_search_labels.py   # 闸门 1:搜索链路 label 无 gt≤0 患者(FAIL → 先修 label,再投任何队列)
+python scripts/cache_status.py          # 闸门 2:评估缓存盘点(全新重跑应为空或仅 e2-v2 行;旧 v1 行永不命中)
+```
+
+- **判据**:两条命令**退出码 0**(`check_search_labels.py` 发现 gt≤0 会 `sys.exit(1)`)。
+- **产物**:无(只读报告)。`check_search_labels` 打印每数据集 `n_gt_le_0` 明细与总线;
+  `cache_status` 打印 `cache: …/results/Test_3_search/cache.sqlite` 与按 schema 版本的行数。
+- 脚本缺失时 `runbook.sh` 打印警告并跳过该闸门(不阻塞);脚本存在但失败 = 阶段失败。
+
+---
+
+## 阶段 1:原始文件审查(扫描 → 统计 → 筛选)
+
+输入是**原始文件**(`ClinicDatasets/gdc_clinical/raw_json/{ds}.json`),不训练、不用 GPU;产物全部落 `rawdata_stats/`。
+
+```bash
+# 在 projects/ 根目录;base python 3.13
+python scripts/run_scan_fields.py --dataset all         # ① 字段字典扫描:字段路径 + GDC 字典释义
+python scripts/run_field_presence.py --dataset all      # ①b 与官方 mapping 对照(字段存在性审计)
+python scripts/run_landmark_first_filter.py             # ②+③ 现行 landmark-first 链:t0 统计 + R0-R6 筛选
+python scripts/run_time_stats.py --dataset all          # ①c 时间字段统计(描述性;口径见 z_notes/time_axis/)
+
+# 等价展开(run_landmark_first_filter.py 内部就是这两步):
+#   python scripts/run_field_stats.py  --dataset all --landmark_time 0
+#   python scripts/run_field_filter.py --dataset all --landmark_time 0 \
+#       --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
+# 需要重生成/填充 Field Bank 长表模板时(run_field_bank 的前置):
+#   python scripts/run_field_filter.py --dataset all --landmark_time 0 --write_templates \
+#       --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
+```
+
+- **判据**:各命令退出码 0;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(现行链 36 个数据集),
+  且 `rawdata_stats/_shared/landmark_0/kept_fields.json` 落盘(筛选的共享口径)。
+- **产物**:`rawdata_stats/{ds}/scanned_fields.json`、`rawdata_stats/{ds}/field_stats.csv`(raw 口径,供 off 臂对照)、
+  `rawdata_stats/{ds}/landmark_0/{field_stats.csv,kept_fields.json,fliter_log/{exclusion_log.csv,field_registry.csv}}`、
+  `rawdata_stats/_shared/{landmark_0/,field_presence*.csv,event_summary.csv}`。
+- **口径(已扶正 2026-10-05)**:现行链 = landmark-first(统计在 Field Bank 同款 t_hi≤T mask 上算);
+  raw-first 旧产物已废弃清理(见 `z_notes/cleaned_runs_landmark_first_20261005.md`)。完整 R0-R6 口径见 `z_notes/tcga_pipeline/field_filter.md`。
+
+---
+
+## 阶段 2:编码(Field Bank / 方案 / label 派生)
+
+把阶段 1 的筛选结果编成模型输入:Field Bank 文本基座、方案组合、论文/自定义方案(gdc 线)、off 臂 raw bank。
+**编码一律 conch env**;GPU 由 `FIELD_BANK_GPU`(Field Bank)与 `A_PIPELINE_GPU` / `--gpu`(run_a_manual)控制,默认 7。
+
+```bash
+# 在 projects/ 根目录
+export FIELD_BANK_GPU="${FIELD_BANK_GPU:-7}"    # Field Bank 编码卡
+export A_PIPELINE_GPU="${A_PIPELINE_GPU:-7}"    # run_a_manual 编码卡
+
+# 2.1 Field Bank 文本基座(landmark_0,现行取值口径)= Test_1a t0 臂 / Test_3 的字段基座
+conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
+
+# 2.2 方案组合 L2/L3/L5(在 Field Bank prompt 基座上拼句 + 编码)
+conda run -n conch python scripts/run_schemes.py --dataset all --scheme all --landmark_time 0
+
+# 2.3 论文 / 自定义方案(gdc 线;入口 scripts/run_a_manual.py,六子命令 = json2prompt / encode / pipeline / baseline / hgcn_clinic / cindex)
+conda run -n conch python scripts/run_a_manual.py pipeline    --dataset all --scheme paper
+conda run -n conch python scripts/run_a_manual.py baseline    --dataset all --scheme paper
+python             scripts/run_a_manual.py hgcn_clinic --dataset all --scheme paper
+# 单方案点名(HGCN 绑定 / Test_3 自定义方案):
+#   conda run -n conch python scripts/run_a_manual.py pipeline --dataset TCGA-KIRC --scheme HGCN_KIRC
+#   conda run -n conch python scripts/run_a_manual.py hgcn_clinic --dataset TCGA-LAML --scheme MULTISURV
+
+# 2.4 Test_1a off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/)
+bash scripts/s5b_univariate_queue.sh bank
+bash scripts/s5b_univariate_queue.sh check      # 校验 R13 主集 raw bank:15/15
+```
+
+- **判据**:各命令退出码 0;`bash scripts/s5b_univariate_queue.sh check` 通过(15/15);
+  15 主集的 `outputs/{ds}/field_bank/prompt/landmark_0/field_index.json` 存在。
+- **产物**:`outputs/{ds}/field_bank/prompt/landmark_0/{prompts.csv,embeddings/pt/*.pt,field_index.json}`、
+  `outputs/{ds}/schemes/landmark_0_{L2,L3,L5}/`、`outputs/{ds}/A_manual/{scheme}/[landmark_0/]`、
+  `outputs/_raw/{ds}/field_bank/prompt/static_only/`(off 臂 raw bank)。
+- **label 派生(患者线,与字段线正交,无独立命令)**:landmark 三要件(风险集只留 gt>T、终点平移 gt−T、gt≤0 全局剔除)
+  由评估入口在训练时自动派生,落 `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`;
+  字段线与患者线在评估(阶段 3~7 的 cindex)汇合。
+- 卡缺件补救:阶段 4/5/6 的 queue 脚本自带 `encode` / `arms_encode_bg` / 缺编码报告,按需补齐即可。
+
+---
+
+## 阶段 3:Test_1a 单字段泄露对照
+
+两臂 = t0 臂(`results/univariate`,`arm_t0` 软链指过去)与 off 臂(`results/Test_1a/arm_off`),
+唯一差异是**取值 mask**;R13 主集 15 个 × `landmark_0` × `mlp_clinic_flatten` × seed 0。
+
+```bash
+# 在 projects/ 根目录;投递/监控 = base python 3.13
+# t0 臂(Test_1a_t0 家族)
+bash scripts/s5_univariate_queue.sh enqueue    # 预投放 15 主集 conf(幂等)
+bash scripts/s5_univariate_queue.sh watch      # 后台自愈循环(自动拉起 drainer,全完成 report 退出)
+
+# off 臂(Test_1a_off 家族;raw bank 已在阶段 2 建好)
+bash scripts/s5b_univariate_queue.sh enqueue   # 预投放主集 conf(幂等)
+bash scripts/s5b_univariate_queue.sh drain     # 每 GPU 起一个后台 drainer(env: S5B_GPUS, 默认 7)
+bash scripts/s5b_univariate_queue.sh watch     # 后台 watch,全完成自动 report 退出
+
+# 可选:人守着看进度 / 事后核验
+# bash scripts/s5_univariate_queue.sh status        # 队列桶 + 每数据集 field_cindex.csv 行数
+# bash scripts/s5b_univariate_queue.sh status       # 同上(off 臂)
+# bash scripts/s5b_audit_arms.py                   # 两臂患者集一致性审计
+```
+
+- **判据**:`Test_1a_t0` 与 `Test_1a_off` 两家族均 **queue 空 && running 空 && done ≥ 15**。
+- **产物**:t0 臂 `results/univariate/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(+ `runs/`);
+  off 臂 `results/Test_1a/arm_off/univariate/prompt/static_only/{ds}/mlp_clinic_flatten/field_cindex.csv`,
+  汇总 `results/Test_1a/arm_off/_s5b_report.json`。
+- GPU:`S5_GPUS`(默认 2,3,4)/`S5B_GPUS`(默认 7),`*_WORKERS` 默认 8。
+
+---
+
+## 阶段 4:Test_2 时间轴链(Test_2a 审计 → Test_2b 训练)
+
+```bash
+# 4a Test_2a:138 组合逐字段 leak_rate 审计(描述性,不训练,33 队列全口径)
+python scripts/run_leak_audit.py
+
+# 4b Test_2b:R13 训练口径 = 15 主集 × 4 泛癌种 + 4 HGCN 绑定 = 64 组合 × 2 臂 × 2 分析器 = 256 confs
+bash scripts/s4_Test_2b_queue.sh encode        # 补齐缺失 embeddings(conch env,GPU 默认 7;已存在的跳过)
+bash scripts/s4_Test_2b_queue.sh enqueue A1    # 投放波 1 臂 A conf(切片:A1|A1H|B1|B1H|A2|B2|A3|B3)
+bash scripts/s4_Test_2b_queue.sh drain         # 训练 drainer(GPU 5,8 workers,后台;日志 results/Test_2b/logs/)
+bash scripts/s4_Test_2b_queue.sh watch         # 后台自愈:自动分波投放 + drainer 续跑(全 552 conf done 退出)
+bash scripts/s4_Test_2b_queue.sh validate      # 首波校验(clinic_cox 逐位 diff + 字段表审计)【判据满足后跑】
+```
+
+- **判据**:`Test_2b_arms` **queue 空 && running 空 && done ≥ 256**(R13 主集口径;
+  桶内含 R13 前的 552 confs 全量遗留,故用 ≥);`validate` 退出码 0(首波校验通过)。
+- **产物**:`results/Test_2a_leak_audit/{leak_audit_summary.csv,{ds}/G1_*.json}`、
+  `results/Test_2b/arm_A/`(报告值)、`results/Test_2b/arm_B/`(去泄露值,含 `labels/{study}__landmark_0.csv`)、
+  日志 `results/Test_2b/logs/`。
+- 续跑:失败 conf 重跑 `enqueue` 会自动从 `failed/` 重入队;`drain` 可反复跑。
+
+---
+
+## 阶段 5:Test_3 字段轴链(搜索 → 三臂 → Test_4)
+
+```bash
+# 5a 搜索:15 主集 × A2_greedy × landmark_0 × seed 0(gain_only 早停;缓存 results/Test_3_search/cache.sqlite)
+bash scripts/Test_3_queue.sh search_enqueue    # 预投放搜索 conf(幂等)
+bash scripts/Test_3_queue.sh search_watch      # 后台 watch 自愈(全 done 自动 report 退出)
+bash scripts/Test_3_queue.sh all_status        # 确认 15/15 搜索落盘(此命令只读,随时可用)
+
+# 5b 三臂(臂 B 复用 Test_2b 结果;B′ = 4 泛癌种工作 × 15 主集,C = 各数据集贪婪推荐组合)
+bash scripts/Test_3_queue.sh arms_generate     # 生成臂 B′ 自定义方案(注册进 schemes.json)
+bash scripts/Test_3_queue.sh arms_encode_bg    # 编码臂 B′(conch env,GPU = T3_ENC_GPU)
+bash scripts/Test_3_queue.sh arms_enqueue      # 投放臂 B′ cindex conf(幂等)
+bash scripts/Test_3_queue.sh arms_drain        # 臂 B′ 训练(GPU = T3_GPU,后台)
+bash scripts/Test_3_queue.sh arms_generate_c   # 臂 C(需各数据集搜索 result.json 已落盘)
+bash scripts/Test_3_queue.sh arms_drain        # 臂 C 训练
+bash scripts/Test_3_queue.sh compare           # 三臂总表(头条 Δc = C − B′;缺臂记 pending 不中断)
+# 一键接力(搜索 result.json 落盘即 生成→编码→投放,免人工守候):
+#   nohup bash scripts/Test_3_arm_c_chain.sh \
+#       > results/Test_3_greedy_vs_works/logs/arm_c_chain.log 2>&1 &
+
+# 5c Test_4 三档收口(纯汇总,不训练;需 Test_2b 两臂 + Test_3 可达值齐全)
+python results_display/scripts/Test_4_three_tiers.py
+```
+
+- **判据**:`Test_3_search` queue 空 && running 空 && done ≥ 15;
+  `Test_3_arms` queue 空 && running 空 && done ≥ 60(B′ = 15×4;C 臂与 HGCN 变体另计);
+  `results/Test_3_greedy_vs_works/three_arm.csv` 落盘。
+- **产物**:`results/Test_3_greedy_vs_works/{search/{ds}/mlp_clinic_flatten/seed_0/result.json,compare/,three_arm.csv,missed_fields.csv,search_summary.csv}`、
+  `results_display/Test_4_three_tiers/{Main_three_tiers.csv,Main_three_tiers.png,Main_tier_summary.csv}`。
+- 搜索 drainer 槽位 `T3_SEARCH_GPUS`(默认 1,0,3,4,5,6,4,5,3,避开 GPU 7);重跑 `search_enqueue` + `search_watch` 即续跑。
+
+---
+
+## 阶段 6:Test_5 不变性(Test_2b / Test_3 之后)
+
+```bash
+# 4 个子检查:5E_2b(编码×baseline 复现 2b)/ 5E_3(复现 3 臂 B′/C)/ 5M_2b(换模型)/ 5M_3(clinic_cox 复现)
+bash scripts/Test_5_queue.sh enqueue           # 全部子检查入队(幂等,可重跑)
+bash scripts/Test_5_queue.sh status            # 队列桶 + 期望数 + 缺编码(只读)
+bash scripts/Test_5_queue.sh scheduler         # 后台多卡调度(setsid nohup;日志 results/Test_5_invariance/logs/)
+bash scripts/Test_5_queue.sh summarize         # 汇总(可反复跑)【判据满足后跑】
+bash scripts/Test_5_queue.sh q_recompute       # Q 轴离线重算 + dump/online diff=0【判据满足后跑】
+# 停止调度器(自愈循环请用 stop 子命令,勿直接 kill):
+#   bash scripts/Test_5_queue.sh scheduler_stop
+```
+
+- **判据**:四子检查均 **queue 空 && running 空 && done ≥ 期望数** —
+  `5E_2b ≥ 128`、`5E_3 ≥ 66`、`5M_2b ≥ 128`(期望 200,其中 72 个多模态 conf 在 `parked/`)、`5M_3 ≥ 66`。
+  `q_recompute` 报 `diff=0`。
+- **产物**:`results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/{runs/,{ds}/cindex.csv}`、
+  汇总 `results/Test_5_invariance/logs/`、Q 轴 `results_display/Test_5_invariance/q_metrics.csv`(命令默认写 `/tmp`,用 `T5_Q_OUT` 覆盖)。
+- GPU 政策(硬约束):只用 0-3 且放置时为空闲卡;最多 4 drainer。
+
+---
+
+## 阶段 7:Test_6 搜索算法选型(阶段 3 先验就绪后;建议最后跑)
+
+```bash
+# 试点:3 数据集(GBM/LGG/PAAD)× 8 算法 = 24 个搜索;调度器 8 槽位(GPU 0-3,每卡 2 槽)
+bash scripts/t6_scheduler.sh                   # 前台循环;nohup 后台跑,日志 /tmp/t6_scheduler.log
+# 全部完成后汇总(贪心用 Test_3 搜索结果,--extra-roots 指过去,不重跑):
+python scripts/run_bakeoff_report.py \
+    --results-root results/Test_6_search/prompt \
+    --extra-roots results/Test_3_greedy_vs_works/search \
+    --budget_cap 500
+```
+
+- **判据**:`Test_6_search` **queue 空 && running 空 && done ≥ 24**(3 数据集 × 8 算法);
+  `results_display/Test_6_search/decision.json` 落盘 → **人工确认** winner / greedy_wins / ambiguous / run_seas_ablations。
+- **产物**:`results/Test_6_search/prompt/landmark_0/{ds}/{algo}/`、
+  `results_display/Test_6_search/{gap_table,win_rate,ranks,anytime,decision.json}`。
+- 胜者若非贪心,后续以同一 B′ 扩 12 主数据集做生产搜索(另行投放)。
+
+---
+
+## 阶段 8:报表(展示层,不训练)
+
+```bash
+# 在 projects/ 根目录;base python 3.13;脚本幂等,可直接重跑
+python results_display/scripts/Test_1a_field_level.py     # Test_1a 两臂对照图 / Δc 排序 / leak×Δc 交叉
+python results_display/scripts/Test_1b_dataset_cindex.py  # 单字段分布 / top-k 重叠
+python results_display/scripts/Test_2b_delta_report.py    # Δc 森林图 / 汇总表
+python results_display/scripts/Test_4_three_tiers.py      # 三档表(同阶段 5c;可在此重跑)
+```
+
+- **判据**:4 个脚本退出码 0(产物已存在也照跑,幂等);对应输出文件存在。
+- **产物**:`results_display/Test_1a_field_level/`、`Test_1b_dataset_cindex/`、`Test_2b_delta/`、`Test_4_three_tiers/`
+  (文件前缀角色 `Main_`/`Appx_`/`Raw_`/`Meta_`;每目录 README.md 有逐文件含义)。
+- 依赖:各脚本只读 `results/` 与 `rawdata_stats/`,上游阶段未落盘时会报缺件——先补上游再跑本阶段。
+
+---
+
+## env 变量速查
+
+| 变量 | 默认 | 用途 |
+|---|---|---|
+| `S5_PYTHON3` / `S5_GPUS` / `S5_WORKERS` | python3 / 2,3,4 / 8 | Test_1a arm_t0 |
+| `S5B_PYTHON3` / `S5B_GPUS` / `S5B_WORKERS` / `S5B_ENC_GPU` | python3 / 7 / 8 / 7 | Test_1a arm_off(含 raw bank 编码卡) |
+| `S4_PYTHON3` / `S4_GPU_TRAIN` / `S4_WORKERS` / `S4_CONDA_ENCODE` / `S4_LOG_DIR` | python3 / 5 / 8 / conch / results/Test_2b/logs | Test_2b 链 |
+| `T3_PYTHON3` / `T3_CONCH_PYTHON` / `T3_SEARCH_GPUS` / `T3_ENC_GPU` / `T3_GPU` / `T3_INTERVAL` / `T3_WORKERS` | base / conch env / 1,0,3,4,5,6,4,5,3 / 1 / 1 / 60 / 2 | Test_3 链 |
+| `T5_PYTHON3` / `T5_BASE_PYTHON3` / `T5_CONCH_PYTHON` / `T5_WORKERS` | SurvPGC env / base / conch env / 2 | Test_5 链 |
+| `T5_Q_OUT` | /tmp/test_5_q_metrics.csv | Test_5 Q 轴输出 |
+| `FIELD_BANK_GPU` | 7 | Field Bank 编码卡(阶段 2) |
+| `A_PIPELINE_GPU` | 7 | run_a_manual 编码卡(`--gpu` 优先) |
+| `RUNBOOK_POLL_INTERVAL` | 60 | `scripts/runbook.sh` 轮询间隔(秒) |
+| `RUNBOOK_STAGE_TIMEOUT` | 86400 | `scripts/runbook.sh` 单阶段轮询超时(秒,24h) |
+
+## 已知坑清单
+
+1. **(已修,留档)** `s5_univariate_queue.sh` 早期 `DS_LIST`/`EXPECTED` 是全 33 队列遗留、`QUEUE_ROOT` 是旧名 `configs/univariate`;
+   现已按 `manifest.csv` 的 n_event ≥ 100 派生 15 主集、`QUEUE_ROOT=configs/Test_1a_t0`(同 `s5b` 写法)。
+2. **flag 必须下划线拼写**:`run_e2_selection_queue.py` / `run_e2_selection.py` 用 `--stop_mode`、`--budget_cap`、`--landmark_time`;
+   连字符会被 queue 的 `_command()` 重建链路拒收(单测抓不到,投递后才发现)。
+3. **评估缓存**:`results/Test_3_search/cache.sqlite` 的 key 含 label 哈希 + schema `e2-v2`;
+   任何 label 改动旧行自动 miss 重训(不报错,无需手清),`scripts/cache_status.py` 盘点。
+4. **自愈循环的停止**:Test_3 `search_watch`、Test_5 `scheduler` 都是后台自愈循环;
+   停止用各自 stop 子命令(如 `Test_5_queue.sh scheduler_stop`),**不要直接 kill 无关进程**;`s5`/`s5b` 的 watch 退出后不会再拉起。
+5. **搜索链路患者口径 = 字段库 ∩ label**:label 文件若带 gt≤0 患者会被计入训练风险集 → 阶段 0 闸门 `check_search_labels.py` 不过就先修 label。
+6. **冻结线 PGC**:`A_pipeline_pgc/run.py`(L0-L5 / D0-D5)**默认拒绝任何编码运行,必须显式 `--force`**;
+   重生成前先核对契约 §3"什么会破坏冻结"并按 §4 SOP 走(`z_notes/time_axis/frozen_schemes_contract.md`)。日常只读。
+7. **landmark-first 已扶正(2026-10-05)**:`run_field_stats.py` / `run_field_filter.py` 的 `--landmark_time` 为必填;
+   筛选默认消费 `_shared/landmark_0/field_stats.csv`(landmark-first),raw-first 产物已废弃;
+   两条链的区别只在"筛选统计用不用 mask 过的值"(取值 mask 一直在 Field Bank 提取期生效)。
+8. **桶内数字可能是历史超集**:判据用 `done ≥ 期望数`。已知:`Test_2b_arms` 552(期望 256)、
+   `Test_1a_t0` 48(期望 15,含 33 队列遗留)、`Test_1a_off` 30(期望 15,含两种 conf 命名)。报告分层时按协议 A 区分主集/旁支。
+9. **Test_5 的 parked 与缺编码**:`5M_2b` 的 `survgc_f`/`survpgc_f`(72 conf)默认撤到 `parked/`
+   (需 slide 级 label metadata;决定后用 `--include-multimodal` 或手工 mv 回 `queue/`);
+   `enqueue` 对缺编码的 (dataset, scheme, arm) 会 **SKIP 并列出**,不报错——看 `status` 的"缺编码"段。
+10. **Test_6 的 `--out` 必须含 ds(+algo)**:防不同 (ds, algo) 串目录;`t6_scheduler.sh` 已按此写好,手工补跑请照抄。
+11. **`results/Test_1a/arm_t0` 是指向 `results/univariate` 的软链**(命名公约迁移遗留),不是真目录;删改前先 `ls -la` 确认。
+12. **`scripts/runbook.sh` 只调用不改**:它不修改任何 queue 脚本、`run_a_manual.py` 或 `src/` 代码;
+    阶段判据的期望数集中在脚本顶部常量区(与本文件"一页速览/各阶段判据"一一对应)。
