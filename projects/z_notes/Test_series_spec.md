@@ -227,7 +227,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 - **产物（已扶正为现行链，2026-10-05 用户拍板）**：
   - t0 口径统计：`rawdata_stats/{dataset}/landmark_0/field_stats.csv` + `rawdata_stats/_shared/landmark_0/field_stats.csv`（根级 `field_stats.csv` 保持 raw 口径，作为 off 臂覆盖度对照）；
   - 现行筛选产物：`rawdata_stats/{dataset}/landmark_0/{kept_fields.json, fliter_log/...}` + `_shared/landmark_0/kept_fields.json`——由 landmark-first 统计筛得；`run_field_filter` 在 landmark 开启且对应 landmark 统计存在时默认消费它（显式 `--stats_csv` 仍可覆盖）；
-  - 运行器 `scripts/run_landmark_first_filter.py`；验收器 `scripts/validate_t0stats_vs_masks.py`；
+  - 运行：`scripts/run_field_stats.py --landmark_time 0` → `scripts/run_field_filter.py --landmark_time 0`（两步开放接口，R3/R4 阈值可命令行覆盖）；验收器 `scripts/validate_t0stats_vs_masks.py`；
   - raw-first 旧口径产物已移走（`z_notes/backup/landmark_first_promotion_20261005/`），旧下游运行已删除，清理清单 `z_notes/cleaned_runs_landmark_first_20261005.md`。
 - **Test_1a 报表联动**：`Appx_field_delta.csv` 新增 `coverage_off / coverage_t0 / t0_filter_status / t0_filter_rule / t0_filter_trigger` 列（全部行）；头条统计、Main_ 图、`Main_field_ranking.csv`、influential 清单、`Raw_delta_matrix.csv`、Meta 头条数字只在准入集上计算；被排除字段单列 `Appx_excluded_fields.csv`。
 - **存在性头条图**（用户指令 2026-10-05）：新增 `Main_field_existence.png`（两面板：coverage(off)→coverage(landmark_0) 崩塌散点 + 逐数据集准入/R3/R4 构成），承载修正后的头条命题「时间口径决定单字段是否存在」。

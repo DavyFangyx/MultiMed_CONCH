@@ -86,7 +86,7 @@ landmark-first(landmark 统计存在时自动消费;显式 `--stats_csv` 仍可�
 
 | 脚本 | 作用 |
 |---|---|
-| `scripts/run_landmark_first_filter.py` | 现行链一条命令:`run_field_stats --landmark_time 0` → `run_field_filter --landmark_time 0`(自动消费 landmark 统计,写现行 `landmark_0/` 目录) |
+| `scripts/run_field_stats.py --landmark_time 0` + `scripts/run_field_filter.py --landmark_time 0` | 现行链两步:`run_field_stats` 重算 t0 mask 统计 → `run_field_filter` 自动消费 landmark 统计过 R0-R6(写现行 `landmark_0/` 目录;R3/R4 阈值可命令行改) |
 | `scripts/validate_t0stats_vs_masks.py` | 验收:t0 stats coverage vs t0 臂 .pt mask 逐字段比对(tol 1e-5;35 数据集 max_abs_diff ≤ 5e-7) |
 | `scripts/s5b_build_raw_field_bank.py` | Test_1a off 臂 raw bank(`outputs/_raw/.../landmark_none/`)+ `raw_value_diff.json` |
 | `scripts/s5b_audit_arms.py` | Test_1a 两臂患者集一致性审计 |

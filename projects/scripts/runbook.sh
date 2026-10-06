@@ -68,7 +68,8 @@ FAMILIES=(
 STAGE1_CMDS=(
   "python scripts/run_scan_fields.py --dataset all"
   "python scripts/run_field_presence.py --dataset all"
-  "python scripts/run_landmark_first_filter.py"
+  "python scripts/run_field_stats.py --dataset all --landmark_time 0"
+  "python scripts/run_field_filter.py --dataset all --landmark_time 0 --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95"
   "python scripts/run_time_stats.py --dataset all"
 )
 STAGE2_CMDS=(

@@ -21,7 +21,7 @@ leak_rate 列（Test_2a 审计）：
 landmark-first 字段准入（规格 §5bis.1，2026-10-05）：
   - coverage_off 来自raw 统计 rawdata_stats/{dataset}/field_stats.csv；coverage_t0 来自
     t0 口径统计 rawdata_stats/{dataset}/landmark_0/field_stats.csv（Field Bank 同款 mask 提取，
-    scripts/run_landmark_first_filter.py 生成，scripts/validate_t0stats_vs_masks.py 验收）。
+    run_field_stats --landmark_time 0 → run_field_filter --landmark_time 0 生成，scripts/validate_t0stats_vs_masks.py 验收）。
   - t0_filter_status 来自 landmark-first 筛选排除日志
     rawdata_stats/{dataset}/landmark_0/fliter_log/exclusion_log.csv(现行目录,已扶正;历史
     t0stats 后缀可用 --t0_filter_suffix 显式覆盖)

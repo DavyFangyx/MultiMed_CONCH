@@ -51,7 +51,9 @@
 ## 运行
 
 ```bash
-python3 scripts/run_landmark_first_filter.py    # 一条命令:② landmark 统计 → ③ 筛选(写现行目录)
+python3 scripts/run_field_stats.py --dataset all --landmark_time 0     # ② landmark 统计(现行链,t0 mask 口径)
+python3 scripts/run_field_filter.py --dataset all --landmark_time 0 \  # ③ 筛选(写现行目录,自动消费 ②)
+    --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
 # 或分步:
 python3 scripts/run_field_stats.py  --dataset all --landmark_time 0
 python3 scripts/run_field_filter.py --dataset all --landmark_time 0 \
