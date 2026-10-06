@@ -49,7 +49,6 @@ STUDY_BY_DISPLAY = {
     "MMRF": "mmrf",
 }
 
-DEFAULT_SURVPGC_ROOT = Path("/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init")
 DEFAULT_ANALYZER_SPLIT_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "splits" / "5foldcv"
 DEFAULT_ANALYZER_LABEL_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "datasets_csv" / "metadata"
 
@@ -58,6 +57,20 @@ def display_to_study(dataset: str) -> str:
     if dataset in STUDY_BY_DISPLAY:
         return STUDY_BY_DISPLAY[dataset]
     return str(dataset).strip().lower().replace("-", "_")
+
+
+def default_label_file_for(dataset: str, label_file: Path | str | None = None) -> Path | None:
+    """搜索链路实际使用的默认 label 文件路径(与 load_survival_table 的默认分支一致)。
+
+    不存在时返回 None,调用方在 cache key 中记 "missing"。用于把 label 内容哈希
+    纳入评估缓存指纹(gt≤0 修复口径闸门)。
+    """
+    if label_file:
+        path = Path(label_file)
+        return path if path.exists() else None
+    study = display_to_study(dataset)
+    local = DEFAULT_ANALYZER_LABEL_ROOT / f"{study}.csv"
+    return local if local.exists() else None
 
 
 def default_analyzer_split_dir(dataset: str) -> Path:
@@ -193,17 +206,12 @@ def load_patient_ids_from_field_bank(
     return []
 
 
-def load_survival_table(dataset: str, label_file: Path | str | None = None, survpgc_root: Path | str | None = None) -> pd.DataFrame:
+def load_survival_table(dataset: str, label_file: Path | str | None = None) -> pd.DataFrame:
+    """读 label CSV（仅本地；2026-10-06 解耦后无 PGC 回退，缺失即报错）。"""
     if label_file:
         path = Path(label_file)
     else:
-        study = display_to_study(dataset)
-        local = DEFAULT_ANALYZER_LABEL_ROOT / f"{study}.csv"
-        if local.exists():
-            path = local
-        else:
-            root = Path(survpgc_root or DEFAULT_SURVPGC_ROOT)
-            path = root / "datasets_csv" / "metadata" / f"{study}.csv"
+        path = DEFAULT_ANALYZER_LABEL_ROOT / f"{display_to_study(dataset)}.csv"
     if not path.exists():
         raise FileNotFoundError(f"label file not found: {path}")
     df = pd.read_csv(path)

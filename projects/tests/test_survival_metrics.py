@@ -1,6 +1,7 @@
 """S10a: Clinic_Analyzer 生存指标层（IBS / landmark AUC）回归测试。
 
-对照目标（Clinic_Analyzer/utils/survival_metrics.py 从 SurvPGC_github_init 逐字移植）：
+对照目标（tests/_vendored/survpgc_survival_metrics.py 为 SurvPGC_github_init
+utils/survival_metrics.py 的 vendored 快照；2026-10-06 解耦后不再读 PGC 仓库）：
   1. 逐函数等价 - 同一进程内按路径加载两个模块，断言
      interpolate_survival / survival_columns_from_logits / breslow_survival /
      compute_ibs / compute_landmark_aucs 及常量完全一致；
@@ -43,9 +44,7 @@ from sksurv.util import Surv  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ANALYZER = ROOT / "Clinic_Analyzer"
-SURVPGC_METRICS = Path(
-    "/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init/utils/survival_metrics.py"
-)
+SURVPGC_METRICS = ROOT / "tests" / "_vendored" / "survpgc_survival_metrics.py"
 
 if str(ANALYZER) not in sys.path:
     sys.path.insert(0, str(ANALYZER))
@@ -69,7 +68,7 @@ orig_metrics = (
     else None
 )
 requires_original = pytest.mark.skipif(
-    orig_metrics is None, reason=f"SurvPGC 参考实现不存在: {SURVPGC_METRICS}"
+    orig_metrics is None, reason=f"vendored 参考实现不存在: {SURVPGC_METRICS}"
 )
 
 

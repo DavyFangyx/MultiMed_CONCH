@@ -42,7 +42,6 @@ from .paths import PROJECT_ROOT
 DEFAULT_TIME_COL = "survival_months"
 DEFAULT_CENSORSHIP_COL = "censorship"
 DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
-SURVPGC_ROOT = Path("/data/fangyuxuan/projects/medical_dl/SurvPGC_github_init")
 
 
 def label_out_subdir() -> Path:
@@ -59,20 +58,14 @@ def resolve_label_file(
     analyzer_dir: Path | str | None = None,
     label_file: Path | str | None = None,
 ) -> Path:
-    """Same preference order as Clinic_Analyzer/run.sh (analyzer data, then SurvPGC)."""
+    """Label 文件仅本地（2026-10-06 解耦：PGC 回退已删，缺失即报错）。"""
     if label_file:
         return Path(label_file)
     analyzer_root = Path(analyzer_dir) if analyzer_dir else DEFAULT_ANALYZER_DIR
-    candidates = (
-        analyzer_root / "data" / "datasets_csv" / "metadata" / f"{study}.csv",
-        SURVPGC_ROOT / "datasets_csv" / "metadata" / f"{study}.csv",
-    )
-    for path in candidates:
-        if path.is_file():
-            return path
-    raise FileNotFoundError(
-        f"找不到 {study} 的 label 文件，尝试过: {[str(p) for p in candidates]}"
-    )
+    path = analyzer_root / "data" / "datasets_csv" / "metadata" / f"{study}.csv"
+    if path.is_file():
+        return path
+    raise FileNotFoundError(f"找不到 {study} 的 label 文件: {path}")
 
 
 def landmark_label_path(
