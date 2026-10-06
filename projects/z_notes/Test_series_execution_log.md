@@ -21,6 +21,8 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| P11 | 接口整理 A2：死分支删除 | `f324753` | 2026-10-06 | linear_probe 旧 mask 口径（t_record_le_last_time，以 gt 为 last_time，CLI 无路径可达）整支删除，landmark_policy 参数随死分支移除；check_search_labels 死常量 MONTHS_TO_DAYS（30.44）删除、月空间比较注释修正（该文件首次入库） |
+| P10 | 接口整理 A1：协议数值常量集中 | `b8c851d` | 2026-10-06 | 新增 src/common/constants.py：DAYS_PER_MONTH（月→天反推）、LABEL_MONTHS_TO_DAYS（30.44，仅登记为 PGC 外部标签除数）、DAYS_PER_YEAR、LANDMARK_TIMES；landmark_labels/baseline/onehot/converters 与测试内联 365.25 全部改引用 |
 | P9 | 收尾：R2 移除 + legacy 回退映射删除 + static_only 更名 + 术语修订（决策点） | `4fac584` `5afccf3` | 2026-10-05 | R2（timepoint 标记）移除——无下游消费者，时点语义由 landmark-first R3 承载；paths.py 三组 \*\_LEGACY 目录回退映射删除（旧名目录已不存在），LEGACY_TO_TEST_RESULTS 保留（历史 run_config 字面量仍被 Test_2b 展示消费）；landmark_none → static_only 全量更名（36 rawdata_stats + 35 outputs bank 目录，代码/测试同步，Clinic_Analyzer registry 盘上同步）；「官方」称谓废弃（唯一官方 = TCGA GDC 词典），kept_fields 等一律称「现行」 |
 | D13 | landmark-first 扶正 + 旧 raw-first 运行清理（决策点，选项 C） | `3b1570d` | 2026-10-05 | t0stats 产物扶正为现行 `landmark_0/kept_fields.json`（36 数据集）；`run_field_filter` 默认消费 landmark 统计；删除旧口径下游 23G（field bank 921M + `outputs/_raw` 17G + `results/Test_1a` 5.2G），旧 kept_fields 与两臂 field_cindex 移走 `z_notes/backup/landmark_first_promotion_20261005/`；清理清单 `z_notes/cleaned_runs_landmark_first_20261005.md` |
 | G6 | TCGA 处理流程一页地图 | `8b87e45` | 2026-10-05 | `z_notes/tcga_pipeline/README.md`：八阶段流程（扫描→统计→筛选→Field Bank→schemes→label→评估→报表）+ 两条筛选链对照（raw-first vs landmark-first）+ 关键口径一句话版 |
