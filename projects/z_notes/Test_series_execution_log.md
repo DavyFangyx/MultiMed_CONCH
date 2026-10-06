@@ -21,6 +21,7 @@
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| P13 | 接口整理 B3：slide 级 label 本地派生 | `a62e4c0` | 2026-10-06 | 新增 scripts/build_slide_metadata.py：P 特征文件名枚举 slide 清单（slide_id=stem+.svs、case_id=前 12 位，等价 PGC pipeline.py 做法），左连接本地 case 级 label；输出与 case 级表分离的 metadata_slide/{study}.csv（避免 clinic-only 链路的缓存哈希/闸门被 slide 行数波及，多模态 conf 解 park 时经 LABEL_FILE_PATH 显式指向）；已生成 5 个多模态 study（brca 1100/coad 417/kirc 350/kirp 278/lihc 360 行，kirc 丢弃 168 = P 目录增量，与调研一致） |
 | P12 | 接口整理 B1/B2/B4：label/clinical/split 解耦去 PGC 回退 | `3a21acd` | 2026-10-06 | landmark_labels.resolve_label_file 与 greedy.data（load_survival_table/default_label_file_for）删 PGC 回退——仅本地、缺失即报错；test_survival_metrics 对照源改为 tests/_vendored 快照（122 行原版 vendored），不再读 PGC 仓库，SurvPGC env 下 21 测试全过；Clinic_Analyzer 不入库（P3 裁定）：run.sh（删 prefer_existing_path）、registry.py、defaults.conf 同步去回退、SURVPGC_ROOT 语义收窄为外部特征根（P/G/omics/HGCN），仅盘上生效 |
 | P11 | 接口整理 A2：死分支删除 | `f324753` | 2026-10-06 | linear_probe 旧 mask 口径（t_record_le_last_time，以 gt 为 last_time，CLI 无路径可达）整支删除，landmark_policy 参数随死分支移除；check_search_labels 死常量 MONTHS_TO_DAYS（30.44）删除、月空间比较注释修正（该文件首次入库） |
 | P10 | 接口整理 A1：协议数值常量集中 | `b8c851d` | 2026-10-06 | 新增 src/common/constants.py：DAYS_PER_MONTH（月→天反推）、LABEL_MONTHS_TO_DAYS（30.44，仅登记为 PGC 外部标签除数）、DAYS_PER_YEAR、LANDMARK_TIMES；landmark_labels/baseline/onehot/converters 与测试内联 365.25 全部改引用 |
