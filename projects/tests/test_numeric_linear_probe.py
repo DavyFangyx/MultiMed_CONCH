@@ -77,7 +77,6 @@ def test_nominal_fields_are_excluded():
         cases,
         fields,
         landmark=False,
-        landmark_policy="off",
         dictionary=dictionary,
     )
     assert [row["field"] for row in field_types if row["final_type"] == "continuous"] == [
@@ -115,7 +114,6 @@ def test_absent_numeric_fields_are_omitted():
         cases,
         fields,
         landmark=False,
-        landmark_policy="off",
         dictionary=dictionary,
     )
     assert [row["field"] for row in field_types if row["final_type"] == "continuous"] == fields

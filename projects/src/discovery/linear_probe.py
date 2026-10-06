@@ -34,7 +34,7 @@ from greedy.embeddings import _as_matrix
 
 from .field_bank import load_field_bank_template
 from .landmark import add_landmark_cli_args, iter_landmark_args, parse_landmark_options
-from .onehot import aggregate_continuous, collect_patient_field_values, extract_converted_tokens, gdc_lookup_key, parse_gdc_types
+from .onehot import aggregate_continuous, collect_patient_field_values, gdc_lookup_key, parse_gdc_types
 
 
 CSV_COLUMNS = [
@@ -112,9 +112,9 @@ def make_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_probe_landmark(args, field_index: dict | None = None) -> tuple[bool, float | None, str]:
+def resolve_probe_landmark(args, field_index: dict | None = None) -> tuple[bool, float | None]:
     use_landmark, landmark_time = parse_landmark_options(args)
-    return use_landmark, landmark_time, ("t_hi_le_landmark_time" if use_landmark else "off")
+    return use_landmark, landmark_time
 
 
 def _require_field_bank(field_bank_dir: Path, encoding: str) -> dict:
@@ -147,17 +147,6 @@ def _load_patient_row(path: Path, field_idx: int, tokens_per_field: int = 1) -> 
     if row.ndim != 1:
         raise ValueError(f"expected 1-d field embedding, got {row.shape} from {path}")
     return row
-
-
-def _patient_last_time_landmark(case: dict) -> dict:
-    from time_stats import extract_patient_time_record
-
-    record = extract_patient_time_record(case)
-    return {
-        "last_time": record.get("ground_truth_time"),
-        "slots": record.get("_slots") or {},
-        "record": record,
-    }
 
 
 def _merge_derived_tokens(
@@ -203,37 +192,18 @@ def collect_patient_values(
     converts: dict[str, str] | None = None,
     landmark=True,
     landmark_time=None,
-    landmark_policy: str = "t_hi_le_landmark_time",
 ) -> list[dict]:
     converts = converts or {}
-    if not landmark or landmark_policy == "off":
+    if not landmark:
         patients = collect_patient_field_values(cases, fields, converts, landmark=False)
         return _merge_derived_tokens(
             cases, fields, converts, patients, landmark=False, landmark_time=None
         )
-    if landmark_policy != "t_record_le_last_time":
-        patients = collect_patient_field_values(
-            cases, fields, converts, landmark=True, landmark_time=landmark_time
-        )
-        return _merge_derived_tokens(
-            cases, fields, converts, patients, landmark=True, landmark_time=landmark_time
-        )
-
-    patients = []
-    for case in cases:
-        patient_id = str(case.get("submitter_id") or "").strip()
-        if not patient_id:
-            continue
-        landmark_state = _patient_last_time_landmark(case)
-        values = {
-            field: extract_converted_tokens(
-                case, field, converts.get(field, ""), landmark=landmark_state
-            )
-            for field in fields
-        }
-        patients.append({"patient_id": patient_id, "values": values})
+    patients = collect_patient_field_values(
+        cases, fields, converts, landmark=True, landmark_time=landmark_time
+    )
     return _merge_derived_tokens(
-        cases, fields, converts, patients, landmark=True, landmark_time=None
+        cases, fields, converts, patients, landmark=True, landmark_time=landmark_time
     )
 
 
@@ -251,7 +221,6 @@ def collect_continuous_targets(
     converts: dict[str, str] | None = None,
     landmark=True,
     landmark_time=None,
-    landmark_policy: str = "t_hi_le_landmark_time",
     dictionary: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[dict], dict[str, dict[str, float]]]:
     if dictionary is None:
@@ -264,7 +233,6 @@ def collect_continuous_targets(
         converts,
         landmark=landmark,
         landmark_time=landmark_time,
-        landmark_policy=landmark_policy,
     )
     field_types = []
     targets: dict[str, dict[str, float]] = {}
@@ -474,7 +442,7 @@ def run_one(
     if not fields:
         raise ValueError(f"field_index has no fields: {loaded['dir'] / 'field_index.json'}")
 
-    use_landmark, landmark_time, landmark_policy = resolve_probe_landmark(args, loaded.get("index") or {})
+    use_landmark, landmark_time = resolve_probe_landmark(args, loaded.get("index") or {})
 
     if field_types is None or targets is None:
         if converts is None:
@@ -495,7 +463,6 @@ def run_one(
             converts,
             landmark=use_landmark,
             landmark_time=landmark_time,
-            landmark_policy=landmark_policy,
             dictionary=dictionary,
         )
 
