@@ -4,13 +4,15 @@
 本脚本用 univariate_cli.make_parser().parse_args() 以与 drainer 完全相同的 CLI 参数
 构造 args，再调用 greedy.queue.enqueue_jobs，保证 payload（及 job_key）逐字一致。
 
-数据集名单不硬编码：从 datasets.json 注册表取 TCGA- 前缀（= 33 个 TCGA，spec §2.4）。
-运行环境：base python 3.13.12（不训练）。
+数据集名单不硬编码:R13 训练范围 = Test_0 manifest 中 n_event >= 100 的 15 个 TCGA 主集
+(与 s5b / Test_3_common / Test_5_common 同口径,见 spec §12 U1)。
+运行环境:base python 3.13.12(不训练)。
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -20,7 +22,6 @@ for item in (ROOT, ROOT / "src"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
-from common.datasets import load_dataset_configs
 from common.paths import test_results_dir
 from greedy.queue import (
     DEFAULT_UNIVARIATE_QUEUE_ROOT,
@@ -35,12 +36,25 @@ QUEUE_ROOT = DEFAULT_UNIVARIATE_QUEUE_ROOT
 RETRY_STATE = QUEUE_ROOT / "retry_state.json"
 MAX_RETRIES = 3
 LANDMARK_TAG = "landmark_0"
-EXPECTED_JOBS = 33
+MANIFEST_PATH = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
+MAIN_N_EVENT_MIN = 100  # R13:训练范围 = n_event >= 100 的 TCGA 主集
 
 
-def tcga_datasets() -> list[str]:
-    datasets = load_dataset_configs(ROOT / "datasets.json")
-    return sorted(name for name in datasets if name.startswith("TCGA-") or name.startswith("TCGA_"))
+def main_datasets() -> list[str]:
+    if not MANIFEST_PATH.exists():
+        raise FileNotFoundError(
+            f"[s5] R13 主集名单需要 {MANIFEST_PATH};先跑 scripts/run_Test_0_availability.py"
+        )
+    rows = list(csv.DictReader(open(MANIFEST_PATH, encoding="utf-8")))
+    names = [
+        str(row["dataset"]).strip()
+        for row in rows
+        if str(row.get("dataset") or "").startswith(("TCGA-", "TCGA_"))
+        and int(float(row.get("n_event") or 0)) >= MAIN_N_EVENT_MIN
+    ]
+    if not names:
+        raise SystemExit(f"[s5] 主集为空({MANIFEST_PATH}, n_event >= {MAIN_N_EVENT_MIN})")
+    return sorted(names)
 
 
 def drainer_argv(datasets: list[str], *, workers: int = 8) -> list[str]:
@@ -62,7 +76,7 @@ def build_args(argv: list[str]) -> argparse.Namespace:
 
 
 def cmd_enqueue(workers: int) -> None:
-    datasets = tcga_datasets()
+    datasets = main_datasets()
     args = build_args(drainer_argv(datasets, workers=workers))
     result = enqueue_jobs(args, datasets)
     print(
@@ -78,13 +92,13 @@ def bucket_counts(job_key: str) -> dict[str, int]:
 
 
 def cmd_status(workers: int) -> None:
-    datasets = tcga_datasets()
+    datasets = main_datasets()
     args = build_args(drainer_argv(datasets, workers=workers))
     key = enqueue_jobs(args, datasets)["job_key"]
     counts = bucket_counts(key)
     total = sum(counts.values())
     print(f"[s5] status key={key} queue={counts['queue']} running={counts['running']} "
-          f"done={counts['done']} failed={counts['failed']} total={total}/{EXPECTED_JOBS}")
+          f"done={counts['done']} failed={counts['failed']} total={total}/{len(datasets)}")
     results_root = test_results_dir("Test_1a/arm_t0") / "prompt" / LANDMARK_TAG
     n_csv = 0
     n_complete = 0
@@ -99,7 +113,7 @@ def cmd_status(workers: int) -> None:
         print(f"[s5]   {ds}: rows={n_rows} error={n_err}")
         if n_err == 0 and n_rows > 0:
             n_complete += 1
-    print(f"[s5] field_cindex.csv present: {n_csv}/{EXPECTED_JOBS} (error-free: {n_complete})")
+    print(f"[s5] field_cindex.csv present: {n_csv}/{len(datasets)} (error-free: {n_complete})")
 
 
 def cmd_retry() -> None:
@@ -167,7 +181,7 @@ def _pid_alive(pid: int) -> bool:
 
 def cmd_report() -> None:
     results_root = test_results_dir("Test_1a/arm_t0") / "prompt" / LANDMARK_TAG
-    datasets = tcga_datasets()
+    datasets = main_datasets()
     total_rows = 0
     total_ok = 0
     total_err = 0
@@ -180,9 +194,9 @@ def cmd_report() -> None:
         lines = csv_path.read_text(encoding="utf-8").splitlines()
         ok = err = 0
         for line in lines[1:]:
-            if ",ok," in line:
+            if line.endswith(",ok"):
                 ok += 1
-            elif ",error," in line:
+            elif line.endswith(",error"):
                 err += 1
         total_rows += ok + err
         total_ok += ok

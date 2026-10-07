@@ -20,7 +20,7 @@
 
 | 3 | Test_1a 单字段泄露对照 | `bash scripts/s5_univariate_queue.sh enqueue/watch`(t0 臂)+ `bash scripts/s5b_univariate_queue.sh enqueue/drain/watch`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 15 | `results/Test_1a/{arm_t0,arm_off}/` |
 | 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/s4_Test_2b_queue.sh encode/enqueue/drain/watch/validate` | `Test_2b_arms` queue+running 空 且 done ≥ 256 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/` |
-| 5 | Test_3 字段轴链(+ Test_4 三档收口) | `bash scripts/Test_3_queue.sh search_enqueue/search_watch/arms_*/compare`;`python results_display/scripts/Test_4_three_tiers.py` | `Test_3_search` done ≥ 15;`Test_3_arms` done ≥ 60;`three_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
+| 5 | Test_3 字段轴链(+ Test_4 三档收口) | `bash scripts/Test_3_queue.sh search_enqueue/search_watch/arms_*/compare`;`python results_display/scripts/Test_4_three_tiers.py` | `Test_3_search` done ≥ 15;`Test_3_arms` done ≥ 60;`two_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
 | 6 | Test_5 不变性 | `bash scripts/Test_5_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 128/66/128/66;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
 | 7 | Test_6 搜索算法选型 | `bash scripts/t6_scheduler.sh`;`python scripts/run_bakeoff_report.py` | `Test_6_search` queue+running 空 且 done ≥ 24;`decision.json` 落盘(人工确认) | `results/Test_6_search/`、`results_display/Test_6_search/` |
 | 8 | 报表(展示层,不训练) | `python results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report,Test_4_three_tiers}.py` | 退出码 0(脚本幂等,可反复跑) | `results_display/` 4 个目录 |
@@ -29,7 +29,7 @@
 
 ```
 阶段 1 审查 ─→ 阶段 2 编码 ─→ 阶段 3 Test_1a ─┬─→ 阶段 4 Test_2(2a → 2b)
-                                              ├─→ 阶段 5 Test_3(搜索 → 三臂 → Test_4)
+                                              ├─→ 阶段 5 Test_3(搜索 → 两臂 → Test_4)
                                               ├─→ 阶段 6 Test_5(需 2b / 3 先落盘)
                                               └─→ 阶段 7 Test_6(需 Test_1a 先验;建议最后跑)
 阶段 8 报表 ← 上游 results/ 落盘后随时可跑(纯汇总)
@@ -55,7 +55,7 @@
 | Test_1b 各数据集分布 | (数据源 = `results/Test_1a/arm_t0/`) | `Test_1b_dataset_cindex/` | — |
 | Test_2a 泄露审计 | `results/Test_2a_leak_audit/` | `Test_2a_leak_audit/` | — |
 | Test_2b 去泄露对照 | `results/Test_2b/arm_A/`(报告值)、`arm_B/`(去泄露值) | `Test_2b_delta/` | `Test_2b_arms` |
-| Test_3 搜索 + 三臂 | `results/Test_3_greedy_vs_works/`(+ `results/Test_3_search/cache.sqlite` 缓存) | `Test_3_greedy_vs_works/` | `Test_3_search`、`Test_3_arms` |
+| Test_3 搜索 + 两臂 | `results/Test_3_greedy_vs_works/`(+ `results/Test_3_search/cache.sqlite` 缓存) | `Test_3_greedy_vs_works/` | `Test_3_search`、`Test_3_arms` |
 | Test_4 三档收口 | (汇总,无独立训练) | `Test_4_three_tiers/` | — |
 | Test_5 不变性 | `results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/` | `Test_5_invariance/`(q_metrics.csv) | `Test_5_5E_2b`、`Test_5_5E_3`、`Test_5_5M_2b`、`Test_5_5M_3` |
 | Test_6 算法选型 | `results/Test_6_search/` | `Test_6_search/`(decision.json) | `Test_6_search` |
@@ -221,7 +221,7 @@ bash scripts/s4_Test_2b_queue.sh validate
 
 ---
 
-## 阶段 5:Test_3 字段轴链(搜索 → 三臂 → Test_4)
+## 阶段 5:Test_3 字段轴链(搜索 → 两臂 → Test_4)
 
 ```bash
 # 5a 搜索:预投放搜索 conf(幂等;15 主集 × A2_greedy × landmark_0 × seed 0;缓存 results/Test_3_search/cache.sqlite)
@@ -231,19 +231,19 @@ bash scripts/Test_3_queue.sh search_watch
 # 确认 15/15 搜索落盘(只读,随时可用)
 bash scripts/Test_3_queue.sh all_status
 
-# 5b 生成臂 B′ 自定义方案(注册进 schemes.json;臂 B 复用 Test_2b 结果,B′ = 4 泛癌种工作 × 15 主集)
+# 5b 生成臂 B 登记(fields.json ∩ bank 字段,注册进 schemes.json;bank-only 口径 T31,B = 4 泛癌种工作 × 15 主集)
 bash scripts/Test_3_queue.sh arms_generate
-# 编码臂 B′(conch env,GPU = T3_ENC_GPU)
+# 臂 B 切片(零 CONCH 重编码,替代旧编码)
 bash scripts/Test_3_queue.sh arms_encode_bg
-# 投放臂 B′ cindex conf(幂等)
+# 投放臂 B cindex conf(幂等)
 bash scripts/Test_3_queue.sh arms_enqueue
-# 臂 B′ 训练(GPU = T3_GPU,后台)
+# 臂 B 训练(GPU = T3_GPU,后台)
 bash scripts/Test_3_queue.sh arms_drain
 # 臂 C(各数据集贪婪推荐组合;需搜索 result.json 已落盘)
 bash scripts/Test_3_queue.sh arms_generate_c
 # 臂 C 训练(同上 drain 子命令,可反复跑)
 bash scripts/Test_3_queue.sh arms_drain
-# 三臂总表(头条 Δc = C − B′;缺臂记 pending 不中断)
+# 两臂总表(头条 Δc = C − B;缺臂记 pending 不中断)
 bash scripts/Test_3_queue.sh compare
 # 一键接力(搜索 result.json 落盘即 生成→编码→投放,免人工守候):
 #   nohup bash scripts/Test_3_arm_c_chain.sh > results/Test_3_greedy_vs_works/logs/arm_c_chain.log 2>&1 &
@@ -253,9 +253,9 @@ python results_display/scripts/Test_4_three_tiers.py
 ```
 
 - **判据**:`Test_3_search` queue 空 && running 空 && done ≥ 15;
-  `Test_3_arms` queue 空 && running 空 && done ≥ 60(B′ = 15×4;C 臂与 HGCN 变体另计);
-  `results/Test_3_greedy_vs_works/three_arm.csv` 落盘。
-- **产物**:`results/Test_3_greedy_vs_works/{search/{ds}/mlp_clinic_flatten/seed_0/result.json,compare/,three_arm.csv,missed_fields.csv,search_summary.csv}`、
+  `Test_3_arms` queue 空 && running 空 && done ≥ 60(B = 15×4;C 臂与 HGCN 变体另计);
+  `results/Test_3_greedy_vs_works/two_arm.csv` 落盘。
+- **产物**:`results/Test_3_greedy_vs_works/{search/{ds}/mlp_clinic_flatten/seed_0/result.json,compare/,two_arm.csv,missed_fields.csv,search_summary.csv}`、
   `results_display/Test_4_three_tiers/{Main_three_tiers.csv,Main_three_tiers.png,Main_tier_summary.csv}`。
 - 搜索 drainer 槽位 `T3_SEARCH_GPUS`(默认 1,0,3,4,5,6,4,5,3,避开 GPU 7);重跑 `search_enqueue` + `search_watch` 即续跑。
 
@@ -300,7 +300,7 @@ python scripts/run_bakeoff_report.py --results-root results/Test_6_search/prompt
   `results_display/Test_6_search/decision.json` 落盘 → **人工确认** winner / greedy_wins / ambiguous / run_seas_ablations。
 - **产物**:`results/Test_6_search/prompt/landmark_0/{ds}/{algo}/`、
   `results_display/Test_6_search/{gap_table,win_rate,ranks,anytime,decision.json}`。
-- 胜者若非贪心,后续以同一 B′ 扩 12 主数据集做生产搜索(另行投放)。
+- 胜者若非贪心,后续以同一 B 扩 12 主数据集做生产搜索(另行投放)。
 
 ---
 

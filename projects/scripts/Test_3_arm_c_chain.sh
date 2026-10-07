@@ -1,5 +1,5 @@
 #!/bin/bash
-# S6 / Test_3 臂 C 自动接力：搜索 result.json 落盘即生成 → 编码 → 投放，全部就绪后 drained + 汇总 + 出三臂表
+# S6 / Test_3 臂 C 自动接力：搜索 result.json 落盘即生成 → 编码 → 投放，全部就绪后 drained + 汇总 + 出两臂表
 #
 # 背景：搜索（Test_3_search_queue watch）可能跑数小时；臂 C 的位号来自各数据集 result.json 的
 # recommended_subset（D4 sig_stop 参考点；历史最优 best_subset 由 result.json / search_summary.csv 同报，
@@ -53,11 +53,11 @@ while [ "${#pending[@]}" -gt 0 ]; do
     [ "${#pending[@]}" -gt 0 ] && sleep "$POLL"
 done
 
-echo "[chain] 15/15 臂 C 已投放，等待 B' 队列排空后开 drain $(date '+%F %T')"
+echo "[chain] 15/15 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
 "$PYTHON3" scripts/Test_3_arms.py drain --gpu "$GPU" --workers "$WORKERS"
 echo "[chain] drain 结束 $(date '+%F %T')"
 
-"$PYTHON3" scripts/Test_3_arms.py summarize --arm bp   || echo "[chain] summarize bp 失败"
+"$PYTHON3" scripts/Test_3_arms.py summarize --arm b   || echo "[chain] summarize b 失败"
 "$PYTHON3" scripts/Test_3_arms.py summarize --arm ksig || echo "[chain] summarize ksig 失败"
 "$PYTHON3" scripts/Test_3_compare.py --all             || echo "[chain] compare 失败"
 echo "===== arm C chain done $(date '+%F %T') ====="

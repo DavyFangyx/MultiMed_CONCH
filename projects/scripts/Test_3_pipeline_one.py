@@ -1,23 +1,18 @@
-"""Test_3 三臂用 manual pipeline 单次入口（原 A_pipeline 进程内补丁已退休）。
+"""Test_3 两臂用 manual pipeline 单次入口(thin wrapper,编码已改 bank 切片)。
 
-历史背景：A_pipeline 独立子项目时代有两处缺口，本入口曾用**进程内补丁**绕过
-（不动其源文件，因其工作树有他人未提交修改）：
-  1) 方案白名单：``cindex.expand_cindex_jobs`` 只认静态 ``PAPER_SCHEMES``，Test_3_*
-     自定义方案（登记在 templates 的 schemes.json `_schemes`）会被判「未知 cindex 方案」；
-  2) 编码 GPU：``encode.run_encode`` 无条件写 ``CUDA_VISIBLE_DEVICES=DEFAULT_GPU``（=7）。
+历史背景:A_pipeline 独立子项目时代有两处缺口,本入口曾用**进程内补丁**绕过
+(不动其源文件,因其工作树有他人未提交修改):
+  1) 方案白名单:``cindex.expand_cindex_jobs`` 只认静态 ``PAPER_SCHEMES``,Test_3_*
+     自定义方案(登记在 templates 的 schemes.json `_schemes`)会被判「未知 cindex 方案」;
+  2) 编码 GPU:``encode.run_encode`` 无条件写 ``CUDA_VISIBLE_DEVICES=DEFAULT_GPU``(=7)。
 
-吸收进主项目时两处都已在**源头**修好：
-  1) ``manual_pipeline.cindex.expand_cindex_jobs`` 接受 config 里已注册的任意方案
-     （templates/manual_schemes/{scheme}，无需进程内 append）；
-  2) encode 的可见 GPU 走 ``--gpu`` > 环境变量 ``A_PIPELINE_GPU`` > 7。
-因此本入口退化为 thin wrapper：只把 ``--gpu`` 透传给 ``manual_pipeline.cli.main``。
+吸收进主项目时两处都已在**源头**修好。bank-only 口径(2026-10-07)后:
+  - 编码不再走本入口的 pipeline/json2prompt 子命令(句式模板已退役,统一
+    Test_3_custom_scheme.materialize_bank_subset 切片);
+  - 本入口保留 cindex 子命令透传(训练由 Clinic_Analyzer/run.sh 内部起 SurvPGC)。
 
-用法（projects/ 根目录）：
-  # 编码（json2prompt + encode，需 conch 环境 python）
-  /data/fangyuxuan/miniconda3/envs/conch/bin/python scripts/Test_3_pipeline_one.py \
-      --gpu 1 pipeline --dataset TCGA-LAML --scheme Test_3_MULTISURV_TCGA-LAML \
-      --landmark_time 0 --encoding text
-  # cindex（enqueue + drain，base python 即可；训练由 Clinic_Analyzer/run.sh 内部起 SurvPGC）
+用法(projects/ 根目录):
+  # cindex(enqueue + drain,base python 即可;训练由 Clinic_Analyzer/run.sh 内部起 SurvPGC)
   python3 scripts/Test_3_pipeline_one.py --gpu 1 cindex --dataset TCGA-LAML \
       --scheme Test_3_MULTISURV_TCGA-LAML --landmark_time 0 --encoding text \
       --analyzer mlp_clinic_flatten --workers 1

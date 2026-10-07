@@ -86,7 +86,7 @@ def test_paths_and_scheme_names():
         "results/Test_3_greedy_vs_works/search/TCGA-LAML/mlp_clinic_flatten/seed_0")
     assert C.search_result_json("TCGA-LAML").name == "result.json"
     assert C.search_evaluations_jsonl("TCGA-LAML").name == "evaluations.jsonl"
-    assert C.bp_scheme_name("MULTISURV", "TCGA_LIHC") == "Test_3_MULTISURV_TCGA_LIHC"
+    assert C.b_scheme_name("MULTISURV", "TCGA_LIHC") == "Test_3_MULTISURV_TCGA_LIHC"
     assert C.c_scheme_name("TCGA-LAML") == "Test_3_greedy_TCGA-LAML"
     assert C.c_scheme_name("TCGA-LAML", kind="best") == "Test_3_greedybest_TCGA-LAML"
     assert C.ANALYZER == "mlp_clinic_flatten" and C.ALGO == "A2_greedy" and C.SEED == 0

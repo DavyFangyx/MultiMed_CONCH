@@ -4,9 +4,9 @@
   1. tier_for —— 协议 A 四档边界（100 / 70 / 30）；
   2. 三档装配与档间 Δ —— 值逐位、Δ=手算差（6 位舍入）、cox 交叉列；
   3. 缺可达值不中断 —— 整行保留、C 列记 "pending"、Δ2 同为 pending（与 Test_3_compare 同哲学）；
-  4. 全缺不崩溃 —— three_arm 空表 / 文件缺失 -> 全行 pending，写出与聚合正常；
+  4. 全缺不崩溃 —— two_arm 空表 / 文件缺失 -> 全行 pending，写出与聚合正常；
   5. 写出 —— Main_three_tiers.csv / Main_tier_summary.csv 列名、行数、tier 聚合计数；
-  6. 对齐 three_arm —— delta_C_minus_Bp / n_fields_greedy / n_missed 引用一致。
+  6. 对齐 two_arm —— delta_C_minus_B / n_fields_greedy / n_missed 引用一致。
 
 运行：
   python3 -m pytest tests/test_test4_three_tiers.py -q
@@ -35,13 +35,14 @@ def _load_by_path(name: str, path: Path):
 
 
 t4 = _load_by_path("s6_test4_three_tiers", SCRIPT)
+C3 = _load_by_path("s6_test3_common", ROOT / "scripts" / "Test_3_common.py")
 
 ARM_COLS = ["dataset", "scheme", "encoding", "modality", "clinic_dir", "results_dir",
             "log_path", "skipped", "val_c_index_mean", "val_c_index_std",
             "test_c_index_mean", "test_c_index_std", "source"]
 THREE_ARM_COLS = ["dataset", "work", "n_fields_work", "n_fields_greedy",
-                  "B_c", "B_std", "Bp_c", "Bp_std", "C_c", "C_std",
-                  "delta_C_minus_Bp", "delta_C_minus_B", "n_missed",
+                  "B_c", "B_std", "C_c", "C_std",
+                  "delta_C_minus_B", "n_missed",
                   "B_cox_c", "delta_C_minus_B_cox"]
 
 DATASETS = ["TCGA-AAA", "TCGA-BBB"]
@@ -69,7 +70,7 @@ def _arm_row(dataset: str, scheme: str, modality: str, mean: float, std: float) 
     }
 
 
-def _write_three_arm(path: Path, rows: list[dict]) -> None:
+def _write_two_arm(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=THREE_ARM_COLS)
@@ -100,36 +101,33 @@ def _fixture(tmp_path: Path):
         _arm_row("TCGA-BBB", "W1", "clinic_cox", 0.530, 0.020),
     ])
     _write_cindex(arm_b, "TCGA-AAA", [
-        _arm_row("TCGA-AAA", "W1__landmark_0", "mlp_clinic_flatten", 0.650, 0.055),
-        _arm_row("TCGA-AAA", "W1__landmark_0", "clinic_cox", 0.580, 0.045),
-        _arm_row("TCGA-AAA", "W2__landmark_0", "mlp_clinic_flatten", 0.640, 0.050),
-        _arm_row("TCGA-AAA", "W2__landmark_0", "clinic_cox", 0.550, 0.044),
+        _arm_row("TCGA-AAA", C3.b_scheme_name("W1", "TCGA-AAA") + "__landmark_0", "mlp_clinic_flatten", 0.650, 0.055),
+        _arm_row("TCGA-AAA", C3.b_scheme_name("W2", "TCGA-AAA") + "__landmark_0", "mlp_clinic_flatten", 0.640, 0.050),
     ])
     _write_cindex(arm_b, "TCGA-BBB", [
-        _arm_row("TCGA-BBB", "W1__landmark_0", "mlp_clinic_flatten", 0.600, 0.035),
-        _arm_row("TCGA-BBB", "W1__landmark_0", "clinic_cox", 0.500, 0.025),
+        _arm_row("TCGA-BBB", C3.b_scheme_name("W1", "TCGA-BBB") + "__landmark_0", "mlp_clinic_flatten", 0.600, 0.035),
         _arm_row("TCGA-BBB", "W2__landmark_0", "mlp_clinic_flatten", 0.610, 0.036),
         _arm_row("TCGA-BBB", "W2__landmark_0", "clinic_cox", 0.510, 0.026),
     ])
-    three_arm = tmp_path / "three_arm.csv"
-    _write_three_arm(three_arm, [
+    two_arm = tmp_path / "two_arm.csv"
+    _write_two_arm(two_arm, [
         {"dataset": "TCGA-AAA", "work": "W1", "n_fields_work": 5, "n_fields_greedy": 3,
-         "B_c": 0.650, "B_std": 0.055, "Bp_c": 0.645, "Bp_std": 0.054,
-         "C_c": 0.600, "C_std": 0.060, "delta_C_minus_Bp": -0.045,
+         "B_c": 0.650, "B_std": 0.055,
+         "C_c": 0.600, "C_std": 0.060, "delta_C_minus_B": -0.050,
          "delta_C_minus_B": -0.050, "n_missed": 2, "B_cox_c": 0.580, "delta_C_minus_B_cox": ""},
         {"dataset": "TCGA-AAA", "work": "W2", "n_fields_work": 3, "n_fields_greedy": 2,
-         "B_c": 0.640, "B_std": 0.050, "Bp_c": 0.630, "Bp_std": 0.051,
-         "C_c": 0.590, "C_std": 0.061, "delta_C_minus_Bp": -0.040,
+         "B_c": 0.640, "B_std": 0.050,
+         "C_c": 0.590, "C_std": 0.061, "delta_C_minus_B": -0.050,
          "delta_C_minus_B": -0.050, "n_missed": 1, "B_cox_c": 0.550, "delta_C_minus_B_cox": ""},
     ])
-    return dict(arm_a=arm_a, arm_b=arm_b, three_arm=three_arm, templates=_templates(tmp_path))
+    return dict(arm_a=arm_a, arm_b=arm_b, two_arm=two_arm, templates=_templates(tmp_path))
 
 
 def _build(tmp_path: Path):
     fx = _fixture(tmp_path)
     rows = t4.build_rows(DATASETS, PAIRS, N_EVENT,
                          arm_a_root=fx["arm_a"], arm_b_root=fx["arm_b"],
-                         three_arm=t4.load_three_arm(fx["three_arm"]),
+                         two_arm=t4.load_two_arm(fx["two_arm"]),
                          templates=fx["templates"])
     return rows, fx
 
@@ -162,12 +160,11 @@ def test_build_rows_three_tiers_and_deltas(tmp_path):
     assert r["deleak_c"] == 0.650 and r["deleak_std"] == 0.055
     assert r["delta_report_minus_deleak"] == round(0.700 - 0.650, 6)
     assert r["reach_c"] == 0.600 and r["reach_std"] == 0.060
-    assert r["reach_bp_c"] == 0.645
+    assert r["reach_b_c"] == 0.650
     assert r["delta_deleak_minus_reach"] == round(0.650 - 0.600, 6)
-    assert r["delta_C_minus_Bp"] == -0.045
+    assert r["delta_C_minus_B"] == -0.050
     assert r["n_fields_greedy"] == 3 and r["n_missed"] == 2
-    assert r["report_cox_c"] == 0.600 and r["deleak_cox_c"] == 0.580
-    assert r["delta_report_minus_deleak_cox"] == round(0.600 - 0.580, 6)
+    assert r["report_cox_c"] == 0.600
     # 报告值缺（W2 未在 arm_A 报告）-> n/a，但可达值仍在
     r2 = _row(rows, "TCGA-AAA", "W2")
     assert r2["report_c"] == t4.NA and r2["delta_report_minus_deleak"] == t4.NA
@@ -179,12 +176,12 @@ def test_build_rows_three_tiers_and_deltas(tmp_path):
 # ------------------------------------------------------- 3. 缺可达值不中断
 def test_missing_C_keeps_row_pending(tmp_path):
     rows, _ = _build(tmp_path)
-    r = _row(rows, "TCGA-BBB", "W1")  # three_arm 无该行
+    r = _row(rows, "TCGA-BBB", "W1")  # two_arm 无该行
     assert r["status"] == "pending_C"
     assert r["reach_c"] == t4.PENDING and r["reach_std"] == t4.PENDING
-    assert r["reach_bp_c"] == t4.PENDING and r["reach_bp_std"] == t4.PENDING
+    assert r["reach_b_c"] == t4.PENDING and r["reach_b_std"] == t4.PENDING
     assert r["delta_deleak_minus_reach"] == t4.PENDING
-    assert r["delta_C_minus_Bp"] == t4.PENDING
+    assert r["delta_C_minus_B"] == t4.PENDING
     assert r["n_fields_greedy"] == t4.PENDING and r["n_missed"] == t4.PENDING
     # 其余档（报告/去泄露/Δ1）照常保留
     assert r["report_c"] == 0.620 and r["deleak_c"] == 0.600
@@ -197,13 +194,13 @@ def test_missing_C_keeps_row_pending(tmp_path):
 def test_all_missing_C_does_not_crash(tmp_path, mode):
     rows, fx = _build(tmp_path)
     if mode == "header_only":
-        _write_three_arm(fx["three_arm"], [])  # 只剩表头
-        arm3 = t4.load_three_arm(fx["three_arm"])
+        _write_two_arm(fx["two_arm"], [])  # 只剩表头
+        arm3 = t4.load_two_arm(fx["two_arm"])
     else:
-        arm3 = t4.load_three_arm(tmp_path / "missing.csv")  # 文件缺失
+        arm3 = t4.load_two_arm(tmp_path / "missing.csv")  # 文件缺失
     rows = t4.build_rows(DATASETS, PAIRS, N_EVENT,
                          arm_a_root=fx["arm_a"], arm_b_root=fx["arm_b"],
-                         three_arm=arm3, templates=fx["templates"])
+                         two_arm=arm3, templates=fx["templates"])
     assert len(rows) == len(PAIRS)
     assert all(r["status"] == "pending_C" for r in rows)
     assert all(r["reach_c"] == t4.PENDING for r in rows)
@@ -239,17 +236,17 @@ def test_write_tables_outputs(tmp_path):
     assert main_ci["n_pairs"] == "2" and main_ci["n_ok"] == "0" and main_ci["n_pending_C"] == "2"
 
 
-# ------------------------------------------------------- 6. 与 three_arm 对齐
-def test_three_arm_alignment(tmp_path):
+# ------------------------------------------------------- 6. 与 two_arm 对齐
+def test_two_arm_alignment(tmp_path):
     rows, fx = _build(tmp_path)
-    arm3 = t4.load_three_arm(fx["three_arm"])
+    arm3 = t4.load_two_arm(fx["two_arm"])
     for r in rows:
         src = arm3.get((r["dataset"], r["work"]))
         if src is None:
             assert r["status"] == "pending_C"
             continue
-        assert r["delta_C_minus_Bp"] == float(src["delta_C_minus_Bp"])
-        assert r["reach_c"] == float(src["C_c"]) and r["reach_bp_c"] == float(src["Bp_c"])
+        assert r["delta_C_minus_B"] == float(src["delta_C_minus_B"])
+        assert r["reach_c"] == float(src["C_c"]) and r["reach_b_c"] == float(src["B_c"])
         assert r["n_fields_greedy"] == int(src["n_fields_greedy"])
         assert r["n_missed"] == int(src["n_missed"])
         assert r["n_fields_work"] == int(src["n_fields_work"])  # 表口径自洽
@@ -257,4 +254,4 @@ def test_three_arm_alignment(tmp_path):
     with pytest.raises(SystemExit):
         t4.build_rows(["TCGA-XXX"], [("TCGA-XXX", "W1")], N_EVENT,
                       arm_a_root=fx["arm_a"], arm_b_root=fx["arm_b"],
-                      three_arm={}, templates=fx["templates"])
+                      two_arm={}, templates=fx["templates"])

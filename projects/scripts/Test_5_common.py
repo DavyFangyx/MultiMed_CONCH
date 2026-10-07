@@ -2,9 +2,9 @@
 
 口径来源（唯一来源 = `z_notes/Test_series_spec.md` §8bis）：
   5E_2b  E→baseline 复现 Test_2b 两臂 A(landmark_none)/B(landmark_0) × mlp_clinic_flatten
-  5E_3   E→baseline 复现 Test_3 臂 B′（Test_3_{work}_{dataset}）/ C（Test_3_greedy_{dataset}）
+  5E_3   E→baseline 复现 Test_3 臂 B（Test_3_{work}_{dataset}）/ C（Test_3_greedy_{dataset}）
   5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（多模态 4 数据集）复现 Test_2b 两臂
-  5M_3   M→clinic_cox 复现 Test_3 臂 B′/C
+  5M_3   M→clinic_cox 复现 Test_3 臂 B/C
 
 纪律（spec §2.4 / §8bis.5）：
   * 数据集名单一律读 results/Test_0_dataset_availability/manifest.csv（n_event >= 100 的 15 主集）；
@@ -72,9 +72,9 @@ SUB_SPEC = {
 ARM_LANDMARK = {"A": ("", None), "B": (LANDMARK_ARM_TAG, LANDMARK_DAYS),
                 "Bp": (LANDMARK_ARM_TAG, LANDMARK_DAYS), "C": (LANDMARK_ARM_TAG, LANDMARK_DAYS)}
 
-# Test_3 臂 B′ 的本轮范围 = 4 个泛癌种工作 × 15 主集（spec §8bis.2 "15 × 2 臂"）。
-# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC）不在本轮 B′ 范围：
-# S12a 只为 60 个 B′ 落了 baseline 编码，5E_3 的 E 轴对照需要有同集合 baseline 产物。
+# Test_3 臂 B 的本轮范围 = 4 个泛癌种工作 × 15 主集（spec §8bis.2 "15 × 2 臂"）。
+# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC）不在本轮 B 范围：
+# S12a 只为 60 个 B 落了 baseline 编码，5E_3 的 E 轴对照需要有同集合 baseline 产物。
 BP_WORKS = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
 
 # 多模态（WSI+omics）模型：本轮暂不投放（parked/），原因见 park_reason()。
@@ -159,8 +159,8 @@ def work_schemes(dataset: str) -> list[str]:
                   if work_bound_to(s, dataset) and scheme_applies_to_dataset(s, dataset, datasets))
 
 
-def bp_schemes(dataset: str) -> list[str]:
-    """Test_3 臂 B′ 方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
+def b_schemes(dataset: str) -> list[str]:
+    """Test_3 臂 B 方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
     from manual_pipeline.config import SCHEME_CONFIG
 
     return [name for name in (f"Test_3_{w}_{dataset}" for w in BP_WORKS) if name in SCHEME_CONFIG]
@@ -258,7 +258,7 @@ def arm_plans(sub: str, dataset: str) -> list[ArmPlan]:
             schemes = work_schemes(dataset)
             notes = []
         else:
-            schemes = (bp_schemes(dataset) if arm == "Bp" else c_schemes(dataset))
+            schemes = (b_schemes(dataset) if arm == "B" else c_schemes(dataset))
             notes = [] if schemes else ["no template/registration"]
         if sub == "5M_2b":
             modalities = _multimodal_modalities(dataset)

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .config import k_grid
+from .search.base import finish, score
 from .types import EvalResult
 
 
@@ -36,9 +37,18 @@ def evaluate_full(evaluator, bank):
 
 
 class A0Full:
+    """参考线:完整 Field Bank 评一次,不参与预算竞争(Test_6 口径)。"""
+
     name = "A0_full"
+
     def run(self, evaluator, bank, rng=None):
-        return evaluate_full(evaluator, bank)
+        result = evaluate_full(evaluator, bank)
+        if result.status != "ok" or result.cv_c_mean is None:
+            # 空 bank 或全失败:无参考线,报空集 0.5
+            return finish(self, evaluator, getattr(evaluator, "seed", 0), (), 0.5,
+                          "reference_failed", metadata={"error": result.error})
+        return finish(self, evaluator, getattr(evaluator, "seed", 0),
+                      result.subset, result.cv_c_mean, "reference")
 
 
 def top_k_subsets(evaluator, bank, univariate_rows):
@@ -57,8 +67,23 @@ def top_k_subsets(evaluator, bank, univariate_rows):
 
 
 class A0bTopK:
+    """参考线:按单字段先验取累计 top-k,报最优 k 水平线,不参与预算竞争(Test_6 口径)。"""
+
     name = "A0b_topk"
+
     def __init__(self, univariate_rows):
         self.univariate_rows = list(univariate_rows)
+
     def run(self, evaluator, bank, rng=None):
-        return top_k_subsets(evaluator, bank, self.univariate_rows)
+        payload = top_k_subsets(evaluator, bank, self.univariate_rows)
+        best = payload["best"]
+        if best is None:
+            return finish(self, evaluator, getattr(evaluator, "seed", 0), (), 0.5,
+                          "reference_failed")
+        k_path = [{"k": k, "cv_c_mean": (r.cv_c_mean if r.status == "ok" else None)}
+                  for k, r in payload["path"]]
+        # seed_record 的 cv_c_mean 取 recommended(=best_k 子集),与 anytime 图中
+        # A0b 水平参考线口径一致:报告值 = 最优 k 子集的 5 折均值。
+        return finish(self, evaluator, getattr(evaluator, "seed", 0),
+                      best.subset, best.cv_c_mean, "reference",
+                      metadata={"k_path": k_path, "best_k": payload["best_k"]})

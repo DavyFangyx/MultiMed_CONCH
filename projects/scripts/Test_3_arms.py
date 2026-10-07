@@ -1,26 +1,22 @@
-"""Test_3 三臂编排（全走 manual pipeline，同编码器/模型/划分/seed；spec §7.2）。
+"""Test_3 两臂编排(全走同一条编码/模型/划分/seed;spec §7.2,bank-only 口径 2026-10-07)。
 
-  臂 B  = 工作完整组合 × scheme 模板 × landmark_0 —— 复用 Test_2b 产物（results/Test_2b/arm_B/），
-          本脚本只读不跑。
-  臂 B' = 工作完整组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}。
-  臂 C  = 贪婪最优组合 × bank 模板 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}
-          （recommended_subset = gain-only δ=0.005 参考点，D4 修订 2026-10-04；--arm best 用历史 best_subset 作附录对照）。
+  臂 B  = 论文完整组合 × landmark_0(Test_2b 产物,历史口径;只读不跑,保留为交叉参考)
+  臂 B = 论文组合 ∩ bank 字段 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}(去泄露值)
+  臂 C  = 贪婪最优子集 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}(可达值;
+          recommended_subset = gain-only δ=0.005 参考点;--arm best 用历史 best_subset)
 
-链路：generate（schemes.json 登记）→ encode（conch 环境 python；landmark_0 槽位过滤 + bank 句子）
-      → enqueue（manual pipeline cindex conf，results/Test_2b/arm_B 路由）→ drain（Clinic_Analyzer/run.sh）
-      → summarize（写 results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv，按行键合并，不动 Test_2b 行）。
+链路:generate(fields.json ∩ bank 登记)→ encode(bank 切片,零 CONCH 重编码)
+      → enqueue(manual pipeline cindex conf)→ drain(Clinic_Analyzer/run.sh)
+      → summarize(写 arm_B 表,按行键合并)。臂 C 的 c-index 与搜索 best_cv_c_mean 同口径,
+      可直接引用搜索 result.json,无需重新训练。
 
-纪律：只新增 Test_3_* 子目录，绝不覆盖 outputs/*/A_manual 与 results/Test_2b/arm_B 既有产物；
-      仅登记 schemes.json（不改内核源文件）。原「方案白名单 / DEFAULT_GPU」两处缺口已在吸收时
-      从源头修好（manual_pipeline.cindex 接受任意已注册方案；encode 走 --gpu / A_PIPELINE_GPU）。
-
-用法（projects/ 根目录）：
-  python3 scripts/Test_3_arms.py generate --arm bp
-  python3 scripts/Test_3_arms.py encode   --arm bp --gpu 1 --parallel 3
-  python3 scripts/Test_3_arms.py enqueue  --arm bp
+用法(projects/ 根目录):
+  python3 scripts/Test_3_arms.py generate --arm b
+  python3 scripts/Test_3_arms.py encode   --arm b --parallel 3
+  python3 scripts/Test_3_arms.py enqueue  --arm b
   python3 scripts/Test_3_arms.py drain    --gpu 1 --workers 2
   python3 scripts/Test_3_arms.py summarize
-  python3 scripts/Test_3_arms.py status   --arm bp
+  python3 scripts/Test_3_arms.py status   --arm b
 """
 from __future__ import annotations
 
@@ -43,7 +39,7 @@ import Test_3_common as C  # noqa: E402
 from common.paths import config_family_dir, test_results_dir  # noqa: E402
 
 LOG_ROOT = C.OUT_ROOT / "logs"
-ARMS = ("bp", "ksig", "best")
+ARMS = ("b", "ksig", "best")
 C_KIND = {"ksig": "ksig", "best": "best"}
 # 命名公约过渡（见 common/paths.py）：新名优先、旧名回退，迁移前后都能跑。
 QUEUE_ROOT = config_family_dir("Test_3_arms")      # cindex conf 队列根（迁移前回退 configs/A_manual）
@@ -57,12 +53,12 @@ def conch_python() -> Path:
 
 
 def scheme_pairs(arm: str, datasets: list[str]) -> list[tuple[str, str, str | None]]:
-    """[(dataset, scheme, work|None)]；bp 按 §2.4 绑定展开。"""
+    """[(dataset, scheme, work|None)]；b 按 §2.4 绑定展开。"""
     pairs: list[tuple[str, str, str | None]] = []
     for dataset in datasets:
-        if arm == "bp":
+        if arm == "b":
             for _, work in [(d, w) for d, w in C.work_pairs([dataset])]:
-                pairs.append((dataset, C.bp_scheme_name(work, dataset), work))
+                pairs.append((dataset, C.b_scheme_name(work, dataset), work))
         else:
             name = C.c_scheme_name(dataset, kind=C_KIND[arm])
             if not C.search_result_json(dataset).exists():
@@ -72,20 +68,18 @@ def scheme_pairs(arm: str, datasets: list[str]) -> list[tuple[str, str, str | No
 
 
 def cmd_generate(arm: str, datasets: list[str]) -> None:
-    from Test_3_custom_scheme import (build_scheme, load_bank_templates, load_greedy_fields,
-                                      load_scheme)
+    from Test_3_custom_scheme import build_scheme, load_bank_field_list, load_greedy_fields, load_scheme
 
-    bank_cache: dict[str, dict[str, str]] = {}
+    bank_cache: dict[str, list[str]] = {}
     for dataset, name, work in scheme_pairs(arm, datasets):
-        bank_tpl = bank_cache.setdefault(dataset, load_bank_templates(dataset))
+        bank_fields = bank_cache.setdefault(dataset, load_bank_field_list(dataset))
         if work:
-            fields, scheme_tpl = load_scheme(work)
-            note = f"work={work} bank模板(landmark_{C.LANDMARK_TIME})"
+            fields = load_scheme(work)
+            note = f"work={work} bank切片(landmark_{C.LANDMARK_TIME})"
         else:
             fields, algo = load_greedy_fields(C.search_result_json(dataset))
-            scheme_tpl = {}
-            note = f"greedy={C.search_result_json(dataset).name} algo={algo} bank模板(landmark_{C.LANDMARK_TIME})"
-        build_scheme(name, dataset, fields, bank_tpl, scheme_tpl, note)
+            note = f"greedy={C.search_result_json(dataset).name} algo={algo} bank切片(landmark_{C.LANDMARK_TIME})"
+        build_scheme(name, dataset, fields, bank_fields, note)
 
 
 def embeddings_dir(dataset: str, scheme: str) -> Path:
@@ -93,25 +87,29 @@ def embeddings_dir(dataset: str, scheme: str) -> Path:
 
 
 def _encode_one(dataset: str, scheme: str, gpu: str) -> str:
+    """bank-only 口径:按方案 fields.json(∩ bank)切片 bank 嵌入矩阵,零 CONCH 重编码。"""
+    from Test_3_custom_scheme import load_scheme, materialize_bank_subset
+
     clinic = embeddings_dir(dataset, scheme)
     if clinic.is_dir() and any(clinic.glob("*")):
         return f"skip {dataset}/{scheme} (embeddings exist)"
+    fields = load_scheme(scheme)  # fields.json 已只含 bank 内字段
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     log = LOG_ROOT / f"encode_{dataset}__{scheme}.log"
-    argv = [str(conch_python()), str(ROOT / "scripts" / "Test_3_pipeline_one.py"), "--gpu", str(gpu),
-            "pipeline", "--dataset", dataset, "--scheme", scheme,
-            "--landmark_time", str(C.LANDMARK_TIME), "--encoding", "text"]
+    try:
+        payload = materialize_bank_subset(dataset, fields, clinic, overwrite=True)
+    except Exception as exc:  # noqa: BLE001
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n===== slice {time.strftime('%F %T')} FAILED: {exc}\n")
+        raise
     with log.open("a", encoding="utf-8") as handle:
-        handle.write(f"\n===== encode {time.strftime('%F %T')} gpu={gpu}\n")
-        code = subprocess.run(argv, cwd=ROOT, stdout=handle, stderr=subprocess.STDOUT).returncode
-    if code != 0:
-        raise RuntimeError(f"encode 失败 {dataset}/{scheme} rc={code}, log={log}")
-    return f"ok   {dataset}/{scheme}"
+        handle.write(f"\n===== slice {time.strftime('%F %T')} {scheme}: {payload}\n")
+    return f"ok   {dataset}/{scheme} (bank 切片 {len(fields)} 字段)"
 
 
 def cmd_encode(arm: str, datasets: list[str], gpu: str, parallel: int) -> None:
     pairs = scheme_pairs(arm, datasets)
-    print(f"[test_3][arms] encode {len(pairs)} 个 (dataset, scheme), gpu={gpu} parallel={parallel}", flush=True)
+    print(f"[test_3][arms] encode(bank 切片) {len(pairs)} 个 (dataset, scheme), parallel={parallel}", flush=True)
     with ThreadPoolExecutor(max_workers=max(1, parallel)) as pool:
         for message in pool.map(lambda item: _encode_one(item[0], item[1], gpu), pairs):
             print(f"[test_3][arms] {message}", flush=True)
@@ -195,9 +193,9 @@ def cmd_status(arm: str, datasets: list[str]) -> None:
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Test_3 三臂编排器")
+    parser = argparse.ArgumentParser(description="Test_3 两臂编排器")
     parser.add_argument("command", choices=["generate", "encode", "enqueue", "drain", "summarize", "status"])
-    parser.add_argument("--arm", default="bp", choices=ARMS)
+    parser.add_argument("--arm", default="b", choices=ARMS)
     parser.add_argument("--gpu", default="1")
     parser.add_argument("--parallel", type=int, default=3, help="encode 并发进程数")
     parser.add_argument("--workers", type=int, default=2, help="drain 并发 worker 数")

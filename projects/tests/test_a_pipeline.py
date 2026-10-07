@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 for _p in (PROJECT_ROOT, PROJECT_ROOT / "src"):
@@ -36,7 +38,7 @@ from manual_pipeline.baseline import (  # noqa: E402
 )
 from manual_pipeline.cindex import claim_conf, conf_text, enqueue_cindex_jobs, expand_cindex_jobs, parse_conf, resolve_cindex_schemes, result_table_dir, run_claimed_conf, scheme_output_dir, summarize_dataset  # noqa: E402
 from manual_pipeline.cli import main as manual_main  # noqa: E402
-from manual_pipeline.config import ALL_TCGA_DATASETS, ALL_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, SCHEME_TEMPLATE, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
+from manual_pipeline.config import ALL_TCGA_DATASETS, ALL_TEXT_SCHEMES, PAPER_SCHEMES, SCHEME_DATASETS, SCHEME_FIELDS, load_custom_schemes, reset_scheme_registry, resolve_scheme_names, schemes_for_dataset  # noqa: E402
 from manual_pipeline.config import SCHEME_CONFIG, scheme_source  # noqa: E402
 from manual_pipeline.datasets import dataset_jobs, expand_source_jobs, load_dataset_configs, load_source_dataset_configs, resolve_dataset_names  # noqa: E402
 from manual_pipeline.extract import extract_values  # noqa: E402
@@ -67,10 +69,9 @@ def test_scheme_dirs_load_fields_and_templates():
     assert list(PAPER_SCHEMES) == paper  # L0-L5 已随 PGC 线移除：全部文本方案 = 论文方案
     for name in ALL_TEXT_SCHEMES:
         assert name in SCHEME_FIELDS
-        assert SCHEME_TEMPLATE[name] == f"{name}/template.csv"
         scheme_dir = Path(DEFAULT_TEMPLATE_DIR) / name
         assert (scheme_dir / "fields.json").exists()
-        assert (scheme_dir / "template.csv").exists()
+        assert not (scheme_dir / "template.csv").exists()  # 句式模板已退役(bank-only)
         assert SCHEME_FIELDS[name]
 
 
@@ -215,57 +216,18 @@ def test_global_mapping_dir_lives_in_manual_templates():
     assert global_mapping_dir() == mapping_dir
 
 
-def test_json2prompt_writes_a_manual(tmp_path):
-    json_path = tmp_path / "cases.json"
-    json_path.write_text(
-        json.dumps(
-            [
-                {
-                    "submitter_id": "TCGA-XX-0001",
-                    "demographic": {
-                        "age_at_index": 60,
-                        "gender": "male",
-                        "race": "white",
-                    },
-                    "diagnoses": [
-                        {
-                            "diagnosis_is_primary_disease": "true",
-                            "primary_diagnosis": "Adenocarcinoma",
-                            "ajcc_pathologic_stage": "Stage I",
-                        }
-                    ],
-                }
-            ]
-        ),
-        encoding="utf-8",
-    )
-    prompt_dir = tmp_path / "outputs" / "TCGA-READ" / "A_manual"
+def test_json2prompt_retired_fails_fast(tmp_path):
+    """句式模板已退役:json2prompt 必须快速失败,不再产出 scheme prompts。"""
     _load_scheme_fields()
-    out = run_json2prompt(
-        json_path=str(json_path),
-        scheme="MULTISURV",
-        template_dir=DEFAULT_TEMPLATE_DIR,
-        prompt_dir=str(prompt_dir),
-        dataset_name="TCGA-READ",
-    )
-    csv_path = Path(out)
-    assert csv_path == prompt_dir / "MULTISURV" / "prompts.csv"
-    text = csv_path.read_text(encoding="utf-8")
-    assert "TCGA-XX-0001" in text
-    assert "The patient is 60 years old at index." in text
-    assert "Race is white." in text
-
-    out = run_json2prompt(
-        json_path=str(json_path),
-        scheme="INTEGRATIVE_DNN",
-        template_dir=DEFAULT_TEMPLATE_DIR,
-        prompt_dir=str(prompt_dir),
-        dataset_name="TCGA-READ",
-    )
-    csv_path = Path(out)
-    assert csv_path == prompt_dir / "INTEGRATIVE_DNN" / "prompts.csv"
-    text = csv_path.read_text(encoding="utf-8")
-    assert "Pathologic overall stage is Stage I." in text
+    with pytest.raises(SystemExit) as exc:
+        run_json2prompt(
+            json_path=str(tmp_path / "cases.json"),
+            scheme="MULTISURV",
+            template_dir=DEFAULT_TEMPLATE_DIR,
+            prompt_dir=str(tmp_path / "out"),
+            dataset_name="TCGA-READ",
+        )
+    assert "bank" in str(exc.value)
 
 
 
@@ -420,7 +382,7 @@ def test_hgcn_keeps_old_field_types_and_cli():
     # S11：论文 / templates 自定义方案显式点名可编码（节点名 = fields.json 字段路径）
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
-    assert resolve_hgcn_schemes("Test_3_greedy_TCGA-LAML") == ["Test_3_greedy_TCGA-LAML"]
+    assert resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML") == ["Test_3_MULTISURV_TCGA-LAML"]
     try:
         resolve_hgcn_schemes("NOT_A_SCHEME")
         raise AssertionError("unknown scheme should be rejected")

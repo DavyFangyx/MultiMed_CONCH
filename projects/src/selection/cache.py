@@ -40,11 +40,15 @@ class SQLiteCache:
             self._db.close()
 
 
+SCHEMA_VERSION = "e2-v2"  # v2:label 文件哈希入 key(gt≤0 修复口径闸门);v1 旧行永不命中
+
+
 def make_cache_key(*, dataset, landmark_tag, encoding, modality, seed, fields, field_index_hash,
-                   split_hashes, train_args_hash, schema_version="e2-v1") -> str:
+                   split_hashes, train_args_hash, label_hash="", schema_version=SCHEMA_VERSION) -> str:
     return config_fingerprint({
         "dataset": dataset, "landmark_tag": landmark_tag, "encoding": encoding,
         "modality": modality, "seed": int(seed), "fields": sorted(fields),
         "field_index_hash": field_index_hash, "split_hashes": list(split_hashes),
-        "train_args_hash": train_args_hash, "schema_version": schema_version,
+        "train_args_hash": train_args_hash, "label_hash": label_hash,
+        "schema_version": schema_version,
     })

@@ -1,7 +1,7 @@
-"""Test_3（字段轴链主体）共享常量、主集读取与三臂路径工具。
+"""Test_3（字段轴链主体）共享常量、主集读取与两臂路径工具。
 
 口径来源（唯一来源 = `z_notes/Test_series_spec.md`）：
-  §7     Test_3 规格（搜索池 / A2_greedy / gain-only 早停（D4 修订 2026-10-04）/ 三臂 B, B', C / 遗漏字段清单）
+  §7     Test_3 规格（搜索池 / A2_greedy / gain-only 早停（D4 修订 2026-10-04）/ 两臂 B, C / 遗漏字段清单）
   §2.4   方案 × 数据集绑定（泛癌种 4 方案 × 全部 TCGA；HGCN_* 仅本癌种）
   §12 U1 数据协议 A + R13 训练范围（n_event >= 100 的 15 个主集）
 
@@ -34,7 +34,7 @@ EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 OUT_ROOT = ROOT / "results" / "Test_3_greedy_vs_works"
 SEARCH_ROOT = OUT_ROOT / "search"           # 搜索 run 落盘（evaluations.jsonl / result.json）
 SEARCH_CACHE = test_results_dir("Test_3_search") / "cache.sqlite"
-COMPARE_ROOT = OUT_ROOT                     # Test_3_compare.py 的三臂 json/csv
+COMPARE_ROOT = OUT_ROOT                     # Test_3_compare.py 的两臂 json/csv
 
 ANALYZER = "mlp_clinic_flatten"             # E2 唯一搜索目标模型（spec §7.1）
 ALGO = "A2_greedy"
@@ -134,7 +134,7 @@ def search_evaluations_jsonl(dataset: str, *, analyzer: str = ANALYZER, seed: in
     return search_seed_dir(dataset, analyzer=analyzer, seed=seed) / "evaluations.jsonl"
 
 
-def bp_scheme_name(work: str, dataset: str) -> str:
+def b_scheme_name(work: str, dataset: str) -> str:
     return f"Test_3_{work}_{dataset}"
 
 

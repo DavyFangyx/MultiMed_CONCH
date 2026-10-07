@@ -56,17 +56,19 @@ A_PIPELINE_GPU=7 bash scripts/s4_Test_2b_queue.sh encode
 S4_GPU_TRAIN=5 S4_WORKERS=8 bash scripts/s4_Test_2b_queue.sh watch
 # 判据:Test_2b_arms queue 空 && running 空 && done ≥ 256;再跑 bash scripts/s4_Test_2b_queue.sh validate(退出码 0)
 ```
-### 阶段 5:Test_3 字段轴链(搜索 → 三臂 → Test_4)
+### 阶段 5:Test_3 字段轴链(搜索 → 两臂 → Test_4)
 ```bash
 # 搜索:预投放 15 主集搜索 conf(幂等)
 bash scripts/Test_3_queue.sh search_enqueue
 # 搜索:后台 watch 自愈(换卡改行首 T3_SEARCH_GPUS;全 done 自动 report 退出)
 T3_SEARCH_GPUS=1,0,3,4,5,6 bash scripts/Test_3_queue.sh search_watch
-# 三臂:生成臂 B′ 自定义方案(注册进 schemes.json)
+# 两臂:生成臂 B 登记(fields.json ∩ bank 字段,注册进 schemes.json)
 bash scripts/Test_3_queue.sh arms_generate
-# 三臂:臂 B′ 后台训练(换卡/换并发改行首 T3_GPU / T3_WORKERS;前置 arms_encode_bg + arms_enqueue 投放见 runbook.md 阶段 5)
+# 两臂:臂 B 切片(零 CONCH 重编码,替代旧编码步骤)
+bash scripts/Test_3_queue.sh arms_encode_bg
+# 两臂:臂 B 训练(换卡/换并发改行首 T3_GPU / T3_WORKERS;投放 arms_enqueue 见 runbook.md 阶段 5)
 T3_GPU=1 T3_WORKERS=2 bash scripts/Test_3_queue.sh arms_drain
-# 判据:Test_3_search done ≥ 15;Test_3_arms done ≥ 60;总表 bash scripts/Test_3_queue.sh compare(臂 C 用 nohup bash scripts/Test_3_arm_c_chain.sh 接力)
+# 判据:Test_3_search done ≥ 15;Test_3_arms done ≥ 60;总表 bash scripts/Test_3_queue.sh compare(臂 C 用 nohup bash scripts/Test_3_arm_c_chain.sh 接力;臂 C 值即搜索 best_cv_c_mean)
 ```
 ### 阶段 6:Test_5 不变性
 ```bash

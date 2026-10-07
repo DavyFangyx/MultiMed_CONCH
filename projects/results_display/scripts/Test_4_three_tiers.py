@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 """Test_4 三档汇总表（报告值 / 去泄露值 / 可达值）——纯汇总，无训练。
 
-口径（z_notes/Test_series_spec.md §12 U1 协议 A；分层与列风格对齐 Test_2b_delta_report.py）：
-  - 档 1 报告值   = results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv 的 {work} 行（论文报告原值）
-  - 档 2 去泄露值 = results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv 的 {work}__landmark_0 行
-                    （S6 已修复的汇总口径；与报告值同字段集、同编码、同模型、同划分）
-  - 档 3 可达值   = results/Test_3_greedy_vs_works/three_arm.csv 的 C_c
-                    （Test_3 臂 C：贪婪最优字段 × bank 模板，landmark_0 同协议）
-  - 档间 Δ：Δ1 = 报告 − 去泄露（泄露高估幅度）；Δ2 = 去泄露 − 可达（字段选择差距）
-  - 主口径 analyzer = mlp_clinic_flatten；clinic_cox 作交叉列（与 three_arm.csv 的 cox 列同源口径）
-  - 缺臂哲学（与 Test_3_compare.py 一致）：缺可达值（无搜索 result.json / 未 drain）的行
-    **整行保留**，C 相关列记 "pending"，不中断；arm_A 无该 (dataset, work) 行时报告列记 "n/a"
-    （该工作在论文中未报告该数据集，如 SURVPGC / MMSURV 的非原文数据集）。
-  - 数据集分层 = 协议 A 四档（n_event 从 Test_0 manifest / event_summary 读，不硬编码）：
-    main ≥100 / main_ci 70–100（须带 CI，不排名）/ supp 30–70 / low <30。
+口径(bank-only,2026-10-07;分层与列风格对齐 Test_2b_delta_report.py):
+  - 档 1 报告值   = results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv 的 {work} 行(论文报告原值)
+  - 档 2 去泄露值 = 臂 B(Test_3_{work}_{ds}__landmark_0 行,bank 切片;scheme 分支已删,T31)
+  - 档 3 可达值   = two_arm.csv 的 C_c;缺失回退搜索 result.json 的 best_cv_c_mean
+                    (bank-only 口径下与臂 C 同嵌入同模型同折同 seed,零训练)
+  - 档间 Δ:Δ1 = 报告 − 去泄露(泄露高估幅度);Δ2 = 去泄露 − 可达(字段选择差距)
+  - 主口径 analyzer = mlp_clinic_flatten;clinic_cox 仅作报告值交叉列(论文历史数字)
+  - 缺臂哲学(与 Test_3_compare.py 一致):缺可达值(无搜索 result.json / 未 drain)的行
+    **整行保留**,C 相关列记 "pending",不中断;arm_A 无该 (dataset, work) 行时报告列记 "n/a"
+    (该工作在论文中未报告该数据集,如 SURVPGC / MMSURV 的非原文数据集)。
+  - 数据集分层 = 协议 A 四档(n_event 从 Test_0 manifest / event_summary 读,不硬编码):
+    main ≥100 / main_ci 70–100(须带 CI,不排名)/ supp 30–70 / low <30。
 
 输入（全部只读）：
   - results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv、results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv
-  - results/Test_3_greedy_vs_works/three_arm.csv（Test_3_compare.py 产物）
+  - results/Test_3_greedy_vs_works/two_arm.csv（Test_3_compare.py 产物）
   - scripts/Test_3_common.py（主集名单 / 方案绑定 / n_event；硬编码禁令 R13）
   - templates/manual_schemes/{work}/fields.json（工作组合字段数）
 
@@ -73,7 +72,7 @@ COL_REACH = "#3d8b52"  # 可达值（绿）
 
 OUT_MAIN_FIG = "Main_three_tiers.png"
 OUT_APPX_FIG = "Appx_three_tiers_by_work.png"
-THREE_ARM_CSV = C3.OUT_ROOT / "three_arm.csv"
+TWO_ARM_CSV = C3.OUT_ROOT / "two_arm.csv"
 TEMPLATES = REPO_ROOT / "templates" / "manual_schemes"
 
 MLP = "mlp_clinic_flatten"  # 主口径（E2 唯一搜索目标模型）
@@ -88,10 +87,10 @@ FIELDS = [
     "report_c", "report_std",
     "deleak_c", "deleak_std",
     "delta_report_minus_deleak",
-    "reach_c", "reach_std", "reach_bp_c", "reach_bp_std",
-    "delta_deleak_minus_reach", "delta_C_minus_Bp",
+    "reach_c", "reach_std", "reach_b_c", "reach_b_std",
+    "delta_deleak_minus_reach", "delta_C_minus_B",
     "n_fields_greedy", "n_missed",
-    "report_cox_c", "deleak_cox_c", "delta_report_minus_deleak_cox",
+    "report_cox_c",
     "status",
 ]
 
@@ -146,8 +145,8 @@ def work_n_fields(work: str, templates: Path = TEMPLATES) -> int | None:
     return len(json.loads(path.read_text(encoding="utf-8")).get("fields", []))
 
 
-def load_three_arm(path: Path) -> dict[tuple[str, str], dict]:
-    """three_arm.csv -> {(dataset, work): row dict}；文件缺失 -> 空表（全部 pending）。"""
+def load_two_arm(path: Path) -> dict[tuple[str, str], dict]:
+    """two_arm.csv -> {(dataset, work): row dict}；文件缺失 -> 空表（全部 pending）。"""
     path = Path(path)
     if not path.exists():
         return {}
@@ -156,6 +155,24 @@ def load_three_arm(path: Path) -> dict[tuple[str, str], dict]:
     for _, row in df.iterrows():
         out[(str(row["dataset"]), str(row["work"]))] = row.to_dict()
     return out
+
+
+def search_best_c(dataset: str) -> dict | None:
+    """搜索 result.json 的 best_cv_c_mean(bank-only 口径下即臂 C 的 c-index)。"""
+    path = C3.search_result_json(dataset)
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mean = data.get("best_cv_c_mean")
+    if mean is None:
+        return None
+    per_fold = data.get("best_cv_folds") or []
+    std = None
+    if len(per_fold) >= 2:
+        import math
+        m = sum(per_fold) / len(per_fold)
+        std = math.sqrt(sum((x - m) ** 2 for x in per_fold) / (len(per_fold) - 1))
+    return {"c": float(mean), "std": std}
 
 
 def _num(value) -> float | None:
@@ -182,37 +199,44 @@ def _cell(metric: dict | None, key: str):
 def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
                n_event: dict[str, int], *,
                arm_a_root: Path = ARM_A_ROOT, arm_b_root: Path = ARM_B_ROOT,
-               three_arm: dict[tuple[str, str], dict] | None = None,
+               two_arm: dict[tuple[str, str], dict] | None = None,
                templates: Path = TEMPLATES) -> list[dict]:
-    """(dataset, work) × 三档；缺臂不中断（C -> pending，报告值缺 -> n/a）。"""
-    if three_arm is None:
-        three_arm = load_three_arm(THREE_ARM_CSV)
+    """(dataset, work) × 三档;缺臂不中断(C -> pending,报告值缺 -> n/a)。
+
+    口径(bank-only,2026-10-07):去泄露值 = 臂 B(Test_3_{work}_{ds},bank 切片;
+    scheme 分支已删 T31);可达值 = two_arm.csv 的 C,缺失时回退搜索 result.json 的
+    best_cv_c_mean(与臂 C 同嵌入同模型同折同 seed)。
+    """
+    if two_arm is None:
+        two_arm = load_two_arm(TWO_ARM_CSV)
     rows: list[dict] = []
     for dataset, work in pairs:
         if dataset not in n_event:
-            raise SystemExit(f"[error] n_event 表缺 {dataset}（manifest/event_summary）")
+            raise SystemExit(f"[error] n_event 表缺 {dataset}(manifest/event_summary)")
         n_ev = n_event[dataset]
         report = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, MLP)
         report_cox = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
-        deleak = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv",
-                             f"{work}__landmark_0", MLP)
-        deleak_cox = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv",
-                                 f"{work}__landmark_0", COX)
-        arm3 = three_arm.get((dataset, work))
+        # 去泄露值:臂 B(bank 切片;scheme 分支已删 T31)
+        b_key = f"{C3.b_scheme_name(work, dataset)}__landmark_0"
+        deleak = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv", b_key, MLP)
+        arm3 = two_arm.get((dataset, work))
 
         d1 = None
         if report is not None and deleak is not None:
             d1 = _r6(report["mean"] - deleak["mean"])
-        d1_cox = None
-        if report_cox is not None and deleak_cox is not None:
-            d1_cox = _r6(report_cox["mean"] - deleak_cox["mean"])
 
         reach = _num(arm3.get("C_c")) if arm3 else None
         reach_std = _num(arm3.get("C_std")) if arm3 else None
-        reach_bp = _num(arm3.get("Bp_c")) if arm3 else None
-        reach_bp_std = _num(arm3.get("Bp_std")) if arm3 else None
+        reach_b = _num(arm3.get("B_c")) if arm3 else None
+        reach_b_std = _num(arm3.get("B_std")) if arm3 else None
+        d_c_b = _num(arm3.get("delta_C_minus_B")) if arm3 else None
+        if reach is None:
+            # 回退:搜索 result.json 的 best_cv_c_mean(与臂 C 同口径,零训练)
+            best = search_best_c(dataset)
+            if best is not None:
+                reach = best["c"]
+                reach_std = best["std"]
         d2 = _r6(deleak["mean"] - reach) if (deleak is not None and reach is not None) else None
-        d_c_bp = _num(arm3.get("delta_C_minus_Bp")) if arm3 else None
 
         rows.append({
             "dataset": dataset,
@@ -227,15 +251,14 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
             "delta_report_minus_deleak": NA if d1 is None else d1,
             "reach_c": PENDING if reach is None else reach,
             "reach_std": PENDING if reach is None else reach_std,
-            "reach_bp_c": PENDING if reach_bp is None else reach_bp,
-            "reach_bp_std": PENDING if reach_bp is None else reach_bp_std,
+            "reach_b_c": PENDING if reach_b is None else reach_b,
+            "reach_b_std": PENDING if reach_b is None else reach_b_std,
             "delta_deleak_minus_reach": PENDING if d2 is None else d2,
-            "delta_C_minus_Bp": PENDING if d_c_bp is None else d_c_bp,
+            "delta_C_minus_B": PENDING if d_c_b is None else d_c_b,
             "n_fields_greedy": PENDING if arm3 is None else int(arm3["n_fields_greedy"]),
             "n_missed": PENDING if arm3 is None else int(arm3["n_missed"]),
             "report_cox_c": _cell(report_cox, "mean"),
-            "deleak_cox_c": _cell(deleak_cox, "mean"),
-            "delta_report_minus_deleak_cox": NA if d1_cox is None else d1_cox,
+            
             "status": "ok" if reach is not None else "pending_C",
         })
     rows.sort(key=lambda r: (TIER_ORDER[r["tier"]], r["dataset"], r["work"]))
@@ -441,11 +464,11 @@ def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
                 mean, _, n = fold_mean_std(remap_legacy_result_path(rb["results_dir"]))
                 checks["去泄露值=arm_B折文件重算"] = (abs(float(r["deleak_c"]) - mean) < 1e-12
                                           and n == 5)
-        # 3) 可达值：three_arm.csv 重读
-        arm3 = load_three_arm(THREE_ARM_CSV).get((dataset, work))
-        checks["可达值=three_arm.csv"] = (
+        # 3) 可达值：two_arm.csv 重读
+        arm3 = load_two_arm(TWO_ARM_CSV).get((dataset, work))
+        checks["可达值=two_arm.csv"] = (
             arm3 is not None and abs(float(r["reach_c"]) - float(arm3["C_c"])) == 0.0
-            and abs(float(r["reach_bp_c"]) - float(arm3["Bp_c"])) == 0.0)
+            and abs(float(r["reach_b_c"]) - float(arm3["B_c"])) == 0.0)
         # 4) 档间 Δ 与手算差值一致（同为 6 位舍入）；报告值缺时 Δ1 = n/a
         if _num(r["report_c"]) is None:
             checks["Δ1=n/a（报告值缺）"] = str(r["delta_report_minus_deleak"]) == NA
@@ -458,13 +481,13 @@ def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
         # 5) cox 交叉列同源
         rc = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
         if rc is None:
-            checks["cox 报告列 n/a"] = (str(r["report_cox_c"]) == NA
-                                        and str(r["delta_report_minus_deleak_cox"]) == NA)
+            checks["cox 报告列 n/a"] = (str(r["report_cox_c"]) == NA)
+
         else:
             checks["cox 报告列=arm_A表"] = (
                 abs(float(r["report_cox_c"]) - rc["mean"]) == 0.0)
-        # 6) n_fields_work 与 three_arm 对齐（表格口径自洽）
-        checks["n_fields_work=three_arm"] = (
+        # 6) n_fields_work 与 two_arm 对齐（表格口径自洽）
+        checks["n_fields_work=two_arm"] = (
             arm3 is not None and int(r["n_fields_work"]) == int(arm3["n_fields_work"]))
         for name, passed in checks.items():
             print(f"      [{'PASS' if passed else 'FAIL'}] {name}")

@@ -1,2 +1,0 @@
-demographic_cause_of_death_source_template,demographic_sex_at_birth_template,diagnoses_ajcc_staging_system_edition_template,diagnoses_diagnosis_is_primary_disease_template,diagnoses_pathology_details_lymph_nodes_positive_template,diagnoses_tissue_or_organ_of_origin_template
-Cause Of Death Source is {}.,The patient sex at birth is {}.,AJCC Staging System Edition is {}.,This diagnosis represents the primary disease: {}.,The number of tumor-positive lymph nodes is {}.,The primary tumor site is {}.

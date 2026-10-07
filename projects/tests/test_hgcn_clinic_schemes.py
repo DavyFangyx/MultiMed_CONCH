@@ -55,7 +55,6 @@ from manual_pipeline.hgcn_clinic import (  # noqa: E402
     resolve_hgcn_schemes,
     run_hgcn_clinic,
 )
-from manual_pipeline.json2prompt import run_json2prompt  # noqa: E402
 from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR, dataset_hgcn_clinic_dir, global_mapping_dir  # noqa: E402
 
 
@@ -83,7 +82,7 @@ def test_resolve_hgcn_schemes_accepts_registered():
     # 论文方案 / templates 自定义方案显式点名
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
-    assert resolve_hgcn_schemes("Test_3_greedy_TCGA-LAML") == ["Test_3_greedy_TCGA-LAML"]
+    assert resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML") == ["Test_3_MULTISURV_TCGA-LAML"]
     with pytest.raises(ValueError):
         resolve_hgcn_schemes("NOT_A_REGISTERED_SCHEME")
 
@@ -91,7 +90,7 @@ def test_resolve_hgcn_schemes_accepts_registered():
 def test_load_hgcn_scheme_fields_registers_every_loaded_scheme():
     _load_scheme_fields()
     assert set(HGCN_SCHEME_FIELDS) == set(SCHEME_FIELDS)
-    for scheme in ["MULTISURV", "Test_3_greedy_TCGA-LAML"]:
+    for scheme in ["MULTISURV", "Test_3_MULTISURV_TCGA-LAML"]:
         assert HGCN_SCHEME_FIELDS[scheme] == list(SCHEME_FIELDS[scheme])
 
 
@@ -99,7 +98,7 @@ def test_artifact_field_name_uses_field_path():
     _load_scheme_fields()
     # L0-L5 占位符命名空间已随 PGC 线移除：节点名统一为 fields.json 字段路径
     assert artifact_field_name("MULTISURV", "project.project_id") == "project.project_id"
-    assert artifact_field_name("Test_3_greedy_TCGA-LAML", FIELD_BANK_FIELD) == FIELD_BANK_FIELD
+    assert artifact_field_name("Test_3_MULTISURV_TCGA-LAML", FIELD_BANK_FIELD) == FIELD_BANK_FIELD
 
 
 # --------------------------------------------------------------------------
@@ -166,8 +165,6 @@ def _write_scheme(template_dir: Path) -> None:
     (scheme_dir / "fields.json").write_text(
         json.dumps({"fields": SCHEME_FIELDS_MIXED, "source": "gdc"}), encoding="utf-8"
     )
-    header = ",".join(field_output_col(f) for f in SCHEME_FIELDS_MIXED)
-    (scheme_dir / "template.csv").write_text(header + "\n", encoding="utf-8")
 
 
 def _synthetic_cases() -> list[dict]:
@@ -390,29 +387,13 @@ def _expected_node(field: str, values: dict):
 
 
 @pytest.mark.parametrize("landmark_time", [None, 0, 365, 730])
-def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
+def test_landmark_node_values_match_extract_values(tmp_path, landmark_time):
+    """hgcn 节点值 vs extract_values(同一份取值源;prompt 链路已退役,bank 切片同源)。"""
     _load_scheme_fields()
     cases_file = tmp_path / "cases.json"
     cases_file.write_text(json.dumps([_timed_case()]), encoding="utf-8")
     subdir = "" if landmark_time is None else f"landmark_{landmark_time}"
     fields = list(SCHEME_FIELDS["MULTISURV"])
-
-    # prompt 链路：与 hgcn 同一个 extract_values，写 prompts.csv
-    prompts_csv = Path(
-        run_json2prompt(
-            json_path=str(cases_file),
-            scheme="MULTISURV",
-            template_dir=DEFAULT_TEMPLATE_DIR,
-            prompt_dir=str(tmp_path / "prompts"),
-            landmark_time=landmark_time,
-            landmark_subdir=subdir,
-        )
-    )
-    prompts = pd.read_csv(prompts_csv).set_index("patient_id")
-    tpl_df = pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "MULTISURV" / "template.csv")
-    templates = {
-        field: str(tpl_df[field_output_col(field)].dropna().iloc[0]).strip() for field in fields
-    }
 
     out_root = tmp_path / "HGCN_clinic"
     run_hgcn_clinic(
@@ -440,9 +421,6 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
             assert node == float(mapping.get(expected, mapping[BASELINE_OTHER_TOKEN]))
         else:
             assert node == expected, f"{field} @T={landmark_time}"
-        # prompts.csv 的同一字段格 = 同一份 extract_values 渲染（逐字）
-        cell = prompts.loc[patient_id, field_output_col(field)]
-        assert cell == templates[field].replace("{}", str(values.get(field, "not reported")), 1)
 
 
 @pytest.mark.parametrize(
@@ -450,23 +428,11 @@ def test_landmark_node_values_match_prompt_pipeline(tmp_path, landmark_time):
     [(None, True), (0, False), (365, False), (730, True)],
 )
 def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, expected_present):
-    """确诊 400 天 / 随访 700 天：T=730 全保留，T=0/365 全部裁掉（两链路同进同出）。"""
+    """确诊 400 天 / 随访 700 天:T=730 全保留,T=0/365 全部裁掉(hgcn 节点与取值同进同出)。"""
     _load_scheme_fields()
     cases_file = tmp_path / "cases.json"
     cases_file.write_text(json.dumps([_timed_case()]), encoding="utf-8")
     subdir = "" if landmark_time is None else f"landmark_{landmark_time}"
-
-    prompts_csv = Path(
-        run_json2prompt(
-            json_path=str(cases_file),
-            scheme="MULTISURV",
-            template_dir=DEFAULT_TEMPLATE_DIR,
-            prompt_dir=str(tmp_path / "prompts"),
-            landmark_time=landmark_time,
-            landmark_subdir=subdir,
-        )
-    )
-    prompts = pd.read_csv(prompts_csv).set_index("patient_id")
 
     out_root = tmp_path / "HGCN_clinic"
     run_hgcn_clinic(
@@ -482,22 +448,11 @@ def test_landmark_mask_flips_node_and_prompt_together(tmp_path, landmark_time, e
     values = extract_values(_timed_case(), landmark_time=landmark_time)
     assert values["diagnoses[].ajcc_pathologic_stage"] == ("Stage IV" if expected_present else "Stage X")
     fields = list(SCHEME_FIELDS["MULTISURV"])
-    templates = {
-        field: str(
-            pd.read_csv(Path(DEFAULT_TEMPLATE_DIR) / "MULTISURV" / "template.csv")[
-                field_output_col(field)
-            ]
-            .dropna()
-            .iloc[0]
-        ).strip()
-        for field in fields
-    }
     for field in [f for f in TIMED_FIELDS if f in fields]:
         node = ttt["TCGA-XX-0001"][fields.index(field)]
         assert (node is not None) is expected_present, field
-        # 同一字段同一 landmark：prompts.csv 的格 = extract_values 的渲染（逐字）
-        cell = prompts.loc["TCGA-XX-0001", field_output_col(field)]
-        assert cell == templates[field].replace("{}", str(values.get(field, "not reported")), 1)
     # 无槽位的 demographic 字段两臂一致
     assert ttt["TCGA-XX-0001"][0] == 60.0
+
+
 

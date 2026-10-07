@@ -54,7 +54,6 @@ from manual_pipeline.cli import main as manual_main  # noqa: E402
 from manual_pipeline.config import SCHEME_FIELDS, load_custom_schemes, reset_scheme_registry  # noqa: E402
 from manual_pipeline.extract import extract_values  # noqa: E402
 from manual_pipeline.hgcn_clinic import load_hgcn_scheme_fields  # noqa: E402
-from manual_pipeline.json2prompt import run_json2prompt, generate_prompt_row  # noqa: E402
 from manual_pipeline.landmark import (  # noqa: E402
     LANDMARK_NONE_TAG,
     LandmarkSetting,
@@ -254,81 +253,6 @@ def _write_json_dir(tmp_path: Path) -> Path:
     json_path = tmp_path / "cases.json"
     json_path.write_text(json.dumps([_timed_case()]), encoding="utf-8")
     return json_path
-
-
-def test_json2prompt_landmark_layout_and_values(tmp_path):
-    _load_scheme_fields()
-    json_path = _write_json_dir(tmp_path)
-    prompt_root = tmp_path / "outputs" / "TCGA-KIRC" / "A_manual"
-
-    legacy_out = Path(
-        run_json2prompt(
-            json_path=str(json_path),
-            scheme="MULTISURV",
-            template_dir=DEFAULT_TEMPLATE_DIR,
-            prompt_dir=str(prompt_root),
-            dataset_name="TCGA-KIRC",
-        )
-    )
-    assert legacy_out == prompt_root / "MULTISURV" / "prompts.csv"
-
-    masked_out = Path(
-        run_json2prompt(
-            json_path=str(json_path),
-            scheme="MULTISURV",
-            template_dir=DEFAULT_TEMPLATE_DIR,
-            prompt_dir=str(prompt_root),
-            dataset_name="TCGA-KIRC",
-            landmark_time=0,
-            landmark_subdir="landmark_0",
-        )
-    )
-    assert masked_out == prompt_root / "MULTISURV" / "landmark_0" / "prompts.csv"
-
-    legacy_df = pd.read_csv(legacy_out)
-    masked_df = pd.read_csv(masked_out)
-    # Same field set: the two arms may only differ by the mask.
-    assert list(legacy_df.columns) == list(masked_df.columns)
-    assert len(legacy_df) == len(masked_df) == 1
-    assert legacy_df["patient_id"].tolist() == masked_df["patient_id"].tolist()
-
-    changed = [col for col in legacy_df.columns if legacy_df[col][0] != masked_df[col][0]]
-    assert changed == [
-        # diagnoses[] is a timed family -> masked at t0；derived.* 随治疗时点一并消失
-        "diagnoses_ajcc_pathologic_stage_template",
-        "diagnoses_prior_malignancy_template",
-        "derived_pharmaceutical_therapy_template",
-    ]
-    # demographic.* 等无时点字段：两臂逐字相同
-    assert masked_df["demographic_age_at_index_template"][0] == legacy_df["demographic_age_at_index_template"][0]
-    assert masked_df["demographic_age_at_index_template"][0] == "The patient is 60 years old at index."
-
-
-def test_generate_prompt_row_passes_landmark_through():
-    _load_scheme_fields()
-    templates = {
-        "demographic.age_at_index": "Age {}.",
-        "demographic.sex_at_birth": "Sex {}.",
-        "demographic.race": "Race {}.",
-        "exposures[].alcohol_history": "Alcohol {}.",
-        "diagnoses[].primary_diagnosis": "Primary {}.",
-        "diagnoses[].site_of_resection_or_biopsy": "Site {}.",
-        "diagnoses[].morphology": "Morphology {}.",
-        "follow_ups[].other_clinical_attributes[].bmi": "BMI {}.",
-        "exposures[].cigarettes_per_day": "Cigarettes {}.",
-        "derived.radiation_therapy": "Radiation {}.",
-        "derived.pharmaceutical_therapy": "Pharma {}.",
-    }
-    legacy = generate_prompt_row(_timed_case(), templates, "HGCN_ESCA", dataset_name="TCGA-KIRC")
-    masked = generate_prompt_row(
-        _timed_case(), templates, "HGCN_ESCA", landmark_time=0, dataset_name="TCGA-KIRC"
-    )
-    assert legacy["demographic_age_at_index_template"] == "Age 60."
-    assert masked["demographic_age_at_index_template"] == "Age 60."
-    assert legacy["follow_ups_other_clinical_attributes_bmi_template"] == "BMI 24.5."
-    assert masked["follow_ups_other_clinical_attributes_bmi_template"] == "BMI not reported."
-    assert legacy["derived_pharmaceutical_therapy_template"] == "Pharma yes."
-    assert masked["derived_pharmaceutical_therapy_template"] == "Pharma unknown."
 
 
 def test_baseline_scheme_output_dir_landmark_subdir(tmp_path):
@@ -757,41 +681,29 @@ def test_cli_landmark_shift_choices(capsys):
     assert "--landmark_shift" in capsys.readouterr().err
 
 
-def test_cli_json2prompt_landmark_call(tmp_path):
-    """CLI wiring: single-JSON mode writes into the landmark subdir."""
+def test_cli_json2prompt_retired_fails_fast(tmp_path):
+    """json2prompt 已退役:CLI 调用必须快速失败并提示 bank 切片。"""
     _load_scheme_fields()
     json_path = _write_json_dir(tmp_path)
     prompt_root = tmp_path / "outputs" / "TCGA-KIRC" / "A_manual"
-    manual_main(
-        [
-            "json2prompt",
-            "--json_path",
-            str(json_path),
-            "--scheme",
-            "MULTISURV",
-            "--template_dir",
-            DEFAULT_TEMPLATE_DIR,
-            "--prompt_dir",
-            str(prompt_root),
-            "--landmark_time",
-            "0",
-        ]
-    )
-    assert (prompt_root / "MULTISURV" / "landmark_0" / "prompts.csv").is_file()
-    assert not (prompt_root / "MULTISURV" / "prompts.csv").exists()
+    with pytest.raises(SystemExit) as exc:
+        manual_main(
+            [
+                "json2prompt",
+                "--json_path",
+                str(json_path),
+                "--scheme",
+                "MULTISURV",
+                "--template_dir",
+                DEFAULT_TEMPLATE_DIR,
+                "--prompt_dir",
+                str(prompt_root),
+                "--landmark_time",
+                "0",
+            ]
+        )
+    assert "bank" in str(exc.value)
+    assert not (prompt_root / "MULTISURV" / "landmark_0" / "prompts.csv").exists()
 
-    # and the legacy call (no flag) keeps the legacy path
-    manual_main(
-        [
-            "json2prompt",
-            "--json_path",
-            str(json_path),
-            "--scheme",
-            "MULTISURV",
-            "--template_dir",
-            DEFAULT_TEMPLATE_DIR,
-            "--prompt_dir",
-            str(prompt_root),
-        ]
-    )
-    assert (prompt_root / "MULTISURV" / "prompts.csv").is_file()
+
+

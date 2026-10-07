@@ -374,9 +374,9 @@ def cmd_report() -> None:
         lines = csv_path.read_text(encoding="utf-8").splitlines()
         ok = err = 0
         for line in lines[1:]:
-            if ",ok," in line:
+            if line.endswith(",ok"):
                 ok += 1
-            elif ",error," in line:
+            elif line.endswith(",error"):
                 err += 1
         total_rows += ok + err
         total_ok += ok

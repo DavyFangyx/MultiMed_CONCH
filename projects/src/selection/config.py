@@ -8,7 +8,7 @@ DEFAULT_SEED = 0
 N_FOLDS = 5
 MODALITY = "mlp_clinic_flatten"
 ENCODING = "prompt"
-LANDMARK_TAGS = ("landmark_0", "landmark_365", "landmark_730", "landmark_none")
+LANDMARK_TAGS = ("landmark_0", "landmark_365", "landmark_730", "static_only")
 K_GRID_VALUES = (1, 3, 5, 8, 12, 20)
 
 
@@ -17,6 +17,17 @@ def budget_for(p: int) -> int:
     if p < 0:
         raise ValueError("p must be non-negative")
     return p * (p + 1) // 2
+
+
+def budget_cap_for(p: int, cap: int | None = None) -> int:
+    """Test_6 截断预算:min(p(p+1)/2, cap);cap=None 保持原全预算口径。"""
+    budget = budget_for(p)
+    if cap is None:
+        return budget
+    cap = int(cap)
+    if cap < 0:
+        raise ValueError("budget cap must be non-negative")
+    return min(budget, cap)
 
 
 def parse_seeds(raw=None) -> list[int]:

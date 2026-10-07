@@ -80,7 +80,8 @@ def seed_record(seed_dir) -> dict:
         "wall_ms": int(result.get("wall_ms", sum(int(row.get("wall_ms", 0)) for row in evaluations))),
         "stop_reason": result.get("stop_reason", ""),
         "metadata": dict(result.get("metadata") or {}),
-        "budget": budget_for(len(config.get("fields") or ())),
+        "budget": int(config.get("effective_budget") or budget_for(len(config.get("fields") or ()))),
+        "budget_cap": config.get("budget_cap"),
         "fields": list(config.get("fields") or ()),
         "restricted_anchor": bool(config.get("restricted_anchor", False)),
         "seed_dir": str(seed_dir),
@@ -243,7 +244,8 @@ def evaluate_h2(seed_rows) -> dict:
             "supported": comparisons > 0 and rate >= 0.6}
 
 
-def _plot_anytime(seed_rows, display_root):
+def plot_anytime(seed_rows, display_root, budget_cap=None):
+    """公开的 anytime 曲线绘制(Test_6 bake-off 复用);cap 在预算 B' 处截断曲线。"""
     import matplotlib.pyplot as plt
     grouped = defaultdict(list)
     for row in seed_rows:
@@ -258,7 +260,8 @@ def _plot_anytime(seed_rows, display_root):
             if row["algorithm"].startswith(("A0_", "A0b_", "A0c_")):
                 references.setdefault(row["algorithm"], []).append(row["cv_c_mean"])
                 continue
-            points = anytime_curve(evaluations, row["budget"])
+            budget = min(int(row.get("budget") or 0), int(budget_cap)) if budget_cap else int(row.get("budget") or 0)
+            points = [point for point in anytime_curve(evaluations, budget) if point[0] <= budget]
             if points:
                 ax.step(*zip(*points), where="post", alpha=0.45, label=f'{row["algorithm"]} seed {row["seed"]}')
                 if row["algorithm"].startswith("A2_"):
@@ -316,7 +319,7 @@ def _plot_landmarks(aggregates, display_root):
         grouped[(row["algorithm"], row["modality"])].append(row)
     out = Path(display_root) / "landmark"
     out.mkdir(parents=True, exist_ok=True)
-    order = ("landmark_0", "landmark_365", "landmark_730", "landmark_none")
+    order = ("landmark_0", "landmark_365", "landmark_730", "static_only")
     for (algorithm, modality), rows in grouped.items():
         values = defaultdict(list)
         for row in rows:
@@ -352,7 +355,7 @@ def generate_report(results_root=test_results_dir("Test_3_search") / "prompt",
     _write_csv(display_root / "main_table.csv", main_rows)
     h1, h2 = evaluate_h1(primary_rows), evaluate_h2(primary_rows)
     gaps = _plot_anchor_gaps(seed_rows, display_root)
-    _plot_anytime(primary_rows, display_root)
+    plot_anytime(primary_rows, display_root)
     _plot_landmarks(aggregates, display_root)
     summary = {"h1": h1, "h2": h2, "anchor_gaps": gaps, "n_seed_runs": len(seed_rows)}
     (display_root / "statistics.json").write_text(

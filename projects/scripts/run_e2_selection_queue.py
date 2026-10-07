@@ -28,6 +28,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--algo", required=True)
     p.add_argument("--stop_mode", default=DEFAULT_STOP_MODE, choices=STOP_MODES,
                    help="A2_greedy 停止标准:sig=Wilcoxon 显著 + gain(原口径) / gain_only=仅 gain(D4 修订 2026-10-04)")
+    p.add_argument("--budget_cap", type=int, default=None,
+                   help="Test_6 截断预算上限 min(p(p+1)/2, cap);默认无上限(原全预算口径)")
     p.add_argument("--seed", default="0")
     p.add_argument("--field_bank_dir")
     p.add_argument("--splits")
@@ -108,7 +110,11 @@ def main(argv=None) -> int:
             try:
                 job = json.loads(path.read_text(encoding="utf-8"))
                 print(f"[e2] START {path.name}", flush=True)
-                completed = subprocess.run(_command(job), cwd=ROOT, check=False)
+                # 保险丝:evaluate.py 孙进程若持有 stdout 管道,runner 会永久阻塞在
+                # pipe_read(2026-10-06 夜出现过,BLCA/BRCA 挂 10h)。超时判 failed,
+                # 由 watch 的 retry + 缓存接力续跑。大预算搜索(如 A1_random × PAAD
+                # ≈ 500 评估 × 3 分钟)合法需 24h+,故上限取 48h。
+                completed = subprocess.run(_command(job), cwd=ROOT, check=False, timeout=48 * 3600)
                 if completed.returncode:
                     raise RuntimeError(f"run_e2_selection.py exited with {completed.returncode}")
             except Exception as exc:

@@ -3,9 +3,9 @@
 #
 # 内容（spec §8bis，口径见 scripts/Test_5_common.py 头注释）：
 #   5E_2b  E→baseline 复现 Test_2b 两臂（A static_only / B landmark_0）× mlp_clinic_flatten
-#   5E_3   E→baseline 复现 Test_3 臂 B′（Test_3_{work}_{ds}）/ C（Test_3_greedy_{ds}）
+#   5E_3   E→baseline 复现 Test_3 臂 B（Test_3_{work}_{ds}）/ C（Test_3_greedy_{ds}）
 #   5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（BRCA/COAD/KIRC/LIHC）
-#   5M_3   M→clinic_cox 复现 Test_3 臂 B′/C
+#   5M_3   M→clinic_cox 复现 Test_3 臂 B/C
 #   产物：runs -> results/Test_5_invariance/{sub}/runs；表 -> results/Test_5_invariance/{sub}/{dataset}/
 #   Q 轴重算：results_display/scripts/Test_5_q_recompute.py --merge（D7：dump vs 重算 diff=0）
 #

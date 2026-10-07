@@ -14,14 +14,14 @@
 |---|---|---|---|
 | `Clinic_Analyzer/configs/` | `univariate` | `Test_1a_t0` | univariate t0 臂(Test_1a 的 t0 数据源),33/33 done |
 | `Clinic_Analyzer/configs/` | `univariate_raw` | `Test_1a_off` | Test_1a off 臂 |
-| `Clinic_Analyzer/configs/` | `A_manual` | `Test_2b_arms` + `Test_3_arms` | 拆分:Test_2b 两臂 conf 归档到 `Test_2b_arms`;Test_3 臂 B′/C conf 归 `Test_3_arms` |
+| `Clinic_Analyzer/configs/` | `A_manual` | `Test_2b_arms` + `Test_3_arms` | 拆分:Test_2b 两臂 conf 归档到 `Test_2b_arms`;Test_3 臂 B/C conf 归 `Test_3_arms` |
 | `Clinic_Analyzer/configs/` | `E2_selection` | `Test_3_search` | Test_3 贪婪搜索队列 |
 | `Clinic_Analyzer/configs/` | `queue` `running` `done` `failed` `z_exp_gen` | 删除 | 空遗留 |
 | `results/` | `univariate` | `Test_1a/arm_t0` | |
 | `results/` | `univariate_raw` | `Test_1a/arm_off` | 内部 `univariate/prompt/...` 层由写入方构造,保留 |
 | `results/` | `leak_audit` | `Test_2a_leak_audit` | |
 | `results/` | `A_manual` | `Test_2b/arm_A` | 报告值(Test_4 三档来源) |
-| `results/` | `A_manual_landmark` | `Test_2b/arm_B` | 去泄露值(含 Test_3 臂 B′ 合并行) |
+| `results/` | `A_manual_landmark` | `Test_2b/arm_B` | 去泄露值(含 Test_3 臂 B 合并行) |
 | `results/` | `E2_selection` | `Test_3_search` | 搜索缓存 cache.sqlite |
 | `results/` | `greedy` `Test_2_selection` | `results/_archive/` | 遗留,空则删 |
 | `results_display/` | `leak_audit` | `Test_2a_leak_audit` | 含 scripts/audit_leak.py |

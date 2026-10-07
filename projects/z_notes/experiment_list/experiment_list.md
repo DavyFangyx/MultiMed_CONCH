@@ -1,6 +1,6 @@
 # 实验清单与协议速查
 
-口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。三处目录命名(configs/results/results_display)的唯一公约见 [naming_convention.md](naming_convention.md)。
+口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。三处目录命名(configs/results/results_display)的唯一公约见 [naming_convention.md](naming_convention.md)。全量重跑操作手册见 [runbook.md](runbook.md)。
 
 ## 背景(一句话)
 
@@ -18,7 +18,7 @@ Test_1a 单字段泄露对照                     Test_1b 各数据集 Cindex �
         ↓                                        ↓
 Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工作没选字段 → 低估
    2a 审计(leak_rate)                        贪婪搜索找最优组合
-   2b 去泄露对照(Δc = 报告−去泄露)            三臂对照(Δc = 可达−工作组合)
+   2b 去泄露对照(Δc = 报告−去泄露)            两臂对照(Δc = 可达−工作组合)
         ↓                                        ↓
         └─────────── Test_4 三档汇总表收口 ───────────┘
         报告值 − 去泄露值 = 时间轴链收口(高估量)
@@ -42,9 +42,10 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 33 TCGA | `results_display/Test_1b_dataset_cindex/` |
 | **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2a_leak_audit/` |
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
-| **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(sig_stop 0.005)最优组合 vs 各工作组合 → 低估证据,三臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
+| **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(gain_only δ=0.005)最优组合 vs 各工作组合 → 低估证据,两臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
 | **Test_5** 不变性 | 编码(E)/模型(M)/指标(Q)轴重复 Test_2b 与 Test_3(四子检查 5E_2b/5E_3/5M_2b/5M_3,规格 `Test_series_spec.md` §8bis) | 15 主集(n_event ≥100);多模态仅 BRCA/COAD/KIRC/LIHC | `results/Test_5_invariance/`、`results_display/Test_5_invariance/` |
+| **Test_6** 搜索算法选型(字段轴链选型) | 同预算 min(B,500) 下 A1–A6 + SEAS 对比,GT = 对比内最好(不做穷举 ANCHOR);试点 3 数据集定胜者,胜者推广生产搜索 | 试点 GBM / LGG / PAAD(landmark_0);生产 = 15 主集 | `Clinic_Analyzer/configs/Test_6_search`、`results/Test_6_search/`、`results_display/Test_6_search/` |
 | ~~旧 Test_3b / H3b~~ | 单字段排序对照 | — | ❌ 已取消 |
 
 ## 各实验协议
@@ -86,7 +87,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 
 - **数据集**:manifest 主集(协议 A ≥100 档,15 个);低事件档仅定性。
 - **搜索**:池 = landmark_0 field bank(模板 33/33 已填齐);算法 = 前向贪婪(A2_greedy),早停 sig_stop = gain < 0.005 且 paired Wilcoxon p ≥ 0.05 连续 3 步(D4 已确认)。
-- **三臂**(全走 A_pipeline,同编码器/模型/划分/seed):B = 工作组合 × scheme 模板 × lm0;B′ = 工作组合 × bank 模板 × lm0;C = 贪婪最优 × bank 模板 × lm0。头条 Δc = C − B′。
+- **两臂**(全走 bank 切片链路,同编码器/模型/划分/seed):B = 工作组合 × bank 模板 × lm0(去泄露值;原臂 B′ 更名);C = 贪婪最优 × bank 模板 × lm0(可达值)。头条 Δc = C − B。scheme 模板分支已删除(T31),论文方案仅保留 fields.json 字段登记。
 - **评估器**:`mlp_clinic_flatten`(E2 唯一搜索目标模型)。
 - **轮数 / 协议**:5 折 val c-index × seed 0(默认;E2 规格支持逗号列表多 seed,跨 seed 报均值 ± std)。产物 `results/Test_3_greedy_vs_works/`。
 
@@ -102,6 +103,28 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图节点,**编码先落地、评估臂待 HGCN 模型接入后补跑**);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC,本轮不含 HGCN 模型);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
 - **四个子检查**:5E_2b / 5E_3(换编码,本轮只跑 baseline 臂)、5M_2b / 5M_3(换分析器),本轮约 388 新 confs(hgcn 评估臂 ≈188 待模型接入,全量 ≈546);锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
 - **HGCN**(用户指令 2026-10-03):编码先落地(P5:任意 scheme + landmark,pkl 格式不变 + L0-L5 等价性回归),模型暂不接入(用户移植的训练器为独立工作);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)冻结,已备份仓库外。
+
+### Test_6 搜索算法选型(字段轴链选型)
+
+- **命题**:在相同逻辑预算下,哪个搜索算法能在 TCGA 上找到最好的字段组合;GT = 对比算法中表现最好者的结果(**比较性 GT**,诚实声明非全局最优,不做 ANCHOR 穷举)。
+- **数据集**:试点 GBM(p=19)/ LGG(p=30)/ PAAD(p=38),landmark_0;胜者推广 15 主集生产搜索。
+- **搜索**:池 = landmark_0 field bank;算法 = A1 随机 / A2 前向贪婪(gain_only)/ A3 beam / A4 模拟退火 / A5 遗传 / A6 蚁群 / SEAS;参考线 A0 全字段、A0b 单变量 top-k(不参与 GT)。
+- **预算 / 评估器**:预算上限 = min(p(p+1)/2, cap),cap 可配置(当前 500,`--budget_cap`);`mlp_clinic_flatten`,5 折 × seed 0。
+- **判定**:平均 rank 排名(平局按 anytime AUC);无算法对贪心平均优势 ≥ 0.005 → 贪心胜出(生产零新增成本);优势为正但 < 0.005 且交错 → 升级 6 数据集;SEAS 进前 2 → 补跑三消融。
+- **投队列前闸门**:`scripts/check_search_labels.py`(label 文件无已知 gt≤0 患者)与 `scripts/cache_status.py`(旧 e2-v1 缓存行盘点)。
+- **产物**:configs `Clinic_Analyzer/configs/Test_6_search`、`results/Test_6_search/`、`results_display/Test_6_search/`(gap_table / win_rate / ranks / anytime / decision.json,汇总脚本 `scripts/run_bakeoff_report.py`)。
+- **投递模板**(每 (dataset, algo) 一次 queue 调用,`--out` 含 dataset+algo 防串目录):
+
+```bash
+for ds in TCGA-GBM TCGA-LGG TCGA-PAAD; do
+  for algo in A1_random A3_beam A4_anneal A5_genetic A6_aco SEAS A0_full A0b_topk; do
+    python scripts/run_e2_selection_queue.py --dataset $ds --landmark_time 0 --algo $algo \
+      --stop_mode gain_only --seed 0 --budget_cap 500 \
+      --queue_root Clinic_Analyzer/configs/Test_6_search \
+      --out results/Test_6_search/prompt/landmark_0/$ds/$algo
+  done
+done
+```
 
 ### 基础建设(非单一命题,已落地)
 

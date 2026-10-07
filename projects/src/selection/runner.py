@@ -10,10 +10,10 @@ import numpy as np
 
 from common.paths import test_results_dir
 
-from .config import MODALITY, parse_seeds, budget_for, STOP_MODES, DEFAULT_STOP_MODE
+from .config import MODALITY, parse_seeds, budget_cap_for, STOP_MODES, DEFAULT_STOP_MODE
 from .evaluator import Evaluator
 from .cache import SQLiteCache
-from .references import load_univariate_rows
+from .references import A0Full, A0bTopK, load_univariate_rows
 from .search import (AntColonySearcher, AnnealingSearcher, BeamSearcher,
                      ExhaustiveSearcher, GeneticSearcher, GreedySearcher,
                      RandomSearcher, SEASNoEISearcher, SEASNoIntSearcher,
@@ -26,6 +26,7 @@ SEARCHERS = {s.name: s for s in (RandomSearcher, GreedySearcher, BeamSearcher,
                                   AnnealingSearcher, GeneticSearcher, AntColonySearcher,
                                   SEASSearcher, SEASNoSemSearcher, SEASNoIntSearcher,
                                   SEASNoEISearcher, ExhaustiveSearcher)}
+REFERENCE_ALGOS = ("A0_full", "A0b_topk")  # 参考线,不参与预算竞争(Test_6 口径)
 
 
 def _univariate_paths(dataset, landmark_tag, seed, modality, csv_path=None, config_path=None):
@@ -65,14 +66,14 @@ def load_univariate_prior(dataset, landmark_tag, seed, fields, split_dir, *,
 
 
 def run_one(*, algo, seed, fields, inner, output=None, budget=None, cache=None,
-            field_index_hash="", split_hashes=(), train_args_hash="", dataset="",
-            landmark_tag="", encoding="prompt", modality=MODALITY,
-            univariate_scores=None, univariate_folds=None, semantic_embeddings=None,
-            field_indices=None, stop_mode=DEFAULT_STOP_MODE):
+            field_index_hash="", split_hashes=(), train_args_hash="", label_hash="",
+            dataset="", landmark_tag="", encoding="prompt", modality=MODALITY,
+            univariate_scores=None, univariate_folds=None, univariate_rows=None,
+            semantic_embeddings=None, field_indices=None, stop_mode=DEFAULT_STOP_MODE):
     started = time.perf_counter()
     ev = Evaluator(inner, fields, seed=seed, budget=budget,
                    cache=cache, field_index_hash=field_index_hash, split_hashes=split_hashes,
-                   train_args_hash=train_args_hash,
+                   train_args_hash=train_args_hash, label_hash=label_hash,
                    dataset=dataset, landmark_tag=landmark_tag, encoding=encoding,
                    modality=modality,
                    run_id=f"{getattr(inner, 'dataset', '')}-{seed}", algorithm=algo,
@@ -84,7 +85,14 @@ def run_one(*, algo, seed, fields, inner, output=None, budget=None, cache=None,
         ev.univariate_folds = tuple(tuple(row) for row in univariate_folds)
     if semantic_embeddings is not None:
         ev.semantic_embeddings = np.asarray(semantic_embeddings)
-    searcher = SEARCHERS[algo](stop_mode=stop_mode) if algo == "A2_greedy" else SEARCHERS[algo]()
+    if algo == "A0_full":
+        searcher = A0Full()
+    elif algo == "A0b_topk":
+        searcher = A0bTopK(univariate_rows or [])
+    elif algo == "A2_greedy":
+        searcher = SEARCHERS[algo](stop_mode=stop_mode)
+    else:
+        searcher = SEARCHERS[algo]()
     result = searcher.run(ev, tuple(fields), np.random.default_rng(seed))
     if output:
         out = Path(output); out.mkdir(parents=True, exist_ok=True)
@@ -107,9 +115,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="E2 subset selection")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--landmark_time", required=True, help="none or non-negative integer days")
-    parser.add_argument("--algo", required=True, choices=sorted((*SEARCHERS, "ANCHOR_TIMING")))
+    parser.add_argument("--algo", required=True, choices=sorted((*SEARCHERS, *REFERENCE_ALGOS, "ANCHOR_TIMING")))
     parser.add_argument("--stop_mode", default=DEFAULT_STOP_MODE, choices=STOP_MODES,
                         help="A2_greedy 停止标准:sig=Wilcoxon 显著 + gain(原口径) / gain_only=仅 gain(D4 修订 2026-10-04)")
+    parser.add_argument("--budget_cap", type=int, default=None,
+                        help="Test_6 截断预算上限 min(p(p+1)/2, cap);默认无上限(原全预算口径)")
     parser.add_argument("--seed", default="0")
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument("--splits", default=None)
@@ -133,7 +143,7 @@ def main(argv=None):
     from greedy.data import load_field_bank, default_analyzer_split_dir
     from common.paths import require_landmark_tag
 
-    tag = require_landmark_tag("landmark_none" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}")
+    tag = require_landmark_tag("static_only" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}")
     modalities = parse_modalities(args.inner_analyzer)
     ensure_modalities_allowed(args.dataset, modalities)
     bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(args.dataset, "prompt", tag)
@@ -149,7 +159,7 @@ def main(argv=None):
     if args.anchor_p is not None and seeds != [0]:
         parser.error("restricted ANCHOR-space comparisons only support --seed 0")
     needs_prior = ((args.algo in SEARCHERS and bool(getattr(SEARCHERS[args.algo], "uses_univariate_prior", False)))
-                   or args.algo == "ANCHOR" or args.anchor_p is not None)
+                   or args.algo in {"ANCHOR", "A0b_topk"} or args.anchor_p is not None)
     prior_by_seed = {}
     if needs_prior:
         for modality in modalities:
@@ -181,6 +191,9 @@ def main(argv=None):
     index_path = bank_dir / "field_index.json"
     index_hash = hashlib.sha256(index_path.read_bytes()).hexdigest() if index_path.exists() else ""
     split_hashes = tuple(hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(split_dir.glob("splits_*.csv")))
+    from greedy.data import default_label_file_for
+    label_path = default_label_file_for(args.dataset)
+    label_hash = hashlib.sha256(label_path.read_bytes()).hexdigest() if label_path else "missing"
     cache = SQLiteCache(test_results_dir("Test_3_search") / "cache.sqlite")
     for modality in modalities:
         base = base_root / modality
@@ -216,6 +229,7 @@ def main(argv=None):
                     inner, fields, seed=0, budget=budget_for(len(fields)), cache=cache,
                     field_index_hash=index_hash, split_hashes=split_hashes,
                     train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs, "modality": modality}, sort_keys=True).encode()).hexdigest(),
+                    label_hash=label_hash,
                     dataset=args.dataset, landmark_tag=tag, modality=modality,
                     run_id=f"timing-{args.dataset}-{tag}", algorithm=args.algo,
                     jsonl_path=out / "evaluations.jsonl", field_indices=field_indices,
@@ -239,20 +253,25 @@ def main(argv=None):
                 folds = tuple(_parse_folds(by_field[field]["per_fold"]) for field in fields)
             else:
                 scores, folds = (prior[1], prior[2]) if prior else (None, None)
-            run_budget = 2 ** len(fields) - 1 if args.algo == "ANCHOR" else budget_for(len(fields))
+            a0b_rows = prior[0] if (prior and args.algo == "A0b_topk") else None
+            run_budget = 2 ** len(fields) - 1 if args.algo == "ANCHOR" else budget_cap_for(len(fields), args.budget_cap)
             result = run_one(algo=args.algo, seed=seed, fields=fields, inner=inner,
                              output=out, budget=run_budget, cache=cache,
                              field_index_hash=index_hash, split_hashes=split_hashes,
                              train_args_hash=hashlib.sha256(json.dumps({"max_epochs": args.max_epochs}, sort_keys=True).encode()).hexdigest(),
+                             label_hash=label_hash,
                              dataset=args.dataset, landmark_tag=tag, encoding="prompt", modality=modality,
                              univariate_scores=scores, univariate_folds=folds,
+                             univariate_rows=a0b_rows,
                              semantic_embeddings=semantic, field_indices=field_indices,
                              stop_mode=args.stop_mode)
             (out / "run_config.json").write_text(json.dumps({"dataset": args.dataset, "landmark_tag": tag,
                 "encoding": "prompt", "modality": modality, "seed": seed, "val_equals_test": True,
                 "fields": list(fields), "split_dir": str(split_dir.resolve()),
                 "restricted_anchor": args.anchor_p is not None,
-                "p_anchor": args.anchor_p, "stop_mode": args.stop_mode}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                "p_anchor": args.anchor_p, "stop_mode": args.stop_mode,
+                "budget_cap": args.budget_cap, "effective_budget": run_budget},
+                ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(result.__dict__, ensure_ascii=False, default=list))
         if args.algo == "ANCHOR_TIMING":
             continue

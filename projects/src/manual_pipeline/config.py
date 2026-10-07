@@ -2,6 +2,9 @@
 
 L0-L5 / D0-D5 已随 PGC 线独立化移除(2026-10-06,决策 T32):本包只注册
 templates/manual_schemes 下的论文方案与自定义方案,数据源只有 gdc。
+
+句式模板(template.csv)已退役(2026-10-07,决策:编码统一 bank-only):
+本包只登记方案字段集(fields.json),编码一律走 field bank 切片路径。
 """
 
 from __future__ import annotations
@@ -13,7 +16,6 @@ from common.datasets import canonical_dataset_name, DATASET_ALIASES
 from common.fields import field_output_col
 
 
-SCHEME_TEMPLATE = {}
 SCHEME_PROMPT_FILE = {}
 SCHEME_DIRNAME = {}
 SCHEME_COLS = {}
@@ -76,7 +78,6 @@ ALL_TEXT_SCHEMES = list(PAPER_SCHEMES)
 
 
 def reset_scheme_registry() -> None:
-    SCHEME_TEMPLATE.clear()
     SCHEME_PROMPT_FILE.clear()
     SCHEME_DIRNAME.clear()
     SCHEME_COLS.clear()
@@ -124,12 +125,10 @@ def _register_scheme(name: str, cfg: dict, source: Path) -> None:
     if len(fields) != len(set(fields)):
         raise ValueError(f"方案 '{name}' 的 fields 有重复。")
     output_cols = [field_output_col(field) for field in fields]
-    template_file = cfg.get("template_file") or f"{name}/template.csv"
     prompt_file = cfg.get("prompt_file", "prompts.csv")
     dirname = cfg.get("dirname", name)
     datasets = _normalize_bound_datasets(cfg.get("datasets"))
     data_source = _normalize_scheme_source(cfg.get("source"), name)
-    SCHEME_TEMPLATE[name] = template_file
     SCHEME_PROMPT_FILE[name] = prompt_file
     SCHEME_DIRNAME[name] = dirname
     SCHEME_COLS[name] = output_cols
@@ -146,16 +145,12 @@ def _register_scheme(name: str, cfg: dict, source: Path) -> None:
 
 def _load_scheme_dir(scheme_dir: Path, name: str) -> dict:
     fields_file = scheme_dir / "fields.json"
-    template_file = scheme_dir / "template.csv"
     if not fields_file.exists():
         raise ValueError(f"方案 '{name}' 缺少 {fields_file}")
-    if not template_file.exists():
-        raise ValueError(f"方案 '{name}' 缺少 {template_file}")
     with open(fields_file, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     if "fields" not in cfg:
         raise ValueError(f"{fields_file.name} 缺少 fields")
-    cfg["template_file"] = f"{name}/template.csv"
     cfg.setdefault("prompt_file", "prompts.csv")
     cfg.setdefault("dirname", name)
     return cfg
@@ -253,7 +248,3 @@ def scheme_applies_to_dataset(scheme: str, dataset_name: str | None, datasets: d
 
 def schemes_for_dataset(schemes: list[str], dataset_name: str | None, datasets: dict | None = None) -> list[str]:
     return [scheme for scheme in schemes if scheme_applies_to_dataset(scheme, dataset_name, datasets)]
-
-
-def resolve_scheme_template_file(scheme: str, template_dir: str) -> Path:
-    return Path(template_dir) / SCHEME_TEMPLATE[scheme]

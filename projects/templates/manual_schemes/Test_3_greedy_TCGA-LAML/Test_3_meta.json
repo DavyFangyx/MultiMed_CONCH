@@ -1,9 +1,0 @@
-{
-  "dataset": "TCGA-LAML",
-  "name": "Test_3_greedy_TCGA-LAML",
-  "landmark_tag": "landmark_0",
-  "n_fields": 7,
-  "bank_template_fields": 7,
-  "fallback_fields": [],
-  "source": "greedy=result.json algo=A2_greedy bank模板(landmark_0)"
-}

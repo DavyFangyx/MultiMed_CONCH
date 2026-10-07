@@ -41,7 +41,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 ### 2.2 控制变量（Test_2b 与 Test_3 的铁律）
 
 - Test_2b 两臂的**字段集、模板、编码、模型、划分完全一致**，唯一差异 = 是否施加 t0 landmark mask。禁止任何删字段、换模板、换编码、换划分的操作。
-- Test_3 对比三臂全部走 A_pipeline 同一条链路（同编码器/模型/划分），差异只允许在字段集。
+- Test_3 对比两臂全部走 bank 切片同一条链路（同编码器/模型/划分），差异只允许在字段集。
 - 一切评估沿用现有口径：5 折 val c-index（`cv_c_mean`，5 折均值），不伪造独立测试集，`prefer_val=True`。
 
 ### 2.3 三档定义
@@ -49,12 +49,12 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | 档 | 含义 | 来源 |
 |---|---|---|
 | 报告值 | 含泄露（文献口径） | 现有 `results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv`（T3 保留） |
-| 去泄露值 | 同字段集 + landmark_0 mask | Test_2b 臂 B（`results/Test_2b/arm_B/`） |
+| 去泄露值 | 同字段集 + landmark_0 mask（bank 切片，T31） | Test_3 臂 B（`results/Test_2b/arm_B/` 的 `Test_3_{work}_{ds}` 行） |
 | 可达值 | 去泄露池上的贪婪搜索最优 | Test_3 臂 C |
 
 ### 2.4 工作与数据集
 
-- "各工作" = A_pipeline 的 10 个论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`（字段表在 `A_pipeline/templates/{scheme}/fields.json`）。
+- "各工作" = A_pipeline 的 10 个论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`（字段表在 `templates/manual_schemes/{scheme}/fields.json`，句式模板已删除 T31）。
 - 数据集（**本阶段**）= `projects/datasets.json` 中的 **33 个 TCGA** 队列。**TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**（用户指令 2026-09-29），Test_5c 数据轴阶段再议。S1/S2 已产出的 CPTAC/MMRF 描述性记录保留在磁盘（gitignore 内）但不进入任何训练/选择实验。
 - **方案 × 数据集绑定**：HGCN_* 六个方案各绑定其**对应癌种**（HGCN_KIRC→KIRC、HGCN_LIHC→LIHC、HGCN_ESCA→ESCA、HGCN_LUSC→LUSC、HGCN_LUAD→LUAD、HGCN_UCEC→UCEC），禁止把它们塞进其他数据集（用户纠正 2026-09-30）；泛癌种方案（MULTISURV、SURVPGC、MMSURV、INTEGRATIVE_DNN）暂按全部 33 TCGA，但记录为未解决问题 U2（见 §12）。
 - **数据集选集一律读 Test_0 manifest，禁止在代码或计划中硬编码名单。**
@@ -66,7 +66,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
 - **三要件已全部落地（P1，2026-09-30）**：① mask 在 `A_pipeline/src/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位）；② 风险集与 ③ 平移在 `A_pipeline/src/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；`--landmark_shift off` 为平移不变性自检开关）。口径总表见 `z_notes/time_axis/time_axis.md` §3。
-- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与三臂）默认 t0。
+- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与两臂）默认 t0。
 - **患者资格（2026-10-05 用户拍板）**：`ground_truth_time ≤ 0` 的患者（`days_to_death=0` 占位坑 + 负末次随访，见 `time_axis.md` §2.3）从**所有实验的所有臂**（含报告值对照臂 `landmark_none`）中全局剔除；split 文件不动。实现落点 `Clinic_Analyzer/datasets/dataset_survival.py`（读 label 后即过滤，NaN 保留）；与 landmark 要件②的区别：要件②只作用于 landmark 臂（按 T），本条是跨臂全局数据质量过滤。
 - **主诊断判定（2026-10-06 修正）**：`get_primary_diagnosis` 按 `days_to_diagnosis` 最小锚定主诊断（flag 仅同 days 时 tie-break）——GDC `diagnosis_is_primary_disease` 是"研究重点疾病"归属标记而非时间锚点（SKCM 75% 错位，见 `time_axis.md` §2.3）。所有臂（含报告值对照臂）与泄露审计共用该判定。
 - 365 / 730 作为敏感性；原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups，既非无处理也非规范处理）**更名 `static_only`**，**移出主图**，仅进补充材料。
@@ -88,7 +88,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 | T11/T13 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑（t0 臂，Test_1a/1b 数据源） | `outputs/*/field_bank/`、`results/Test_1a/arm_t0/` | 模板人工填写进度 |
 | T13 | **Test_1a** 对照臂（mask off，`raw` 变体）+ Δc_field 表 | `results/Test_1a/arm_off/`、`results_display/Test_1a_field_level/` | 依赖 Test_2a 审计出 leak_rate 列 |
 | T11 | **Test_1b** 各数据集 Cindex 分布 + 跨数据集字段分布 + top-k 重叠度 | `results_display/Test_1b_dataset_cindex/` | top-k 的 k 取值 |
-| T14 | Test_3 贪婪批跑（主集）+ 三臂对照 | Δc、遗漏字段清单 | **T5/T25** 最优组合口径（sig_stop vs best → gain-only） |
+| T14 | Test_3 贪婪批跑（主集）+ 两臂对照（原三臂，T31 更名） | Δc、遗漏字段清单 | **T5/T25** 最优组合口径（sig_stop vs best → gain-only） |
 | T23 | Test_4 三档汇总表（收口，非独立实验） | `results_display/Test_4_three_tiers/` | — |
 | D9 | 回推 Test_0 manifest v2（Test_5 规格已提前落地，见 §8bis） | manifest v2 | **D9** 数据集降级/剔除逐项确认 |
 | T20 | **Test_5 规格落地 + HGCN 产物备份**（§8bis） | 仓库外备份 + 校验记录 | **T21** 路线 A、多模态子集 4 个——已确认（2026-10-03） |
@@ -277,21 +277,23 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 - 数据集：manifest 主集；最优组合默认 = 早停推荐子集（T5 已确认：0.005 阈值，另报历史 best）。
 - **T25 修订（2026-10-04，用户确认）**：早停口径由 sig_stop 改为 **gain-only δ=0.005**——去掉 paired Wilcoxon p<0.05 门槛（n=5 时 p<0.05 要求 5/5 折全正，过严）；新判定：gain ≥ 0.005 → 更新 k_star 且 count=0；gain < 0.005 → count+1；连续 3 步停，k_sig=k−3；delta/patience 数值不变；历史 best 仍另报。实现为 `--stop-mode {sig,gain_only}`（sig 保留为默认）；Test_3 重跑使用 gain_only（stop_reason 记 "gain_stop"）。
 
-### 7.2 三臂对照（全部走 A_pipeline 链路，同编码器/模型/划分/seed）
+### 7.2 两臂对照（全部走 bank 切片链路，同编码器/模型/划分/seed）
 
 ```text
-臂 B : 工作完整组合 × scheme 模板 × landmark_0   (= Test_2b 的去泄露值，字段数不变)
-臂 B′: 工作完整组合 × bank 模板   × landmark_0   (custom scheme，模板控制臂)
-臂 C : 贪婪最优组合 × bank 模板   × landmark_0   (custom scheme，fields 由搜索结果生成)
+臂 B : 工作完整组合 × bank 模板 × landmark_0   (去泄露值;原"臂 B′"更名而来)
+臂 C : 贪婪最优组合 × bank 模板 × landmark_0   (可达值;fields 由搜索结果生成)
 ```
 
-- custom scheme 机制：生成 `A_pipeline/templates/{scheme}/` 式目录（fields.json 由搜索结果生成、template.csv 取自 field bank 的模板表）。
-- 头条 Δc = C − B′（模板、编码、模型、划分全同，唯一差异 = 字段集）；C − B 作交叉验证。
-- **遗漏字段清单** = C 的字段 \ 该工作组合字段，附 bank 模板语义说明（"无依据导致遗漏"的物证）；字段数对比。
+- **T31 修订（2026-10-07，用户拍板）**：编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；原"臂 B（scheme 模板）"随之退役，原"臂 B′（bank 模板）"更名为**臂 B**。三臂变两臂。
+- **编码路径**：任何字段组合（论文的、贪婪的）一律按字段索引**切片 bank 嵌入矩阵**（零 CONCH 重编码，与 E2 搜索评估器同路径，切片与 bank 行逐位一致）。`--landmark_time` 值域：`0|365|730`（mask 开）、`raw`（mask 关 + 与 landmark_0 同字段集，时间轴对照用）、`static_only`（静态字段子集，mask 关；`none` 为其兼容别名）。三个 bank 变体不可混用。
+- 臂 B 字段集 = 论文方案 fields.json ∩ bank 字段索引；不在 bank 的字段记入遗漏清单（"无依据导致遗漏"的物证）。
+- 头条 Δc = C − B（模板、编码、模型、划分全同，唯一差异 = 字段集）。
+- 时间轴对照（mask 效应） = B_off（工作组合 × `raw` bank）− B（landmark_0）；报告值 = 论文历史报告数（外部数字，不复跑）。
+- 臂 C 的 c-index 即搜索 result.json 的 `best_cv_c_mean`（同嵌入、同模型、同 5 折、同 seed）；如需独立落表训练，走与 B 相同的切片流程。
 
 ### 7.3 产物
 
-`results/Test_3_greedy_vs_works/`（三臂 c-index 表、Δc、遗漏清单）+ `results_display/Test_3_greedy_vs_works/`（图）。
+`results/Test_3_greedy_vs_works/`（两臂 c-index 表、Δc、遗漏清单）+ `results_display/Test_3_greedy_vs_works/`（图）。
 
 ## 8. Test_4 三档汇总表（非实验，收口 Test_2+Test_3）
 
@@ -306,7 +308,7 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（字段轴链）的结论在换编码、换分析器、换指标后依然成立**。被检验的两个结论：
 
 - 2b 结论：无数据集级系统性高估（臂 A−B 的 Δc 模式与方向一致率）；
-- 3 结论：贪婪可达 > 工作组合（Δc = C − B′）。
+- 3 结论：贪婪可达 > 工作组合（Δc = C − B）。
 
 三轴候选（基线加粗）：
 
@@ -323,9 +325,9 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 | 子检查 | 换的轴 | 重复什么 | 范围（15 主集） | 新 confs（估计） |
 |---|---|---|---|---|
 | 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 两臂 A（mask 关）/B（lm0），字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
-| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂 B′/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
+| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂 B/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
 | 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 两臂（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
-| 5M_3 | M→clinic_cox | Test_3 臂 B′/C（prompt 复用） | 15 × 2 臂 | ≈30 |
+| 5M_3 | M→clinic_cox | Test_3 臂 B/C（prompt 复用） | 15 × 2 臂 | ≈30 |
 
 **本轮合计 ≈388 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈188 confs 待模型接入后补跑，全量 ≈546。
 

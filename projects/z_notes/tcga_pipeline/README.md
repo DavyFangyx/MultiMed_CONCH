@@ -37,7 +37,7 @@ ClinicDatasets/gdc_clinical/raw_json/{ds}.json        ← 33 个 TCGA 原始 GDC
        │ ⑤ run_schemes.py / A_pipeline templates(schemes.json)   ← L2/L3/L5 + 10 个论文方案
        ▼
       ⑦ 评估[字段×患者汇合](5 折 CV seed 0,val c-index):字段线输出与患者线 label 在此汇合(--label_file)
-        run_univariate_cindex.py(逐字段)/ Test_2b 两臂 / Test_3 贪婪三臂
+        run_univariate_cindex.py(逐字段)/ Test_2b 两臂 / Test_3 贪婪两臂
        ▼
       ⑧ 报表[汇总](不新增训练):results/Test_* → results_display/scripts/*.py → results_display/Test_*/
 ```

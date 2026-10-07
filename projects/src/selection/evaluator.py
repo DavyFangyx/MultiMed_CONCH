@@ -5,7 +5,7 @@ import json
 import time
 from pathlib import Path
 
-from .cache import SQLiteCache, make_cache_key
+from .cache import SCHEMA_VERSION, SQLiteCache, make_cache_key
 from .config import N_FOLDS, budget_for
 from .types import BudgetExhausted, EvalResult
 
@@ -26,7 +26,7 @@ class Evaluator:
     def __init__(self, inner, fields, *, budget=None, seed=0, cache=None,
                  dataset="", landmark_tag="", encoding="prompt",
                      modality="mlp_clinic_flatten", field_index_hash="",
-                 split_hashes=(), train_args_hash="", jsonl_path=None,
+                 split_hashes=(), train_args_hash="", label_hash="", jsonl_path=None,
                  run_id="", algorithm="", field_indices=None):
         self.inner, self.fields = inner, tuple(fields)
         self.field_indices = tuple(range(len(self.fields))) if field_indices is None else tuple(int(i) for i in field_indices)
@@ -43,7 +43,7 @@ class Evaluator:
         self._cache_args = dict(dataset=dataset, landmark_tag=landmark_tag, encoding=encoding,
                                 modality=modality, seed=self.seed,
                                 field_index_hash=field_index_hash, split_hashes=split_hashes,
-                                train_args_hash=train_args_hash)
+                                train_args_hash=train_args_hash, label_hash=label_hash)
         self.jsonl_path = Path(jsonl_path) if jsonl_path else None
         self.run_id, self.algorithm = str(run_id), str(algorithm)
         self.dataset, self.landmark_tag, self.encoding, self.modality = dataset, landmark_tag, encoding, modality
@@ -93,7 +93,7 @@ class Evaluator:
                 mean = float(mean)
                 if not __import__('math').isfinite(mean):
                     raise ValueError("cv_c_mean is not finite")
-                payload = {"cv_c_mean": mean, "cv_folds": folds}
+                payload = {"cv_c_mean": mean, "cv_folds": folds, "schema_version": SCHEMA_VERSION}
                 if self.cache is not None:
                     self.cache.put(key, payload)
             else:
