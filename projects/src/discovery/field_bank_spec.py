@@ -44,9 +44,11 @@ _OFFICIAL_META: dict[str, dict[str, str]] | None = None
 _EXISTING_TEMPLATES: dict[str, str] | None = None
 
 TEMPLATE_OVERRIDES = {
+    "demographic.age_at_index": "The patient was {} years old at index.",
     "demographic.age_is_obfuscated": "Age is obfuscated: {}.",
     "demographic.country_of_birth": "Country of birth is {}.",
     "demographic.country_of_residence_at_enrollment": "Country of residence at enrollment is {}.",
+    "demographic.days_to_birth": "The patient was born {} days before the index date.",
     "demographic.ethnicity": "Ethnicity is {}.",
     "demographic.race": "Race is {}.",
     "demographic.sex_at_birth": "Sex at birth is {}.",
@@ -443,6 +445,8 @@ def _existing_spec_templates(path: Path | None = None) -> dict[str, str]:
 def field_convert(field: str) -> str:
     if field in DAYS_TO_YEARS_FIELDS:
         return "days_to_years"
+    if field == "demographic.days_to_birth":
+        return "days_abs"
     meta = load_official_field_meta().get(field)
     if meta and _is_integer_type(meta["type"]):
         return "int"

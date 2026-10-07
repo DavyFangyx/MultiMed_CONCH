@@ -1,5 +1,23 @@
 {
-  "说明": "R0/R1/R5 名单型筛选。R0 只删真正结局字段；默认 landmark 开启时，diagnoses / follow_ups 整层留给 Field Bank 按 T 做取值 mask。--landmark_time none 时 R0 用 path_contains 整层删除这两层。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。R1 对齐 GDC administrative 且尚未被 R0 命中的字段；R5 只处理年龄、病理总分期、临床总分期、性别。",
+  "说明": "R0/R1 名单型筛选 + R4 方案字段豁免 + R5 别名映射。R0 只删真正结局字段；默认 landmark 开启时，diagnoses / follow_ups 整层留给 Field Bank 按 T 做取值 mask。--landmark_time none 时 R0 用 path_contains 整层删除这两层。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。R1 对齐 GDC administrative 且尚未被 R0 命中的字段；R4_exempt 是论文方案字段组合的豁免清单（2026-10-08）；R5_alias 只处理年龄、性别两组同义字段的别名映射（2026-10-08 由 R5_derivable 修订而来）。",
+  "_changelog": [
+    {
+      "date": "2026-10-08",
+      "changes": [
+        "R5_derivable 更名为 R5_alias，语义由'删除语义重复字段'改为'别名映射'：同语义字段保留 canonical，别名剔除并记录 alias_of 映射。",
+        "age 组：canonical 由 diagnoses[].age_at_diagnosis 改为 demographic.age_at_index（覆盖率最高 11223/11228，论文方案字段同名命中）；days_to_birth 退出删除名单，单独保留为自有字段（负天单位，模板 convert=days_abs）。",
+        "ajcc_pathologic_stage / ajcc_clinical_stage 退出 R5，与 T/N/M 分量并列独立保留。",
+        "gender 保留为 sex_at_birth 的别名（legacy biotab 同义名，raw_json 中不存在）。",
+        "新增 R4_exempt：论文方案字段组合豁免 R4（n_unique 与 mode_share 触发均豁免）。"
+      ],
+      "reasons": [
+        "动机来自论文方案字段组合对照（Test_3 B′ 臂基线）：原 R5 硬删把论文常用字段路径（age_at_index、ajcc_pathologic_stage）规范掉，导致方案字段与数据集 bank 字段路径对不上，B′ 臂字段缩水。",
+        "探查 2026-10-08（见 z_notes/tcga_pipeline/probe_r5_alias_and_units_20261008.md）：age 三字段高度共现、值一致，纯别名映射即可，无需覆盖率择优；days_to_birth 单位=负天，÷365.25 与 age_at_index 精确互转。",
+        "探查 2026-10-08（见 z_notes/tcga_pipeline/probe_paper_scheme_interception_20261008.md）：R4 拦出 30 次方案字段（sex@BRCA 0.989 恒定、prior_malignancy/synchronous_malignancy 0.96–0.998、site_of_resection 单值等）。口径：论文组合要这个字段，探查显示信息量极低仍保留——一刀切删近常数字段不科学，抹掉了'同一字段组合在不同数据集有效性不同'的证据（如 sex 在 BRCA 0.989 恒定 vs GBM 0.53/0.47 有区分度）。",
+        "原 R5 note 'age can be derived from diagnoses.age_at_diagnosis' 不严谨：14 例（含 KIRP 12）无法由任何 diagnosis 年龄还原，正确派生需先选主诊断。"
+      ]
+    }
+  ],
   "R0_label_leak": {
     "leaves": [
       "state",
@@ -70,49 +88,34 @@
       "other_clinical_attributes"
     ]
   },
-  "R5_derivable": {
-    "说明": "drop 是实际删除名单。keep 是语义重复后留下的字段，筛选只读 drop，keep 写入 exclusion_log。",
+  "R4_exempt": {
+    "说明": "论文方案字段组合豁免 R4（2026-10-08）。探查显示这些字段在部分数据集近常数/单值、信息量极低，但为保证论文组合完整性（Test_3 B′ 臂基线）仍保留；n_unique 与 mode_share 两个触发均豁免。非清单字段 R4 原样生效。该清单同时记录'同一字段组合在不同数据集有效性不同'的实证。",
+    "fields": [
+      "demographic.sex_at_birth",
+      "demographic.race",
+      "diagnoses[].prior_malignancy",
+      "diagnoses[].synchronous_malignancy",
+      "diagnoses[].primary_diagnosis",
+      "diagnoses[].prior_treatment",
+      "diagnoses[].site_of_resection_or_biopsy"
+    ]
+  },
+  "R5_alias": {
+    "说明": "别名映射（2026-10-08 由 R5_derivable 修订）：同语义字段保留 canonical，别名剔除并记录 alias_of 映射。aliases 用完整字段路径；无点的单段名按叶子匹配。筛选只读 aliases，canonical 照常参与 R3/R4。",
     "groups": [
       {
-        "drop": [
-          "age_at_index",
-          "days_to_birth"
+        "aliases": [
+          "diagnoses[].age_at_diagnosis"
         ],
-        "keep": [
-          "age_at_diagnosis"
-        ],
-        "note": "age can be derived from diagnoses.age_at_diagnosis"
+        "canonical": "demographic.age_at_index",
+        "note": "同一年龄的三表达（age_at_diagnosis 天 / days_to_birth 负天 / age_at_index 岁）；33 数据集高度共现、值一致；canonical 选覆盖最高的 age_at_index。days_to_birth 单独保留为自有字段（见 _changelog 2026-10-08）。"
       },
       {
-        "drop": [
-          "ajcc_pathologic_stage"
-        ],
-        "keep": [
-          "ajcc_pathologic_t",
-          "ajcc_pathologic_n",
-          "ajcc_pathologic_m"
-        ],
-        "note": "composite pathologic stage duplicates T/N/M"
-      },
-      {
-        "drop": [
-          "ajcc_clinical_stage"
-        ],
-        "keep": [
-          "ajcc_clinical_t",
-          "ajcc_clinical_n",
-          "ajcc_clinical_m"
-        ],
-        "note": "composite clinical stage duplicates T/N/M"
-      },
-      {
-        "drop": [
+        "aliases": [
           "gender"
         ],
-        "keep": [
-          "sex_at_birth"
-        ],
-        "note": "gender duplicates sex_at_birth"
+        "canonical": "sex_at_birth",
+        "note": "legacy biotab 同义名；raw_json 无 gender（0 次出现），跨源 100% 一致，仅大小写/缺失占位差异。"
       }
     ]
   }

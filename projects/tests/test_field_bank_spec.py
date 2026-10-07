@@ -16,7 +16,7 @@ from discovery.field_bank_spec import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIELD_BANK_ROOT = PROJECT_ROOT / "templates" / "field_bank"
 
-ALLOWED_CONVERT = {"", "days_to_years", "int"}
+ALLOWED_CONVERT = {"", "days_to_years", "days_abs", "int"}
 
 
 def _dataset_tables():

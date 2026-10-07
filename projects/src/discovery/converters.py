@@ -2,6 +2,7 @@
 
 清单（convert 列填这些名字）：
 - days_to_years
+- days_abs
 - int
 
 空 convert 表示不换算。
@@ -61,8 +62,17 @@ def int_(value) -> str:
     return str(int(number))
 
 
+def days_abs(value) -> str:
+    """负天绝对值转整数天（days_to_birth 专用：-27179 -> 27179）。"""
+    number = parse_number(value)
+    if number is None:
+        return _clean_text(value) or str(value)
+    return str(int(abs(number)))
+
+
 CONVERTERS = {
     "days_to_years": days_to_years,
+    "days_abs": days_abs,
     "int": int_,
 }
 

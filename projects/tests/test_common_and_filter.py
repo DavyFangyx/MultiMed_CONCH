@@ -442,7 +442,8 @@ def test_field_bank_landmark_masks_post_last_time():
     ) == []
 
 
-def test_filter_rules_r5_drop_keep():
+def test_filter_rules_r5_alias_and_r4_exempt():
+    # R5_alias(2026-10-08 修订):同语义保留 canonical,别名剔除并记录 alias_of。
     stage = pd.Series(
         {
             "field_path": "diagnoses[].ajcc_pathologic_stage",
@@ -451,11 +452,8 @@ def test_filter_rules_r5_drop_keep():
             "mode_share": 0.4,
         }
     )
-    rule, trigger = apply_rules(stage)
-    assert rule == "R5_derivable"
-    assert "ajcc_pathologic_t" in trigger
-    assert "ajcc_pathologic_n" in trigger
-    assert "ajcc_pathologic_m" in trigger
+    rule, _ = apply_rules(stage)
+    assert rule is None  # 复合分期不再与 T/N/M 互斥,独立保留
 
     t_field = pd.Series(
         {
@@ -476,9 +474,42 @@ def test_filter_rules_r5_drop_keep():
             "mode_share": 0.1,
         }
     )
-    rule, trigger = apply_rules(age_index)
-    assert rule == "R5_derivable"
-    assert "age_at_diagnosis" in trigger
+    rule, _ = apply_rules(age_index)
+    assert rule is None  # canonical 保留
+
+    age_diag = pd.Series(
+        {
+            "field_path": "diagnoses[].age_at_diagnosis",
+            "coverage": 0.9,
+            "unique_count": 20,
+            "mode_share": 0.1,
+        }
+    )
+    rule, trigger = apply_rules(age_diag)
+    assert rule == "R5_alias"
+    assert "demographic.age_at_index" in trigger
+
+    relationship_age = pd.Series(
+        {
+            "field_path": "family_histories[].relationship_age_at_diagnosis",
+            "coverage": 0.9,
+            "unique_count": 20,
+            "mode_share": 0.1,
+        }
+    )
+    rule, _ = apply_rules(relationship_age)
+    assert rule is None  # 叶子撞名不误伤:别名按完整路径匹配
+
+    days_to_birth = pd.Series(
+        {
+            "field_path": "demographic.days_to_birth",
+            "coverage": 0.9,
+            "unique_count": 20,
+            "mode_share": 0.1,
+        }
+    )
+    rule, _ = apply_rules(days_to_birth)
+    assert rule is None  # 单独保留为自有字段(2026-10-08)
 
     clinical_stage = pd.Series(
         {
@@ -488,9 +519,8 @@ def test_filter_rules_r5_drop_keep():
             "mode_share": 0.3,
         }
     )
-    rule, trigger = apply_rules(clinical_stage)
-    assert rule == "R5_derivable"
-    assert "ajcc_clinical_t" in trigger
+    rule, _ = apply_rules(clinical_stage)
+    assert rule is None  # 复合临床分期独立保留
 
     gender = pd.Series(
         {
@@ -501,8 +531,42 @@ def test_filter_rules_r5_drop_keep():
         }
     )
     rule, trigger = apply_rules(gender)
-    assert rule == "R5_derivable"
+    assert rule == "R5_alias"
     assert "sex_at_birth" in trigger
+
+    # R4_exempt(2026-10-08):论文方案字段豁免 n_unique 与 mode_share 两个触发。
+    sex_near_constant = pd.Series(
+        {
+            "field_path": "demographic.sex_at_birth",
+            "coverage": 0.99,
+            "unique_count": 2,
+            "mode_share": 0.989,
+        }
+    )
+    rule, _ = apply_rules(sex_near_constant, max_mode_share=0.95)
+    assert rule is None
+
+    sex_single_value = pd.Series(
+        {
+            "field_path": "demographic.sex_at_birth",
+            "coverage": 0.97,
+            "unique_count": 1,
+            "mode_share": 1.0,
+        }
+    )
+    rule, _ = apply_rules(sex_single_value, min_unique=2, max_mode_share=0.95)
+    assert rule is None  # 真常数也豁免
+
+    nonexempt_near_constant = pd.Series(
+        {
+            "field_path": "diagnoses[].laterality",
+            "coverage": 0.9,
+            "unique_count": 2,
+            "mode_share": 0.98,
+        }
+    )
+    rule, _ = apply_rules(nonexempt_near_constant, max_mode_share=0.95)
+    assert rule == "R4_degenerate"  # 非清单字段 R4 原样生效
 
     year = pd.Series(
         {

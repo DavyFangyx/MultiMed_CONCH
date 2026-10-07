@@ -90,15 +90,19 @@ def apply_rules(
     rules = rules or load_filter_rules()
     r0 = rules.get("R0_label_leak") or {}
     r1 = rules.get("R1_admin") or {}
-    r5_drop = {}
-    for group in (rules.get("R5_derivable") or {}).get("groups") or []:
-        keep = [str(v).strip() for v in (group.get("keep") or []) if str(v).strip()]
+    r4_exempt = _as_lower_set((rules.get("R4_exempt") or {}).get("fields"))
+    r5_alias = {}
+    for group in (rules.get("R5_alias") or {}).get("groups") or []:
+        canonical = str(group.get("canonical") or "").strip()
         note = str(group.get("note") or "").strip()
-        trigger = f"keep {', '.join(keep)}" if keep else note
-        for leaf_name in group.get("drop") or []:
-            key = str(leaf_name).strip().lower()
+        trigger = f"alias_of {canonical}" if canonical else note
+        for alias in (group.get("aliases") or []):
+            key = str(alias).strip()
             if key:
-                r5_drop[key] = trigger or key
+                # 带点的别名按完整路径匹配（避免叶子撞名，如
+                # diagnoses[].age_at_diagnosis 误伤 family_histories[].relationship_age_at_diagnosis）；
+                # 无点的单段名按叶子匹配（如 gender）。两级查找：norm → leaf。
+                r5_alias[_norm(key) if "." in key else _leaf_name(key)] = trigger or key
 
     # R0: label leakage. Hard exclusion, never skip.
     r0_except = _as_lower_set(r0.get("except_leaves"))
@@ -129,17 +133,22 @@ def apply_rules(
     if coverage < min_coverage:
         return "R3_coverage", f"{coverage:.6f}<{min_coverage}"
 
-    # R4: degenerate fields.
+    # R4: degenerate fields. R4_exempt 清单内的字段（论文方案组合，2026-10-08）
+    # 豁免 n_unique 与 mode_share 两个触发——记录'同一字段组合在不同数据集
+    # 有效性不同'的实证，见 templates/field_filter_rules.json 的 R4_exempt 说明。
     n_unique = int(row.get("unique_count") or 0)
     mode_share = float(row.get("mode_share") or 0.0)
-    if n_unique < min_unique:
-        return "R4_degenerate", f"n_unique={n_unique}"
-    if mode_share > max_mode_share:
-        return "R4_degenerate", f"mode_share={mode_share:.6f}"
+    if norm not in r4_exempt:
+        if n_unique < min_unique:
+            return "R4_degenerate", f"n_unique={n_unique}"
+        if mode_share > max_mode_share:
+            return "R4_degenerate", f"mode_share={mode_share:.6f}"
 
-    # Extra derivable-field drops kept from the current registry.
-    if leaf in r5_drop:
-        return "R5_derivable", r5_drop[leaf]
+    # R5: 别名映射（2026-10-08 由 R5_derivable 修订）——同语义字段保留 canonical，
+    # 别名剔除并记录 alias_of 映射。查找分两级：完整路径（带点别名）→ 叶子（单段别名）。
+    alias = r5_alias.get(norm) or r5_alias.get(leaf)
+    if alias is not None:
+        return "R5_alias", alias
 
     return None, ""
 
