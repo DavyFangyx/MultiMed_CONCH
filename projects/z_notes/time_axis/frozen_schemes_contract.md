@@ -9,7 +9,7 @@
 
 ## 2. 产物与消费
 
-- 产物根:`projects/outputs_pgc/{TCGA-XX}/A_manual/{scheme}/`(9 个 lizhe 数据集:BRCA/LIHC/COAD/PRAD/READ/STAD/KICH/KIRC/KIRP;2026-10-06 自 `outputs/` 迁移,未重编码)。
+- 产物根:`projects/outputs_pgc/{TCGA-XX}/A_manual/{scheme}/`(11 个 lizhe 数据集:BRCA/LIHC/COAD/PRAD/READ/STAD/KICH/KIRC/KIRP/LUAD/LUSC;前 9 个 2026-10-06 自 `outputs/` 迁移;LUAD/LUSC 于 2026-10-08 登记,数据源 `/data/lizhe/Medteam_projects/Lung/clinical/clinical.cart.2026-06-01.json`,同文件按 project_ids 拆分)。
 - 编码入口:`projects/A_pipeline_pgc/run.py`(独立子项目:自包含内核 + common 快照,不 import projects/src 与 A_pipeline;无 landmark、无 cindex)。**默认拒绝运行,须 `--force`**。
 - 下游消费(外部仓库 `SurvPGC_github_init`,只读):
   - `SurvPGC_Workspace/{study}/C/{L0..L5,D0..D5}` 软链 → 本产物根(46,848 条,由 `build_workspace.sh` 维护,源根已改 outputs_pgc);
