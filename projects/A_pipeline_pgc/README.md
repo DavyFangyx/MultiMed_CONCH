@@ -99,10 +99,18 @@ $PY run.py hgcn_clinic --dataset all --scheme all --force
    $PY run.py baseline --force --dataset all --scheme all                     # 11 集同跑:共享名义词表重构
    $PY run.py hgcn_clinic --force --dataset all --scheme all                  # 复用新词表
    ```
-4. **契约与下游同步**:`z_notes/time_axis/frozen_schemes_contract.md` 数据集名单、执行日志 D 系列登记、
-   下游 SurvPGC `build_workspace.sh` 软链 + hgcn 数据拷贝。
+4. **契约与下游同步**:`z_notes/time_axis/frozen_schemes_contract.md` 数据集名单、执行日志 D 系列登记、下游 SurvPGC `build_workspace.sh` 软链 + hgcn 数据拷贝。
 
-影响口径(2026-10-08 实测):新数据集对旧集 **D0 与 HGCN L0 零影响**(demographic 字段词表未变);
-词表重建后旧集 **D1-D5 全部重算、维度 +24~29**(不只 22-vs-17 字段差,还因新集把一批
-<5 频次类别顶过 `min_count=5` 阈值)。每次 `baseline --dataset all` 都会重拟合并覆盖全局词表
-(同输入下确定性,结果不变);`hgcn_clinic` 则是词表存在即复用、不重拟合。
+影响口径(2026-10-08 实测):新数据集对旧集 **D0 与 HGCN L0 零影响**(demographic 字段词表未变);词表重建后旧集 **D1-D5 全部重算、维度 +24~29**(预期内,以 BRCA 为例):
+
+| | 旧 | 新 | 增长 |
+|---|---|---|---|
+| D1 | 93 | 117 | +24 |
+| D2 | 112 | 136 | +24 |
+| D3 | 171 | 196 | +25 |
+| D4 | 173 | 198 | +25 |
+| D5 | 181 | 210 | +29 |
+
+- 新词表:22 字段、245 类别,scope = 11 数据集、4860 患者(3904 + 956)。
+- 维度增长不止契约预估的 +6(17→22 字段):肺的 956 例把一批原本 <5 频次被合并进 OTHER 的类别顶过了 `min_count=5` 阈值,契约 §3「已知口径」那段(+6 维)可顺带更新。
+- HGCN L1–L5:每集 3 个 pkl(x_cli / ttt_cli_feas / t_cli_feas)随新词表变化。
