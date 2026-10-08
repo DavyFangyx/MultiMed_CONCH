@@ -32,7 +32,7 @@ for item in (ROOT, ROOT / "src"):
         sys.path.insert(0, str(item))
 
 from common.datasets import load_dataset_configs
-from common.paths import config_family_dir, test_results_dir
+from common.paths import LANDMARK_OFF_TAG, config_family_dir, test_results_dir
 from greedy.queue import (
     count_bucket,
     ensure_queue_dirs,
@@ -45,7 +45,7 @@ QUEUE_ROOT = config_family_dir("Test_1a_off")
 PARKED_DIR = QUEUE_ROOT / "parked"
 RETRY_STATE = QUEUE_ROOT / "retry_state.json"
 MAX_RETRIES = 3
-RAW_LANDMARK_TAG = "static_only"
+RAW_LANDMARK_TAG = LANDMARK_OFF_TAG  # no_mask(2026-10-08 前为 static_only)
 RAW_BANK_ROOT = ROOT / "outputs" / "_raw"
 RAW_RESULTS_ROOT = test_results_dir("Test_1a/arm_off")
 RESULTS_ROOT = RAW_RESULTS_ROOT / "univariate" / "prompt" / RAW_LANDMARK_TAG

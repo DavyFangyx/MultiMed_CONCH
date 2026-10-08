@@ -152,7 +152,7 @@ def enqueue_jobs(args, datasets: list[str], *, root: Path | None = None) -> dict
 
             encoding = validate_encoding(getattr(args, "encoding", "prompt"))
             experiment = experiment_from_args(args)
-            scan_root = dataset_field_bank_dir(dataset, encoding, "static_only", experiment=experiment).parent
+            scan_root = dataset_field_bank_dir(dataset, encoding, "no_mask", experiment=experiment).parent
         except Exception:
             scan_root = None
         for landmark_args in iter_landmark_args(

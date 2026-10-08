@@ -57,7 +57,7 @@ gt 与协变量槽位**同轴、同单位（天）**，这是 landmark 三要件
 ### 2.3 已知数据质量坑
 
 - **gt=0 占位**：全库 45 行 `gt=0 & event=1` 的 `days_to_death=0` 是 TCGA 源占位值（原始 JSON 为字面整数 0，非 null）。风险集 `gt > T` 会把它们从 T>0 的臂中剔除，而 T=0 臂保留——这是数据坑，不是口径错误。
-  - **全局剔除（2026-10-05 用户拍板）**：`gt ≤ 0`（含负末次随访行，如 `days_to_last_follow_up = −64/−2/−1`）的患者从**后续所有实验的所有臂**（含报告值对照臂 `landmark_none`）中剔除。落点：`Clinic_Analyzer/datasets/dataset_survival.py::_drop_nonpositive_time_labels`（读 label 后即过滤，NaN 时间保留，split 文件不动）；配套统计：`scripts/run_event_stats.py` 新增 `n_gt_le_0 / n_gt_lt_0 / n_event_gt_0 / n_censored_gt_0 / n_unknown_gt_0` 汇总列与 `rawdata_stats/{dataset}/gt_le_0_patients.csv` 排除清单。理由见 `Test_series_execution_log.md` S14。
+  - **全局剔除（2026-10-05 用户拍板）**：`gt ≤ 0`（含负末次随访行，如 `days_to_last_follow_up = −64/−2/−1`）的患者从**后续所有实验的所有臂**（含报告值对照臂 `no_mask`，即原 `landmark_none`/`static_only` 臂）中剔除。落点：`Clinic_Analyzer/datasets/dataset_survival.py::_drop_nonpositive_time_labels`（读 label 后即过滤，NaN 时间保留，split 文件不动）；配套统计：`scripts/run_event_stats.py` 新增 `n_gt_le_0 / n_gt_lt_0 / n_event_gt_0 / n_censored_gt_0 / n_unknown_gt_0` 汇总列与 `rawdata_stats/{dataset}/gt_le_0_patients.csv` 排除清单。理由见 `Test_series_execution_log.md` S14。
 - **月/天换算**：Clinic_Analyzer 标签月数除数为 30.44（SurvPGC `pipeline.py:349-361`）；A_pipeline `landmark_labels.py` 用 `365.25/12 = 30.4375` 反推 gt 天数。T∈{0,365,730} 整数天口径下风险集排除数一致，无实际影响；只用 `DAYS_PER_MONTH` 判断 `gt_days <= T` 的边界。
 - **天数为负**：`days_to_*` 可为负（如术前化验 `days_to_test = -3`），负值不作异常处理，说明 index 不是本例最早事件。
 
@@ -78,7 +78,7 @@ landmark 的 T 是**同一根轴上的点**（天），外部传入的全局 lan
 | --- | --- | --- |
 | ① 协变量只用 T 前信息 | timed 家族槽位只保留状态不是 `unlocated`/`non_informative` 且有限 `t_hi <= T` 的取值；无时间实体（case/demographic/exposures/family_histories）不 mask；缺 T 直接报错，该槽缺有限 `t_hi` 按缺失处理；被 mask 的值走现有 missing placeholder，不删列 | `src/discovery/landmark.py`（Field Bank 侧）与 `A_pipeline/src/landmark.py`（A_pipeline 侧，`mask_case()`） |
 | ② 风险集 = 只保留 `gt > T` 的患者 | 以**派生 label 文件**实现：被排除患者不在 label 文件中，`SurvivalDatasetFactory` 的 label ∩ split 交集自然把该患者从每折移除；split 文件不改动 | `A_pipeline/src/landmark_labels.py:110-111`（`excluded_mask = gt_days <= T`） |
-| ③ 时间原点平移到 T（`gt − T`） | label 时间列减去 `shift_months = T/30.4375`；c-index 对平移不变，但仍实现并做一次不变性自检 | `A_pipeline/src/landmark_labels.py:114-116`（自检开关 `--landmark_shift off` 生成 `__noshift` 变体） |
+| ③ 时间原点平移到 T（`gt − T`） | label 时间列减去 `shift_months = T/30.4375`；平移 = 固定协议动作，恒定开启（c-index 对平移不变，不变性已由历史自检证实，`--landmark_shift` 开关已移除） | `A_pipeline/src/landmark_labels.py:114-116` |
 
 要件①的值级判据是 `t_record`（§4）：T 时刻一条记录可用，当且仅当有限 `t_hi <= T` 且状态不是 `unlocated` / `non_informative`。
 
@@ -87,8 +87,8 @@ landmark 的 T 是**同一根轴上的点**（天），外部传入的全局 lan
 - **Test_1b 两臂**：臂 A = 取值 mask off（`landmark_time none`，报告值对照）；臂 B = `landmark_0` 三要件全开（去泄露值）。两臂字段集、模板、编码、模型、划分完全一致，唯一差异 = mask。产物：`results/A_manual_landmark/`。
 - **leak_rate（新口径，2026-09-30 纠错）**：`#{患者: 实际进入模型的值来自 t_hi > 0 的槽位} / #{管线产出有效值的患者}`，直接跑论文管线（A_pipeline，不做泄露处理）并追溯每个值的来源槽位。旧口径 `1 − n_valid_t0/n_valid_none` 已作废。
 - **有效事件数**（如需 landmark 门槛重套，当前协议 A 不执行）：`#{event==1 且 gt > T}`。
-- 默认 landmark = `landmark_0`；365/730 作敏感性。原 `landmark_none`（关 mask + R0 整层删 diagnoses/follow_ups）更名 **static_only**，移出主图仅进补充材料——注意与"取值 mask 状态 off"不是一回事。
-- Field Bank 变体：`landmark_0/365/730` + `static_only`；Test_2 搜索池 = `landmark_0`。
+- 默认 landmark = `landmark_0`；365/730 作敏感性。原 `landmark_none`（landmark off，取值不裁剪）**现名 `no_mask`**（2026-10-08 更名；2026-10-05—10-08 间曾误称 `static_only`），移出主图仅进补充材料——注意与"取值 mask 状态 off"不是一回事（二者是两条线：tag 命名 vs 值级 mask 开关）。
+- Field Bank 变体（三模式互斥）：`landmark_0/365/730`（数值 landmark）/ `no_mask`（landmark off，全字段不裁剪）/ `static_only`（2026-10-08 新语义：稳定字段子集，剔除 `diagnoses[]`/`follow_ups[]` 路径族全部字段，由 `run_field_bank.py --static_only` 生成）；Test_2 搜索池 = `landmark_0`。
 
 ### 3.2  对象级"不建槽"
 ────────────────────────────────────────

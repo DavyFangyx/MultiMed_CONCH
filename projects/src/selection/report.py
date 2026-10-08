@@ -319,7 +319,7 @@ def _plot_landmarks(aggregates, display_root):
         grouped[(row["algorithm"], row["modality"])].append(row)
     out = Path(display_root) / "landmark"
     out.mkdir(parents=True, exist_ok=True)
-    order = ("landmark_0", "landmark_365", "landmark_730", "static_only")
+    order = ("landmark_0", "landmark_365", "landmark_730", "no_mask")
     for (algorithm, modality), rows in grouped.items():
         values = defaultdict(list)
         for row in rows:

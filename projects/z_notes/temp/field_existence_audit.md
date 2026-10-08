@@ -133,7 +133,7 @@ Test_2a 审计 JSON（`results/Test_2a_leak_audit/{DS}/{scheme}.json`）的 `fie
 | Test_2a 审计 | **半有**：`not_in_bank`/`n_valid=0` 标记进审计报告，但不阻断、不修正臂 A 训练 |
 | 论文方案通路（extract.py / json2prompt.py / encode.py / generate_5fold_splits.py） | **无**：字段缺失静默占位符化，直接进 prompt/编码/训练 |
 
-即：Test_1a/1b/3（field bank 口径）安全；**Test_2b 臂 A（论文报告值）、Test_3 臂 B/B′、Test_5 中使用方案 fields.json 的部分**受影响——占位常量特征已进入这些实验的 prompt 与编码。
+即：Test_1a/1b/3（field bank 口径）安全；**Test_2b 臂 A（论文报告值）、Test_3 臂 B、Test_5 中使用方案 fields.json 的部分**受影响——占位常量特征已进入这些实验的 prompt 与编码。
 
 ## 10. 待议事项（本报告只列问题，不改）
 

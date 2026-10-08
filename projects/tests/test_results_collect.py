@@ -32,7 +32,7 @@ def test_collectors_read_results_not_outputs():
     assert probe == dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_730")
     assert greedy.parts[-5:] == ("results", "greedy", "prompt", "landmark_0", "TCGA-BRCA")
     assert "outputs" not in greedy.as_posix()
-    assert display_results_dir("univariate", "prompt", "static_only") == PROJECT_ROOT / "results_display" / "univariate" / "prompt" / "static_only"
+    assert display_results_dir("univariate", "prompt", "no_mask") == PROJECT_ROOT / "results_display" / "univariate" / "prompt" / "no_mask"
 
 
 def test_collect_named_files_and_combined_csv(tmp_path):
@@ -49,7 +49,7 @@ def test_collect_named_files_and_combined_csv(tmp_path):
     records, missing = collect_named_files(
         ["A", "B", "C"],
         encoding="prompt",
-        landmark_tag="static_only",
+        landmark_tag="no_mask",
         locate=locate,
         required=["field_cindex.csv"],
         csv_key="field_cindex.csv",

@@ -30,9 +30,9 @@ def test_derives_study_label_for_landmark(tmp_path):
     assert got == str(tmp_path / "tcga_brca__landmark_0.csv")
 
 
-def test_static_only_returns_none(tmp_path):
+def test_no_mask_returns_none(tmp_path):
     args = _args(landmark_labels_dir=str(tmp_path))
-    assert resolve_univariate_label_file(args, Path(tmp_path / "tcga_brca"), "static_only") is None
+    assert resolve_univariate_label_file(args, Path(tmp_path / "tcga_brca"), "no_mask") is None
 
 
 def test_missing_derived_label_raises(tmp_path):

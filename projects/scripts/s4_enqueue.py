@@ -164,7 +164,6 @@ def _jobs_for_combos(combos: list[tuple[str, str]], arm: str, results_root: Path
                     results_root=results_root,
                     landmark_tag=landmark.arm_tag,
                     landmark_time=landmark.landmark_time,
-                    landmark_shift=True,
                 )
             )
     return all_jobs

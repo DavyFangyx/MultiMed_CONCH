@@ -59,14 +59,6 @@ def _as_lower_set(values) -> set[str]:
     return {str(v).strip().lower() for v in (values or []) if str(v).strip()}
 
 
-def _path_has_token(field_path: str, token: str) -> bool:
-    needle = str(token).strip().lower()
-    if not needle:
-        return False
-    parts = [p.replace("[]", "").lower() for p in str(field_path).split(".")]
-    return needle in parts
-
-
 def _path_matches_suffix(field_path: str, suffix: str) -> bool:
     raw = str(field_path)
     target = str(suffix).strip()
@@ -81,7 +73,6 @@ def apply_rules(
     min_unique: int = DEFAULT_R4_N_UNIQUE,
     max_mode_share: float = DEFAULT_R4_MODE_SHARE,
     rules: dict | None = None,
-    no_landmark: bool = False,
 ) -> tuple[str | None, str]:
     """Apply R0-R5 in document order. R2/R6 are markers, not drop rules."""
     field_path = str(row["field_path"])
@@ -105,14 +96,15 @@ def apply_rules(
                 r5_alias[_norm(key) if "." in key else _leaf_name(key)] = trigger or key
 
     # R0: label leakage. Hard exclusion, never skip.
+    # 2026-10-08 口径对齐:不再按 landmark 开关整层删除 timed 层
+    # (diagnoses[] / follow_ups[],此前的 path_contains 条款)——no_mask = 全字段不裁剪,
+    # R0 只删结局字段本身,与 bank 侧 no_mask 字段集(≈ landmark_0)一致。
     r0_except = _as_lower_set(r0.get("except_leaves"))
     if leaf not in r0_except:
         if leaf in _as_lower_set(r0.get("leaves")):
             return "R0_label_leak", leaf
         if any(token in leaf or token in norm for token in _as_lower_set(r0.get("substrings"))):
             return "R0_label_leak", leaf
-        if no_landmark and any(_path_has_token(field_path, token) for token in (r0.get("path_contains") or [])):
-            return "R0_label_leak", f"path_contains:{leaf}"
         if any(_path_matches_suffix(field_path, suffix) for suffix in (r0.get("path_suffixes") or [])):
             return "R0_label_leak", leaf
         if any(leaf.startswith(prefix) for prefix in (r0.get("leaf_startswith") or [])):
@@ -272,7 +264,6 @@ def _run_field_filter_one(args, df: pd.DataFrame, write_datasets: list[str] | No
             min_unique=getattr(args, "R4_n_unique", DEFAULT_R4_N_UNIQUE),
             max_mode_share=getattr(args, "R4_mode_share", DEFAULT_R4_MODE_SHARE),
             rules=load_filter_rules(getattr(args, "filter_rules", None)),
-            no_landmark=not parse_landmark_options(args)[0],
         )
         item = {
             "dataset": row["dataset"],

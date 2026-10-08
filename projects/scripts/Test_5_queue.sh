@@ -2,7 +2,7 @@
 # S12b / Test_5 不变性批跑总入口（E 轴 baseline / M 轴模型 × 15 主集）
 #
 # 内容（spec §8bis，口径见 scripts/Test_5_common.py 头注释）：
-#   5E_2b  E→baseline 复现 Test_2b 两臂（A static_only / B landmark_0）× mlp_clinic_flatten
+#   5E_2b  E→baseline 复现 Test_2b 两臂（A no_mask / B landmark_0）× mlp_clinic_flatten
 #   5E_3   E→baseline 复现 Test_3 臂 B（Test_3_{work}_{ds}）/ C（Test_3_greedy_{ds}）
 #   5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（BRCA/COAD/KIRC/LIHC）
 #   5M_3   M→clinic_cox 复现 Test_3 臂 B/C

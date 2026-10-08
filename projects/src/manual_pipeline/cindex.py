@@ -390,7 +390,6 @@ def iter_cindex_jobs(
     max_epochs: int | None = None,
     landmark_tag: str = "",
     landmark_time=None,
-    landmark_shift: bool = True,
 ) -> list[dict]:
     if not dataset_name:
         raise ValueError("cindex 需要 --dataset，不能走单 JSON 模式")
@@ -412,15 +411,13 @@ def iter_cindex_jobs(
     results_base = analyzer_results_base(results_root)
     exp_group = analyzer_exp_group(landmark_tag)
     clinic_subdir = "" if landmark_tag in ("", LANDMARK_NONE_TAG) else landmark_tag
-    # The invariance check (`--landmark_shift off`) runs the same arm with the
-    # time origin left alone; it needs its own run/conf/row name, otherwise it
-    # would collide with the shifted run of the same arm.
-    run_tag = landmark_tag if (landmark_shift or not landmark_tag) else f"{landmark_tag}__noshift"
+    # The time-origin shift is a fixed protocol step (requirement ③), so each
+    # landmark arm has exactly one run/conf/row tag.
+    run_tag = landmark_tag
     label_file, label_stats = _landmark_label_file(
         study=study,
         landmark_time=landmark_time,
         results_root=results_root,
-        apply_shift=landmark_shift,
     )
     out = []
     for job in jobs:
@@ -478,7 +475,6 @@ def _landmark_label_file(
     study: str,
     landmark_time,
     results_root: Path | str | None = None,
-    apply_shift: bool = True,
 ) -> tuple[Path | None, dict | None]:
     """Derived label CSV (risk set + time shift) for a numeric landmark arm.
 
@@ -491,7 +487,6 @@ def _landmark_label_file(
         study=study,
         landmark_time=landmark_time,
         results_root=results_root,
-        apply_shift=apply_shift,
     )
     print(
         f"  [landmark T={int(landmark_time)}] {format_risk_set_summary(stats)}"
@@ -721,7 +716,6 @@ def evaluate_dataset_schemes(
     workers: int = 1,
     landmark_tag: str = "",
     landmark_time=None,
-    landmark_shift: bool = True,
 ) -> list[dict]:
     del extra_args
     jobs = iter_cindex_jobs(
@@ -736,7 +730,6 @@ def evaluate_dataset_schemes(
         max_epochs=max_epochs,
         landmark_tag=landmark_tag,
         landmark_time=landmark_time,
-        landmark_shift=landmark_shift,
     )
     queued = enqueue_cindex_jobs(jobs, queue_root=queue_root)
     root = queued["root"]
@@ -769,7 +762,6 @@ def run_cindex_queue(
     poll_seconds: float = 10.0,
     workers: int = 1,
     landmark_setting=None,
-    landmark_shift: bool = True,
 ) -> dict[str, list[dict]]:
     landmark_tag = getattr(landmark_setting, "arm_tag", "") or ""
     landmark_time = getattr(landmark_setting, "landmark_time", None)
@@ -781,7 +773,7 @@ def run_cindex_queue(
         if landmark_time is not None:
             print(
                 f"[cindex] risk set + time origin: gt <= {int(landmark_time)}d excluded, "
-                f"label time -= {int(landmark_time)}d, shift={'on' if landmark_shift else 'off'}"
+                f"label time -= {int(landmark_time)}d (fixed protocol step)"
             )
     jobs_by_dataset = {}
     all_jobs = []
@@ -801,7 +793,6 @@ def run_cindex_queue(
             max_epochs=max_epochs,
             landmark_tag=landmark_tag,
             landmark_time=landmark_time,
-            landmark_shift=landmark_shift,
         )
         key = f"{dataset_name}[{source}]"
         jobs_by_dataset[key] = eval_jobs

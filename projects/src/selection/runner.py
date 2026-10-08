@@ -143,7 +143,7 @@ def main(argv=None):
     from greedy.data import load_field_bank, default_analyzer_split_dir
     from common.paths import require_landmark_tag
 
-    tag = require_landmark_tag("static_only" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}")
+    tag = require_landmark_tag("no_mask" if str(args.landmark_time).lower() in {"none", "off"} else f"landmark_{int(args.landmark_time)}")
     modalities = parse_modalities(args.inner_analyzer)
     ensure_modalities_allowed(args.dataset, modalities)
     bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(args.dataset, "prompt", tag)

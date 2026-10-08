@@ -24,7 +24,7 @@
 
 | 规则 | 语义 | 落点 |
 |---|---|---|
-| R0 | 标签泄露**硬排除**(leaves / substrings / path_contains / path_suffixes / leaf_startswith 名单;`except_leaves` 白名单;**无 landmark 时整层删除**路径含 diagnoses / follow_ups 的字段) | `templates/field_filter_rules.json` → R0_label_leak |
+| R0 | 标签泄露**硬排除**(leaves / substrings / path_suffixes / leaf_startswith 名单;`except_leaves` 白名单)。**不因 landmark 开关删除 timed 层**(2026-10-08 口径对齐:原"无 landmark 时整层删除 diagnoses / follow_ups"条款已移除;no_mask = 全字段不裁剪,与 landmark_0 同字段集;取值裁剪只在 Field Bank 提取期 mask) | `templates/field_filter_rules.json` → R0_label_leak |
 | R1 | 行政 / 标识字段(leaves 名单 + leaf_endswith 后缀;container_leaves) | R1_admin |
 | R2 | ~~timepoint 结构标记(follow_up/baseline)~~ **已移除 2026-10-05**:无下游消费者,且"按字段所在层判时点"与 time_axis 的槽位 t_hi 语义不一致;该语义由 landmark-first R3(t0 coverage)承载。编号保留不复用,以免与历史产物规则名冲突 | — |
 | R3 | **coverage < 0.30 删除**。landmark-first 下 coverage = t0 口径(masked 值上的有效占比) | `--R3_coverage`,默认 0.30 |
@@ -48,24 +48,6 @@
 - **未决**:365/730 的 landmark 统计尚未生成,当前跑 `--landmark_time 365` 会回退 raw
   统计(静默 raw-first);建议改为"统计缺失直接报错"——待用户拍板。
 
-## 运行
-
-```bash
-python3 scripts/run_field_stats.py --dataset all --landmark_time 0     # ② landmark 统计(现行链,t0 mask 口径)
-python3 scripts/run_field_filter.py --dataset all --landmark_time 0 \  # ③ 筛选(写现行目录,自动消费 ②)
-    --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
-# 或分步:
-python3 scripts/run_field_stats.py  --dataset all --landmark_time 0
-python3 scripts/run_field_filter.py --dataset all --landmark_time 0 \
-    --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
-```
-
-## 验收
-
-- `python3 scripts/validate_t0stats_vs_masks.py`:t0 coverage 与 t0 臂 Field Bank `.pt` mask
-  逐字段比对(tol 1e-5;35 数据集 max_abs_diff ≤ 5e-7);
-- 排除计数抽查:与现行 kept_fields 交集、按 rule 分组、与 .pt mask 实测逐数据集一致;
-- 重跑 diff=0;`--out_suffix` 可写独立命名空间用于对照(不覆盖现行目录)。
 
 ## 代码落点
 

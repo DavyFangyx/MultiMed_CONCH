@@ -10,7 +10,7 @@ from ..types import BudgetExhausted
 
 
 ANCHOR_TIMING_DATASETS = ("TCGA-BRCA", "TCGA-LGG", "TCGA-CHOL")
-ANCHOR_LANDMARKS = ("landmark_0", "landmark_365", "landmark_730", "static_only")
+ANCHOR_LANDMARKS = ("landmark_0", "landmark_365", "landmark_730", "no_mask")
 
 
 def choose_p_anchor(n_instances: int, t_median_seconds: float, workers: int, hours=30.0):

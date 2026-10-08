@@ -154,7 +154,7 @@ bash scripts/s5b_univariate_queue.sh check
   15 主集的 `outputs/{ds}/field_bank/prompt/landmark_0/field_index.json` 存在。
 - **产物**:`outputs/{ds}/field_bank/prompt/landmark_0/{prompts.csv,embeddings/pt/*.pt,field_index.json}`、
   `outputs/{ds}/schemes/landmark_0_{L2,L3,L5}/`、`outputs/{ds}/A_manual/{scheme}/[landmark_0/]`、
-  `outputs/_raw/{ds}/field_bank/prompt/static_only/`(off 臂 raw bank)。
+  `outputs/_raw/{ds}/field_bank/prompt/no_mask/`(off 臂 raw bank)。
 - **label 派生(患者线,与字段线正交,无独立命令)**:landmark 三要件(风险集只留 gt>T、终点平移 gt−T、gt≤0 全局剔除)
   由评估入口在训练时自动派生,落 `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`;
   字段线与患者线在评估(阶段 3~7 的 cindex)汇合。
@@ -188,7 +188,7 @@ bash scripts/s5b_univariate_queue.sh watch
 
 - **判据**:`Test_1a_t0` 与 `Test_1a_off` 两家族均 **queue 空 && running 空 && done ≥ 15**。
 - **产物**:t0 臂 `results/univariate/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(+ `runs/`);
-  off 臂 `results/Test_1a/arm_off/univariate/prompt/static_only/{ds}/mlp_clinic_flatten/field_cindex.csv`,
+  off 臂 `results/Test_1a/arm_off/univariate/prompt/no_mask/{ds}/mlp_clinic_flatten/field_cindex.csv`,
   汇总 `results/Test_1a/arm_off/_s5b_report.json`。
 - GPU:`S5_GPUS`(默认 2,3,4)/`S5B_GPUS`(默认 7),`*_WORKERS` 默认 8。
 

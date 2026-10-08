@@ -127,15 +127,6 @@ def _add_common_args(parser: argparse.ArgumentParser):
         ),
     )
     parser.add_argument(
-        "--landmark_shift",
-        default="on",
-        choices=["on", "off"],
-        help=(
-            "时间原点平移开关（只影响 cindex 的 label 侧，用于平移不变性自检）："
-            "on=label 时间 gt-T（默认）；off=只做风险集排除、不平移，写独立 run 名 __noshift。"
-        ),
-    )
-    parser.add_argument(
         "--hgcn_out_root",
         default=None,
         help=(
@@ -293,7 +284,6 @@ def main(argv=None):
             queue_root=args.queue_root,
             workers=args.workers,
             landmark_setting=landmark_setting,
-            landmark_shift=args.landmark_shift != "off",
         )
         return
 

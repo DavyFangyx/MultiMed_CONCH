@@ -31,7 +31,7 @@ from common.paths import test_results_dir
 from greedy.embeddings import subset_scheme_name
 
 LM0_RESULTS = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
-RAW_RESULTS = test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "static_only"
+RAW_RESULTS = test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "no_mask"
 RAW_BANK_ROOT = ROOT / "outputs" / "_raw"
 LM0_BANK_ROOT = ROOT / "outputs"
 MODALITY = "mlp_clinic_flatten"
@@ -41,7 +41,7 @@ OUT_JSON = test_results_dir("Test_1a/arm_off") / "_audit_pairs.json"
 
 def bank_fields(dataset: str, raw: bool) -> list[str]:
     root = RAW_BANK_ROOT if raw else LM0_BANK_ROOT
-    tag = "static_only" if raw else "landmark_0"
+    tag = "no_mask" if raw else "landmark_0"
     index = json.loads((root / dataset / "field_bank" / "prompt" / tag / "field_index.json").read_text(encoding="utf-8"))
     return list(index["fields"])
 
@@ -87,7 +87,7 @@ def cindex_from_csv(dataset: str, field: str, root: Path) -> float | None:
 
 def value_diff_summary(dataset: str) -> dict:
     """raw 变体与 lm0 的取值差异摘要（构建期由 s5b_build_raw_field_bank.py 落盘）。"""
-    path = RAW_BANK_ROOT / dataset / "field_bank" / "prompt" / "static_only" / "raw_value_diff.json"
+    path = RAW_BANK_ROOT / dataset / "field_bank" / "prompt" / "no_mask" / "raw_value_diff.json"
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))

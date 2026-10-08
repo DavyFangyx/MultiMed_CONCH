@@ -439,7 +439,7 @@ def run_schemes(args) -> None:
     for name in names:
         for landmark_args in iter_landmark_args(
             args,
-            scan_roots=dataset_field_bank_dir(name, "prompt", "static_only").parent,
+            scan_roots=dataset_field_bank_dir(name, "prompt", "no_mask").parent,
             context=f"schemes {name}",
         ):
             use_landmark, landmark_time = parse_landmark_options(landmark_args)

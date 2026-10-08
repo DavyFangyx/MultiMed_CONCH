@@ -31,7 +31,7 @@ def test_scheduler_generates_one_conf_per_dataset(tmp_path):
     names = resolve_dataset_list(args)
     queued = enqueue_jobs(args, names)
     created = {p.name.split("__", 1)[1].removesuffix(".conf") for p in queued["created"]}
-    assert created == {f"{name}__static_only" for name in names}
+    assert created == {f"{name}__no_mask" for name in names}
     again = enqueue_jobs(args, names)
     assert again["created"] == []
     assert len(again["existing"]) == 3
@@ -76,7 +76,7 @@ def test_longitudinal_queue_root_is_separate(tmp_path):
         queue_root_from_args(args)
     queued = enqueue_jobs(args, ["TCGA-BRCA"], root=tmp_path / "longitudinal")
     created = {p.name.split("__", 1)[1].removesuffix(".conf") for p in queued["created"]}
-    assert created == {"TCGA-BRCA__static_only"}
+    assert created == {"TCGA-BRCA__no_mask"}
     payload = load_job(queued["created"][0])
     assert payload["args"]["experiment"] == "longitudinal"
 
@@ -95,25 +95,25 @@ def test_scheduler_generates_one_conf_per_dataset_and_landmark(tmp_path):
     queued = enqueue_jobs(args, resolve_dataset_list(args))
     created = {p.name.split("__", 1)[1].removesuffix(".conf") for p in queued["created"]}
     assert created == {
-        "TCGA-BRCA__static_only",
+        "TCGA-BRCA__no_mask",
         "TCGA-BRCA__landmark_365",
-        "TCGA-READ__static_only",
+        "TCGA-READ__no_mask",
         "TCGA-READ__landmark_365",
     }
     payload = load_job(queued["created"][0])
     assert payload["args"]["landmark_time"] in {"none", "365"}
-    assert payload["landmark_tag"] in {"static_only", "landmark_365"}
+    assert payload["landmark_tag"] in {"no_mask", "landmark_365"}
 
 
 def test_scheduler_landmark_all_scans_field_bank_parent(tmp_path, monkeypatch):
     from common.paths import dataset_field_bank_dir
 
     bank_parent = tmp_path / "field_bank" / "prompt"
-    for tag in ("landmark_0", "landmark_365", "static_only"):
+    for tag in ("landmark_0", "landmark_365", "no_mask"):
         (bank_parent / tag).mkdir(parents=True)
 
     def fake_dir(dataset_name, encoding="prompt", landmark_tag=None, experiment=None):
-        return bank_parent / (landmark_tag or "static_only")
+        return bank_parent / (landmark_tag or "no_mask")
 
     monkeypatch.setattr("common.paths.dataset_field_bank_dir", fake_dir)
     args = build_parser().parse_args(
@@ -131,5 +131,5 @@ def test_scheduler_landmark_all_scans_field_bank_parent(tmp_path, monkeypatch):
     assert created == {
         "TCGA-BRCA__landmark_0",
         "TCGA-BRCA__landmark_365",
-        "TCGA-BRCA__static_only",
+        "TCGA-BRCA__no_mask",
     }

@@ -130,7 +130,6 @@ def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
         seed=C.SEED,
         landmark_tag=f"landmark_{C.LANDMARK_TIME}",
         landmark_time=int(C.LANDMARK_TIME),
-        landmark_shift=True,
     )
 
 

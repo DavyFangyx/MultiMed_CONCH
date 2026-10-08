@@ -8,7 +8,7 @@ DEFAULT_SEED = 0
 N_FOLDS = 5
 MODALITY = "mlp_clinic_flatten"
 ENCODING = "prompt"
-LANDMARK_TAGS = ("landmark_0", "landmark_365", "landmark_730", "static_only")
+LANDMARK_TAGS = ("landmark_0", "landmark_365", "landmark_730", "no_mask")
 K_GRID_VALUES = (1, 3, 5, 8, 12, 20)
 
 

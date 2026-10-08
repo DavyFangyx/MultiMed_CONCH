@@ -285,16 +285,15 @@ def _reuse_existing_landmark_labels() -> None:
         return
     original = LL.build_landmark_label_file
 
-    def reuse(*, study, landmark_time, apply_shift: bool = True, **kw):
+    def reuse(*, study, landmark_time, **kw):
         out = Path(kw["out_path"]) if kw.get("out_path") else LL.landmark_label_path(
             study=study, landmark_time=landmark_time,
-            results_root=kw.get("results_root"), apply_shift=apply_shift)
+            results_root=kw.get("results_root"))
         if out.exists():
             stats_path = out.with_suffix(".json")
             if stats_path.exists():
                 return out, json.loads(stats_path.read_text(encoding="utf-8"))
-        return original(study=study, landmark_time=landmark_time,
-                        apply_shift=apply_shift, **kw)
+        return original(study=study, landmark_time=landmark_time, **kw)
 
     reuse._test5_reuse = True
     cindex.build_landmark_label_file = reuse
@@ -329,7 +328,6 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
                     seed=SEED,
                     landmark_tag=plan.landmark_tag,
                     landmark_time=plan.landmark_time,
-                    landmark_shift=True,
                 ):
                     job["arm"] = plan.arm
                     jobs.append(job)
@@ -348,7 +346,7 @@ def encoding_paths(dataset: str, scheme: str, encoding: str, landmark_tag: str) 
     # `A_manual/baseline/{scheme}` 子目录；先 bound_scheme_name 会得到 prompt 路径）。
     name = f"baseline__{scheme}" if encoding == "baseline" and not scheme.startswith("baseline__") \
         else scheme
-    subdir = "" if landmark_tag in ("", "static_only") else landmark_tag
+    subdir = "" if landmark_tag in ("", "no_mask") else landmark_tag
     return scheme_output_dir(dataset, name, str(OUTPUTS), landmark_subdir=subdir)
 
 

@@ -145,6 +145,21 @@ def build_field_bank_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
     )
+    parser.add_argument(
+        "--static_only",
+        action="store_true",
+        help=(
+            "稳定字段子集模式(2026-10-08):从 --landmark_time 对应 tag 的 kept_fields/模板中剔除"
+            " diagnoses[]/follow_ups[] 路径族(含嵌套),只编码稳定字段;产物 tag = static_only,"
+            "落 outputs/{dataset}/field_bank/{encoding}/static_only/(与 landmark_{T} / no_mask 平级)。"
+            "与 --landmark_time none(no_mask 全字段不裁剪)互斥"
+        ),
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="覆盖产物根目录(默认 outputs/{dataset}/field_bank/{encoding}/{landmark_tag})；多数据集/多 tag 时自动追加 {dataset}/{tag}",
+    )
     add_landmark_cli_args(parser, extraction=True)
     return parser
 

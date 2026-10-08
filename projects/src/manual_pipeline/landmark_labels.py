@@ -7,10 +7,9 @@ three requirements at once (z_notes/Test_series_spec.md §2.5):
 2. **risk set** - only patients still at risk at T stay in train/val/test
    (drop `ground_truth_time <= T`: died before T, or censored before T with no
    follow-up after T) → this module;
-3. **time origin shift** - the endpoint time becomes `gt - T`. The c-index is
-   invariant to that shift, but the spec requires it to actually happen, so it
-   is implemented here and verified once by the `--landmark_shift off/on`
-   invariance check.
+3. **time origin shift** - the endpoint time becomes `gt - T`. This is a fixed
+   protocol step (requirement ③), always applied: the c-index is invariant to
+   that shift, but the spec requires it to actually happen.
 
 Both label-side parts are applied by writing a derived copy of the study's
 label CSV used by Clinic_Analyzer (`datasets_csv/metadata/{study}.csv`) and
@@ -23,7 +22,7 @@ Time units: Clinic_Analyzer's label column is in months (`LABEL_COL=
 survival_months`), the landmark is in days, so the comparison uses
 `gt_days = months * DAYS_PER_MONTH`. The factor only matters for the
 boundary of the risk set; the shift itself is a constant that cannot change
-the c-index (that is exactly what the invariance check proves).
+the c-index (invariance confirmed by the historical self-check).
 """
 
 from __future__ import annotations
@@ -73,11 +72,9 @@ def landmark_label_path(
     study: str,
     landmark_time,
     results_root: Path | str | None = None,
-    apply_shift: bool = True,
 ) -> Path:
     root = Path(results_root) if results_root else RESULTS_ROOT
-    suffix = "" if apply_shift else "__noshift"
-    return root / label_out_subdir() / f"{study}__landmark_{int(landmark_time)}{suffix}.csv"
+    return root / label_out_subdir() / f"{study}__landmark_{int(landmark_time)}.csv"
 
 
 def build_landmark_label_file(
@@ -90,7 +87,6 @@ def build_landmark_label_file(
     out_path: Path | str | None = None,
     time_col: str = DEFAULT_TIME_COL,
     censorship_col: str = DEFAULT_CENSORSHIP_COL,
-    apply_shift: bool = True,
 ) -> tuple[Path, dict]:
     """Write the landmark arm's label CSV: risk set at T + time origin at T.
 
@@ -113,9 +109,9 @@ def build_landmark_label_file(
     keep_mask = ~excluded_mask
 
     kept = df.loc[keep_mask].copy()
+    # requirement ③: the time origin moves to T (always applied).
     shift_months = landmark_time / DAYS_PER_MONTH
-    if apply_shift:
-        kept[time_col] = pd.to_numeric(kept[time_col], errors="coerce") - shift_months
+    kept[time_col] = pd.to_numeric(kept[time_col], errors="coerce") - shift_months
 
     out_file = (
         Path(out_path)
@@ -124,7 +120,6 @@ def build_landmark_label_file(
             study=study,
             landmark_time=landmark_time,
             results_root=results_root,
-            apply_shift=apply_shift,
         )
     )
     out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -140,8 +135,7 @@ def build_landmark_label_file(
         "time_col": time_col,
         "censorship_col": censorship_col,
         "days_per_month": DAYS_PER_MONTH,
-        "apply_shift": bool(apply_shift),
-        "shift_months": shift_months if apply_shift else 0.0,
+        "shift_months": shift_months,
         "rows_before": int(len(df)),
         "rows_after": int(len(kept)),
         "event_rows_before": _event_rows(df, censorship_col),
@@ -172,7 +166,7 @@ def format_risk_set_summary(stats: dict) -> str:
         f"(-{stats['excluded_case_count']}, gt <= {stats['landmark_time_days']}d), "
         f"rows {stats['rows_before']} -> {stats['rows_after']}, "
         f"events {stats['event_rows_before']} -> {stats['event_rows_after']}, "
-        f"shift={'-' if not stats['apply_shift'] else ''}{stats['shift_months']:.4f} months"
+        f"shift={stats['shift_months']:.4f} months"
     )
 
 

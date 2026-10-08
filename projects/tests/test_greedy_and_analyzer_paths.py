@@ -46,14 +46,14 @@ def test_resolve_field_bank_prompt_job(tmp_path):
 
 
 def test_resolve_greedy_subset_job(tmp_path):
-    clinic_dir = _make_pt_dir(tmp_path / "TCGA_LIHC" / "greedy" / "onehot" / "static_only" / "subsets" / "G3_deadbeef12")
+    clinic_dir = _make_pt_dir(tmp_path / "TCGA_LIHC" / "greedy" / "onehot" / "no_mask" / "subsets" / "G3_deadbeef12")
     job = resolve_clinic_eval_job(clinic_dir)
     assert job["display_name"] == "TCGA_LIHC"
-    assert job["scheme"] == "onehot__static_only__G3_deadbeef12"
+    assert job["scheme"] == "onehot__no_mask__G3_deadbeef12"
     assert job["encoding"] == "onehot"
-    assert job["landmark_tag"] == "static_only"
+    assert job["landmark_tag"] == "no_mask"
     assert job["study"] == "tcga_lihc"
-    assert job["run_name"] == "tcga_lihc__onehot__static_only__G3_deadbeef12"
+    assert job["run_name"] == "tcga_lihc__onehot__no_mask__G3_deadbeef12"
 
 
 def test_resolve_scheme_run_tag_job(tmp_path):
@@ -73,7 +73,7 @@ def test_resolve_a_manual_text_scheme(tmp_path):
     assert job["display_name"] == "TCGA-READ"
     assert job["scheme"] == "L4"
     assert job["encoding"] == "prompt"
-    assert job["landmark_tag"] == "static_only"
+    assert job["landmark_tag"] == "no_mask"
     assert job["study"] == "tcga_read"
     assert job["run_name"] == "tcga_read__L4"
 
@@ -107,14 +107,14 @@ def test_resolve_longitudinal_field_bank_job(tmp_path):
 
 def test_resolve_longitudinal_greedy_subset_job(tmp_path):
     clinic_dir = _make_pt_dir(
-        tmp_path / "TCGA_LIHC" / "longitudinal" / "greedy" / "onehot" / "static_only" / "subsets" / "G3_deadbeef12"
+        tmp_path / "TCGA_LIHC" / "longitudinal" / "greedy" / "onehot" / "no_mask" / "subsets" / "G3_deadbeef12"
     )
     job = resolve_clinic_eval_job(clinic_dir)
     assert job["display_name"] == "TCGA_LIHC"
-    assert job["scheme"] == "longitudinal__onehot__static_only__G3_deadbeef12"
+    assert job["scheme"] == "longitudinal__onehot__no_mask__G3_deadbeef12"
     assert job["encoding"] == "onehot"
-    assert job["landmark_tag"] == "static_only"
-    assert job["run_name"] == "tcga_lihc__longitudinal__onehot__static_only__G3_deadbeef12"
+    assert job["landmark_tag"] == "no_mask"
+    assert job["run_name"] == "tcga_lihc__longitudinal__onehot__no_mask__G3_deadbeef12"
 
 
 def test_default_clinic_embedding_dir_is_field_bank_prompt():
@@ -123,8 +123,8 @@ def test_default_clinic_embedding_dir_is_field_bank_prompt():
 
 
 def test_subset_embedding_dir_uses_greedy_encoding():
-    path = subset_embedding_dir("TCGA_LIHC", "G2_abc", Path("/tmp/outputs"), encoding="onehot", landmark_tag="static_only")
-    assert path.as_posix().endswith("TCGA_LIHC/greedy/onehot/static_only/subsets/G2_abc/embeddings/pt")
+    path = subset_embedding_dir("TCGA_LIHC", "G2_abc", Path("/tmp/outputs"), encoding="onehot", landmark_tag="no_mask")
+    assert path.as_posix().endswith("TCGA_LIHC/greedy/onehot/no_mask/subsets/G2_abc/embeddings/pt")
     assert "B_scan" not in path.as_posix()
 
 

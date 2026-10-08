@@ -1,4 +1,4 @@
-"""Tests for the Test_1b landmark extension (`--landmark_time` / `--landmark_shift`).
+"""Tests for the Test_1b landmark extension (`--landmark_time`).
 
 Covers the three classical landmark requirements of z_notes/Test_series_spec.md
 §2.5 on the manual pipeline side:
@@ -8,9 +8,9 @@ Covers the three classical landmark requirements of z_notes/Test_series_spec.md
    `landmark_time=None` is bit-for-bit the legacy behaviour;
 2. risk set        - `manual_pipeline.landmark_labels.build_landmark_label_file`: patients
    with ground_truth_time <= T leave the label file (i.e. every fold);
-3. time shift      - the same label file shifts the endpoint time by -T, with
-   `--landmark_shift off` keeping the un-shifted variant for the invariance
-   self-check.
+3. time shift      - the same label file shifts the endpoint time by -T (fixed
+   protocol step ③, always on; the shift invariance was confirmed by the
+   historical self-check).
 
 Plus the routing: landmark arms write to their own output / results / queue /
 conf paths and never touch the reported-value arm (`Test_2b/arm_A`).
@@ -350,7 +350,6 @@ def _fake_label_stats(study: str, landmark_time, excluded: int = 7) -> dict:
     return {
         "study": study,
         "landmark_time_days": int(landmark_time),
-        "apply_shift": True,
         "shift_months": landmark_time / DAYS_PER_MONTH,
         "cases_before": 100,
         "cases_after": 100 - excluded,
@@ -413,7 +412,7 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     )
     assert len(jobs) == 1
     job = jobs[0]
-    assert calls == [{"study": "tcga_read", "landmark_time": 0, "results_root": tmp_path / "results", "apply_shift": True}]
+    assert calls == [{"study": "tcga_read", "landmark_time": 0, "results_root": tmp_path / "results"}]
     assert job["clinic_dir"] == masked_dir
     assert job["label_file"] == label_file
     assert job["row_scheme"] == "baseline__MULTISURV__landmark_0"
@@ -435,10 +434,11 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     )
     assert none_jobs[0]["clinic_dir"] == legacy_dir
     assert none_jobs[0]["label_file"] is None
-    assert calls == [{"study": "tcga_read", "landmark_time": 0, "results_root": tmp_path / "results", "apply_shift": True}]
+    assert calls == [{"study": "tcga_read", "landmark_time": 0, "results_root": tmp_path / "results"}]
 
 
-def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
+def test_iter_cindex_jobs_landmark_365_has_one_run_name(tmp_path, monkeypatch):
+    """平移恒开：一个 landmark 臂只有一套 run/conf 名（无未平移变体）。"""
     _load_scheme_fields()
     baseline_out = tmp_path / "outputs"
     _touch_clinic_dir(
@@ -461,11 +461,10 @@ def test_iter_cindex_jobs_shift_off_gets_own_run_name(tmp_path, monkeypatch):
         results_root=tmp_path / "results",
         landmark_tag="landmark_365",
         landmark_time=365,
-        landmark_shift=False,
     )
-    assert jobs[0]["row_scheme"] == "baseline__MULTISURV__landmark_365__noshift"
-    assert jobs[0]["conf_name"] == "tcga_read__baseline__MULTISURV__landmark_365__noshift__clinic_cox.conf"
-    # the embedding dir is the shifted arm's: only the label origin differs
+    assert jobs[0]["row_scheme"] == "baseline__MULTISURV__landmark_365"
+    assert jobs[0]["conf_name"] == "tcga_read__baseline__MULTISURV__landmark_365__clinic_cox.conf"
+    # the embedding dir is the masked arm's
     assert jobs[0]["clinic_dir"] == scheme_output_dir(
         "TCGA-READ", "baseline__MULTISURV", str(baseline_out), landmark_subdir="landmark_365"
     )
@@ -546,21 +545,6 @@ def test_build_landmark_label_file_risk_set_and_shift(tmp_path):
     assert df["censorship"].tolist() == [1, 0, 0]
     assert list(df.columns)[:3] == ["Unnamed: 0", "case_id", "slide_id"]
     assert (tmp_path / "labels" / "tcga_xx__landmark_365.json").is_file()
-
-
-def test_build_landmark_label_file_shift_off_keeps_times(tmp_path):
-    label_csv = _write_label_csv(tmp_path / "metadata" / "tcga_xx.csv")
-    out_file, stats = build_landmark_label_file(
-        study="tcga_xx",
-        landmark_time=365,
-        label_file=label_csv,
-        out_path=tmp_path / "labels" / "tcga_xx__landmark_365__noshift.csv",
-        apply_shift=False,
-    )
-    assert stats["apply_shift"] is False and stats["shift_months"] == 0.0
-    df = pd.read_csv(out_file)
-    assert df["case_id"].tolist() == ["P12", "P60", "P120"]
-    assert df["survival_months"].tolist() == [12.0, 60.0, 120.0]
 
 
 def test_build_landmark_label_file_at_zero_keeps_positive_times(tmp_path):
@@ -672,13 +656,6 @@ def test_cli_rejects_bad_landmark_time(capsys):
         manual_main(["json2prompt", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_time", "abc"])
     assert exc.value.code == 2
     assert "--landmark_time" in capsys.readouterr().err
-
-
-def test_cli_landmark_shift_choices(capsys):
-    with pytest.raises(SystemExit) as exc:
-        manual_main(["cindex", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_shift", "maybe"])
-    assert exc.value.code == 2
-    assert "--landmark_shift" in capsys.readouterr().err
 
 
 def test_cli_json2prompt_retired_fails_fast(tmp_path):

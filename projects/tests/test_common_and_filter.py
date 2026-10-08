@@ -152,11 +152,10 @@ def test_filter_rules_new_r0_r1_and_thresholds():
             "mode_share": 0.6,
         }
     )
+    # 2026-10-08 口径对齐:no_mask(landmark off)不再整层删除 timed 层
+    # (diagnoses[] / follow_ups[]),R0 只删结局字段本身——本字段两种口径下都保留。
     rule, _ = apply_rules(follow_up)
     assert rule is None
-    rule, trigger = apply_rules(follow_up, no_landmark=True)
-    assert rule == "R0_label_leak"
-    assert trigger.startswith("path_contains:")
 
     cycles = pd.Series(
         {
@@ -166,10 +165,9 @@ def test_filter_rules_new_r0_r1_and_thresholds():
             "mode_share": 0.4,
         }
     )
+    # no_mask 口径下同样保留(见上:不再按 landmark 开关整层删 timed 层)。
     rule, _ = apply_rules(cycles)
     assert rule is None
-    rule, _ = apply_rules(cycles, no_landmark=True)
-    assert rule == "R0_label_leak"
 
     disease_response = pd.Series(
         {
@@ -236,8 +234,6 @@ def test_filter_rules_new_r0_r1_and_thresholds():
     )
     rule, _ = apply_rules(review)
     assert rule is None
-    rule, _ = apply_rules(review, no_landmark=True)
-    assert rule == "R0_label_leak"
 
     index_date = pd.Series(
         {
@@ -271,8 +267,6 @@ def test_filter_rules_new_r0_r1_and_thresholds():
     )
     rule, _ = apply_rules(tumor_origin)
     assert rule is None
-    rule, _ = apply_rules(tumor_origin, no_landmark=True)
-    assert rule == "R0_label_leak"
 
     coverage_drop = pd.Series(
         {
@@ -605,7 +599,7 @@ def test_dataset_field_bank_dir_defaults_to_prompt():
 
 
 def test_dataset_field_bank_dir_onehot():
-    assert dataset_field_bank_dir("TCGA-BRCA", "onehot", "static_only") == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "field_bank" / "onehot" / "static_only"
+    assert dataset_field_bank_dir("TCGA-BRCA", "onehot", "no_mask") == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "field_bank" / "onehot" / "no_mask"
 
 
 def test_dataset_greedy_dir_onehot():
@@ -617,16 +611,16 @@ def test_dataset_univariate_dir_prompt():
 
 
 def test_dataset_linear_probe_dir_prompt():
-    assert dataset_linear_probe_dir("TCGA_LIHC", "prompt", "static_only") == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "static_only"
+    assert dataset_linear_probe_dir("TCGA_LIHC", "prompt", "no_mask") == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "no_mask"
 
 
 def test_dataset_results_dirs():
     assert dataset_greedy_results_dir("TCGA-BRCA", "onehot", "landmark_0") == PROJECT_ROOT / "results" / "greedy" / "onehot" / "landmark_0" / "TCGA-BRCA"
     assert dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365") == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
-    assert dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "static_only") == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "static_only" / "TCGA_LIHC"
+    assert dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "no_mask") == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "no_mask" / "TCGA_LIHC"
     assert dataset_greedy_results_dir(
-        "TCGA-BRCA", "onehot", "static_only", experiment="longitudinal"
-    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "static_only" / "TCGA-BRCA"
+        "TCGA-BRCA", "onehot", "no_mask", experiment="longitudinal"
+    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "no_mask" / "TCGA-BRCA"
     assert dataset_greedy_run_dir(
         "CPTAC", "prompt", "landmark_730", "G4_37770ad1bc", "mlp_clinic_flatten"
     ) == PROJECT_ROOT / "results" / "greedy" / "prompt" / "landmark_730" / "CPTAC" / "runs" / "G4_37770ad1bc" / "mlp_clinic_flatten"
@@ -634,8 +628,8 @@ def test_dataset_results_dirs():
         "TCGA_LIHC", "prompt", "landmark_365", "G1_deadbeef12", "mlp_clinic_flatten"
     ) == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
     assert dataset_greedy_run_dir(
-        "TCGA-BRCA", "onehot", "static_only", "G2_abc", "mlp_clinic_flatten", experiment="longitudinal"
-    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "static_only" / "TCGA-BRCA" / "runs" / "G2_abc" / "mlp_clinic_flatten"
+        "TCGA-BRCA", "onehot", "no_mask", "G2_abc", "mlp_clinic_flatten", experiment="longitudinal"
+    ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "no_mask" / "TCGA-BRCA" / "runs" / "G2_abc" / "mlp_clinic_flatten"
     assert dataset_univariate_results_dir(
         "TCGA_LIHC", "prompt", "landmark_365", experiment="longitudinal"
     ) == PROJECT_ROOT / "results" / "longitudinal_univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
@@ -649,14 +643,14 @@ def test_dataset_dirs_include_longitudinal_experiment():
         "TCGA-BRCA", "prompt", "landmark_365", experiment="longitudinal"
     ) == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "longitudinal" / "field_bank" / "prompt" / "landmark_365"
     assert dataset_greedy_dir(
-        "TCGA-BRCA", "onehot", "static_only", experiment="longitudinal"
-    ) == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "longitudinal" / "greedy" / "onehot" / "static_only"
+        "TCGA-BRCA", "onehot", "no_mask", experiment="longitudinal"
+    ) == PROJECT_ROOT / "outputs" / "TCGA-BRCA" / "longitudinal" / "greedy" / "onehot" / "no_mask"
     assert dataset_univariate_dir(
         "TCGA_LIHC", "prompt", "landmark_365", experiment="longitudinal"
     ) == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "longitudinal" / "univariate" / "prompt" / "landmark_365"
     assert dataset_linear_probe_dir(
-        "TCGA_LIHC", "prompt", "static_only"
-    ) == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "static_only"
+        "TCGA_LIHC", "prompt", "no_mask"
+    ) == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "no_mask"
     assert normalize_experiment("") == ""
     assert normalize_experiment("longitudinal") == "longitudinal"
 
@@ -673,11 +667,11 @@ def test_invalid_encoding_raises():
     with pytest.raises(ValueError, match="unsupported encoding"):
         dataset_linear_probe_dir("TCGA-BRCA", "hash")
     with pytest.raises(ValueError, match="unsupported encoding"):
-        dataset_greedy_results_dir("TCGA-BRCA", "hash", "static_only")
+        dataset_greedy_results_dir("TCGA-BRCA", "hash", "no_mask")
     with pytest.raises(ValueError, match="unsupported encoding"):
-        dataset_linear_probe_results_dir("TCGA-BRCA", "hash", "static_only")
+        dataset_linear_probe_results_dir("TCGA-BRCA", "hash", "no_mask")
     with pytest.raises(ValueError, match="no longitudinal results tree"):
-        dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "static_only", experiment="longitudinal")
+        dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "no_mask", experiment="longitudinal")
 
 
 def test_field_bank_main_rejects_unknown_encoding():
@@ -722,7 +716,7 @@ def test_landmark_time_accepts_csv_and_all(tmp_path):
 
     (tmp_path / "landmark_0").mkdir()
     (tmp_path / "landmark_365").mkdir()
-    (tmp_path / "static_only").mkdir()
+    (tmp_path / "no_mask").mkdir()
     (tmp_path / "other").mkdir()
     assert resolve_landmark_time_tokens("all", scan_roots=tmp_path) == ["0", "365", "none"]
 
@@ -730,7 +724,7 @@ def test_landmark_time_accepts_csv_and_all(tmp_path):
     tokens = [item.landmark_time for item in iter_landmark_args(args)]
     tags = [item.landmark_tag for item in iter_landmark_args(args)]
     assert tokens == ["none", "365"]
-    assert tags == ["static_only", "landmark_365"]
+    assert tags == ["no_mask", "landmark_365"]
 
 
 def test_scan_labels_prefer_gdc_dictionary():

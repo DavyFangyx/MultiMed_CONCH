@@ -28,6 +28,19 @@ _FAMILY_PREFIXES = tuple(
     sorted(FAMILY_PATHS.items(), key=lambda item: len(item[1]), reverse=True)
 )
 
+# static_only 模式(2026-10-08)剔除的字段路径族:六个 timed family 全部挂在
+# diagnoses[] / follow_ups[] 两棵树下(FAMILY_PATHS),故按路径前缀判断即可,
+# 不需要逐字段清单。
+TIMED_FIELD_PATH_PREFIXES = ("diagnoses[]", "follow_ups[]")
+
+
+def is_timed_field_path(field_path: str) -> bool:
+    """字段路径是否属于 timed 家族(diagnoses[] / follow_ups[],含嵌套子层)。
+
+    static_only 字段集 = 从 kept_fields/模板字段中剔除本函数为真的字段。
+    """
+    return str(field_path or "").startswith(TIMED_FIELD_PATH_PREFIXES)
+
 
 def timed_family_for_field(field_path: str) -> tuple[str | None, str]:
     raw = str(field_path or "")
@@ -60,7 +73,7 @@ def add_landmark_cli_args(parser, *, extraction: bool = True) -> None:
         help=(
             "全局 landmark 起点：天数、none、逗号列表或 all。none 关闭 Field Bank 取值时的患者级 landmark mask"
             if extraction
-            else "全局 landmark 起点：天数、none、逗号列表或 all。筛选产物按 landmark_{T} / static_only 分目录；none 时 R0 整层删除路径含 diagnoses / follow_ups 的字段"
+            else "全局 landmark 起点：天数、none、逗号列表或 all。筛选产物按 landmark_{T} / no_mask(landmark off)分目录；none 时 R0 整层删除路径含 diagnoses / follow_ups 的字段"
         ),
     )
 
@@ -84,7 +97,11 @@ def iter_landmark_args(args, *, scan_roots=None, context: str | None = None):
 
 def landmark_dir_tag(args) -> str:
     use_landmark, landmark_time = parse_landmark_options(args)
-    return build_landmark_tag(no_landmark=not use_landmark, landmark_time=landmark_time)
+    return build_landmark_tag(
+        no_landmark=not use_landmark,
+        landmark_time=landmark_time,
+        static_only=bool(getattr(args, "static_only", False)),
+    )
 
 
 def landmark_policy(use_landmark: bool) -> str:

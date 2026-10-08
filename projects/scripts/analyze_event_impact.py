@@ -24,8 +24,8 @@ rows = []
 for ds in ev["dataset"]:
     key = ds.upper()
     rec = {"dataset": ds, **ev[ev.dataset == ds].iloc[0].to_dict()}
-    # --- univariate / Test_1a arm_t0 (static_only) ---
-    f = test_results_dir("Test_1a/arm_t0") / "prompt" / "static_only" / ds / "field_cindex.csv"
+    # --- univariate / Test_1a arm_t0 (no_mask) ---
+    f = test_results_dir("Test_1a/arm_t0") / "prompt" / "no_mask" / ds / "field_cindex.csv"
     if f.exists():
         u = pd.read_csv(f)
         ok = u[u.status == "ok"] if "status" in u.columns else u
@@ -41,8 +41,8 @@ for ds in ev["dataset"]:
             vals = json.loads(pf) if isinstance(pf, str) else pf
             degen += sum(1 for v in vals if v in (0.0, 1.0))
         rec["uni_degen_folds"] = degen
-    # --- greedy final cindex (static_only) ---
-    f = RESULTS / "greedy/prompt/static_only" / ds / "cindex_by_n_fields.csv"
+    # --- greedy final cindex (no_mask) ---
+    f = RESULTS / "greedy/prompt/no_mask" / ds / "cindex_by_n_fields.csv"
     if f.exists():
         g = pd.read_csv(f)
         last = g.iloc[-1]
@@ -71,7 +71,7 @@ df.to_csv(out / "event_impact_merged.csv", index=False)
 
 # ---- correlations ----
 print("=" * 100)
-print("CORRELATIONS (Pearson) with n_event / event_rate / n_patients  [univariate static_only]")
+print("CORRELATIONS (Pearson) with n_event / event_rate / n_patients  [univariate no_mask]")
 print("=" * 100)
 cols = ["uni_mean", "uni_max", "uni_std_of_means", "uni_mean_foldstd", "uni_degen_folds",
         "greedy_mean", "greedy_std", "aman_max_val", "aman_mean_val", "aman_max_std"]
@@ -85,7 +85,7 @@ for c in cols:
 
 # ---- few-event vs rest: univariate fold std / degenerate folds ----
 print("=" * 100)
-print("GROUP COMPARISON: few events (<30) vs others  [univariate static_only]")
+print("GROUP COMPARISON: few events (<30) vs others  [univariate no_mask]")
 print("=" * 100)
 few = df[df.n_event < 30]
 many = df[df.n_event >= 30]

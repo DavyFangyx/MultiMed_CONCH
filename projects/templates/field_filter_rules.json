@@ -1,6 +1,16 @@
 {
-  "说明": "R0/R1 名单型筛选 + R4 方案字段豁免 + R5 别名映射。R0 只删真正结局字段；默认 landmark 开启时，diagnoses / follow_ups 整层留给 Field Bank 按 T 做取值 mask。--landmark_time none 时 R0 用 path_contains 整层删除这两层。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。R1 对齐 GDC administrative 且尚未被 R0 命中的字段；R4_exempt 是论文方案字段组合的豁免清单（2026-10-08）；R5_alias 只处理年龄、性别两组同义字段的别名映射（2026-10-08 由 R5_derivable 修订而来）。",
+  "说明": "R0/R1 名单型筛选 + R4 方案字段豁免 + R5 别名映射。R0 只删真正结局字段，不因 landmark 开关整层删除 timed 层：diagnoses / follow_ups 的取值裁剪只发生在 Field Bank 提取期的 patient-level landmark mask（默认链），no_mask 口径下全字段不裁剪、与 landmark_0 同字段集（2026-10-08 口径对齐，原 path_contains 整层删除条款已移除）。R3/R4 阈值由 run_field_filter.py 的 --R3_coverage / --R4_n_unique / --R4_mode_share 传入。R1 对齐 GDC administrative 且尚未被 R0 命中的字段；R4_exempt 是论文方案字段组合的豁免清单（2026-10-08）；R5_alias 只处理年龄、性别两组同义字段的别名映射（2026-10-08 由 R5_derivable 修订而来）。",
   "_changelog": [
+    {
+      "date": "2026-10-08",
+      "changes": [
+        "移除 R0_label_leak 的 path_contains 条款与其 path_contains 名单：不再在 --landmark_time none(no_mask)时整层删除 diagnoses[] / follow_ups[] 路径族。"
+      ],
+      "reasons": [
+        "用户拍板口径：no_mask = 不做 landmark mask（取值不裁剪），timed 字段（diagnoses[] / follow_ups[]）应当保留；统计/筛选侧须与 bank 侧 no_mask 字段集一致（≈ landmark_0 的字段集）。原条款是 landmark off 旧口径（当时 tag 名为 static_only）的遗留，与'全字段不裁剪'语义相悖。",
+        "实现：src/discovery/filter.py 删除该分支及 no_landmark 形参（无其它消费者）；tests/test_common_and_filter.py 4 处断言按新语义改写。"
+      ]
+    },
     {
       "date": "2026-10-08",
       "changes": [
@@ -50,10 +60,6 @@
     ],
     "leaf_startswith": [
       "days_to_"
-    ],
-    "path_contains": [
-      "diagnoses",
-      "follow_ups"
     ],
     "except_leaves": [
       "days_to_birth"
