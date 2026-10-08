@@ -264,16 +264,6 @@ def plot_anytime(seed_rows, display_root, budget_cap=None):
             points = [point for point in anytime_curve(evaluations, budget) if point[0] <= budget]
             if points:
                 ax.step(*zip(*points), where="post", alpha=0.45, label=f'{row["algorithm"]} seed {row["seed"]}')
-                if row["algorithm"].startswith("A2_"):
-                    result = _read_json(Path(row["seed_dir"]) / "result.json")
-                    k_sig = (result.get("metadata") or {}).get("k_sig")
-                    if k_sig is not None:
-                        recommended = frozenset(result.get("recommended_subset") or ())
-                        marker = ({"logical_eval_idx": 0, "cv_c_mean": 0.5} if not recommended else
-                                  next((item for item in evaluations if frozenset(item.get("subset") or ()) == recommended), None))
-                        if marker is not None:
-                            ax.scatter([marker["logical_eval_idx"]], [marker["cv_c_mean"]], marker="x", s=45,
-                                       label=f'k_sig={k_sig}, seed {row["seed"]}')
         for name, values in sorted(references.items()):
             ax.axhline(float(np.mean(values)), linestyle="--", label=name)
         ax.set(xlabel="Logical evaluation", ylabel="Best CV c-index", title=f"{dataset} | {landmark} | {modality}")
