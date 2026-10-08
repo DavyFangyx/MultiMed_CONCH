@@ -182,15 +182,27 @@ def test_pipeline_one_is_thin_wrapper():
     )
     assert proc.returncode == 0, proc.stderr[-800:]
     registered = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert registered and all(name.startswith("Test_3") for name in registered)
+    # 静态 Test_3_* 注册已删（2026-10-08）：--print-schemes 只列 schemes.json 现值，
+    # arms_generate 之后才会出现；这里断言"与注册表一致且磁盘零改动"。
+    assert all(name.startswith("Test_3") for name in registered)
     assert schemes_json.read_bytes() == before               # 磁盘文件零改动
 
     from manual_pipeline.cindex import expand_cindex_jobs
     from manual_pipeline.config import SCHEME_CONFIG, load_custom_schemes
     from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR
     load_custom_schemes(DEFAULT_TEMPLATE_DIR)
-    custom = registered[0]
-    assert custom in SCHEME_CONFIG
-    jobs = expand_cindex_jobs([custom], encoding="text")
-    assert [job["scheme"] for job in jobs] == [custom]       # 开到源头后白名单直接放行
-    assert all(job["encoding"] == "prompt" for job in jobs)
+    # 白名单放行验证：临时注入自定义方案（不写盘），expand_cindex_jobs 应直接放行
+    custom = "Test_3_MULTISURV_TCGA-LAML"
+    SCHEME_CONFIG[custom] = {
+        "fields": ["demographic.sex_at_birth"],
+        "output_cols": [],
+        "datasets": None,
+        "source": "gdc",
+        "config_path": "",
+    }
+    try:
+        jobs = expand_cindex_jobs([custom], encoding="text")
+        assert [job["scheme"] for job in jobs] == [custom]       # 开到源头后白名单直接放行
+        assert all(job["encoding"] == "prompt" for job in jobs)
+    finally:
+        del SCHEME_CONFIG[custom]

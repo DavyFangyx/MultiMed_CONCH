@@ -82,7 +82,9 @@ def test_resolve_hgcn_schemes_accepts_registered():
     # 论文方案 / templates 自定义方案显式点名
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
-    assert resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML") == ["Test_3_MULTISURV_TCGA-LAML"]
+    # 静态 Test_3_* 注册已删（2026-10-08）：arms_generate 动态登记后才可点名
+    with pytest.raises(ValueError):
+        resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML")
     with pytest.raises(ValueError):
         resolve_hgcn_schemes("NOT_A_REGISTERED_SCHEME")
 
@@ -90,7 +92,7 @@ def test_resolve_hgcn_schemes_accepts_registered():
 def test_load_hgcn_scheme_fields_registers_every_loaded_scheme():
     _load_scheme_fields()
     assert set(HGCN_SCHEME_FIELDS) == set(SCHEME_FIELDS)
-    for scheme in ["MULTISURV", "Test_3_MULTISURV_TCGA-LAML"]:
+    for scheme in ["MULTISURV", "HGCN_KIRC"]:
         assert HGCN_SCHEME_FIELDS[scheme] == list(SCHEME_FIELDS[scheme])
 
 

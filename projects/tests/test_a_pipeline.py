@@ -382,7 +382,9 @@ def test_hgcn_keeps_old_field_types_and_cli():
     # S11：论文 / templates 自定义方案显式点名可编码（节点名 = fields.json 字段路径）
     assert resolve_hgcn_schemes("paper") == list(PAPER_SCHEMES)
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
-    assert resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML") == ["Test_3_MULTISURV_TCGA-LAML"]
+    # 静态 Test_3_* 注册已删（2026-10-08）：arms_generate 动态登记后才可点名
+    with pytest.raises(ValueError):
+        resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML")
     try:
         resolve_hgcn_schemes("NOT_A_SCHEME")
         raise AssertionError("unknown scheme should be rejected")
