@@ -60,5 +60,21 @@
     "project_ids": [
       "TCGA-KIRP"
     ]
+  },
+  "TCGA-LUAD": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/Lung/clinical/clinical.cart.2026-06-01.json"
+    ],
+    "project_ids": [
+      "TCGA-LUAD"
+    ]
+  },
+  "TCGA-LUSC": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/Lung/clinical/clinical.cart.2026-06-01.json"
+    ],
+    "project_ids": [
+      "TCGA-LUSC"
+    ]
   }
 }
