@@ -51,3 +51,4 @@ templates/field_bank/**
 ClinicDatasets/gdc_clinical/biotab/
 ClinicDatasets/gdc_clinical/raw_json/
 *.pid
+outputs_pgc_bak*/
