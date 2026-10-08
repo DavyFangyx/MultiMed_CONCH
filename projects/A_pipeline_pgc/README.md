@@ -10,7 +10,7 @@
 
 - **无 landmark 协议**：没有 `--landmark_time` / `--landmark_shift`，没有
   `landmark_{T}` 子目录，没有 cindex 评测通路。
-- **单一数据源**：`datasets.json` 的 9 个 lizhe 癌种，没有 gdc 分支。
+- **单一数据源**：`datasets.json` 的 11 个 lizhe 癌种，没有 gdc 分支。
 - **冻结**：产物是 SurvPGC 训练的输入。重生成需用户显式决定；日常只读。
 
 ## 目录
@@ -18,7 +18,7 @@
 ```text
 A_pipeline_pgc/
 ├── run.py                       # CLI 入口：python run.py <cmd> ...
-├── datasets.json                # 9 个 lizhe 数据集的 clinic_files 清单
+├── datasets.json                # 11 个 lizhe 数据集的 clinic_files 清单
 ├── src/                         # 内核（从 A_pipeline/src 独立复制）
 │   ├── cli.py                   # json2prompt / encode / pipeline / baseline / hgcn_clinic
 │   ├── config.py                # 只注册 L0-L5（templates/schemes.json 的 _schemes）
@@ -60,20 +60,19 @@ A_pipeline_pgc/
 ## 用法
 
 ```bash
-PY=/data/fangyuxuan/miniconda3/envs/trident/bin/python
+PY=/data/fangyuxuan/miniconda3/envs/conch/bin/python
 cd /data/fangyuxuan/projects/medical_dl/trident_project/CONCH-main/projects/A_pipeline_pgc
 
 # prompt（不需要 GPU）
-$PY run.py json2prompt --dataset TCGA-COAD --scheme L0
-
+$PY run.py json2prompt --dataset all --scheme manual --force
 # CONCH embedding（需要 GPU）
-$PY run.py pipeline --dataset all --scheme all --encoding text
+$PY run.py pipeline --dataset all --scheme all --encoding text --force
 
-# D0-D5 baseline 向量
-$PY run.py baseline --dataset all --scheme all
+# D0-D5 baseline 向量（也会重建词表 该词表 HGCN 编码同样需要）
+$PY run.py baseline --dataset all --scheme all --force
 
 # HGCN clinic 图节点 pkl（喂 SurvPGC_Workspace/hgcn data）
-$PY run.py hgcn_clinic --dataset all --scheme all
+$PY run.py hgcn_clinic --dataset all --scheme all --force
 ```
 
 `--dataset` 不传时走 `--json_path` 单 JSON 模式，产物落
@@ -85,3 +84,25 @@ $PY run.py hgcn_clinic --dataset all --scheme all
 `outputs_pgc/{TCGA-XX}/A_manual/{L|D}{0-5}/embeddings/pt/*.pt` 软链到
 `{study}/C/{L|D}{0-5}/`；`SurvPGC_Workspace/hgcn data` 的 clinic 分支来自
 `outputs_pgc/{TCGA-XX}/A_manual/HGCN_clinic/L{k}/`。
+
+## 增加数据集
+
+以 2026-10-08 新增 TCGA-LUAD / TCGA-LUSC(肺癌)为例,步骤:
+
+1. **datasets.json 登记**(同文件按 `project_ids` 拆分,与肾癌三集同模式):
+   `clinic_files` = `/data/lizhe/Medteam_projects/Lung/clinical/clinical.cart.2026-06-01.json`(956 例),
+   `project_ids` = `["TCGA-LUAD"]` / `["TCGA-LUSC"]`(各 478 例)。
+2. **环境固定为 conch**(transformers 5.3.0);trident 环境分词行为不同、产物会全量漂移,禁用。
+3. **按顺序运行**(先 L0-L5,再 baseline,最后 hgcn_clinic):
+   ```bash
+   $PY run.py pipeline --force --dataset TCGA-LUAD,TCGA-LUSC --scheme manual   # 新集 L0-L5(GPU,~10 分钟)
+   $PY run.py baseline --force --dataset all --scheme all                     # 11 集同跑:共享名义词表重构
+   $PY run.py hgcn_clinic --force --dataset all --scheme all                  # 复用新词表
+   ```
+4. **契约与下游同步**:`z_notes/time_axis/frozen_schemes_contract.md` 数据集名单、执行日志 D 系列登记、
+   下游 SurvPGC `build_workspace.sh` 软链 + hgcn 数据拷贝。
+
+影响口径(2026-10-08 实测):新数据集对旧集 **D0 与 HGCN L0 零影响**(demographic 字段词表未变);
+词表重建后旧集 **D1-D5 全部重算、维度 +24~29**(不只 22-vs-17 字段差,还因新集把一批
+<5 频次类别顶过 `min_count=5` 阈值)。每次 `baseline --dataset all` 都会重拟合并覆盖全局词表
+(同输入下确定性,结果不变);`hgcn_clinic` 则是词表存在即复用、不重拟合。
