@@ -133,7 +133,8 @@ def build_field_bank_parser() -> argparse.ArgumentParser:
         choices=list(VALID_ENCODINGS),
     )
     parser.add_argument("--ckpt", default=DEFAULT_CKPT)
-    parser.add_argument("--batch_size", type=int, default=64)
+    # batch_size 与 s5b raw bank（256）对齐：两臂同参数编码时同句子位同（2026-10-08 探针：64 vs 256 有 ~7e-7 GEMM 舍入差异）
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument(
         "--prompts_only",
         action="store_true",

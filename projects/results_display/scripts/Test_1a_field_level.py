@@ -6,7 +6,9 @@
 
 两臂（同患者集，唯一差异 = 取值 mask 状态）：
   - t0 臂：results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
-  - off 臂：results/Test_1a/arm_off/univariate/prompt/static_only/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - off 臂：results/Test_1a/arm_off/univariate/prompt/no_mask/{dataset}/mlp_clinic_flatten/field_cindex.csv
+    （no_mask = 原 static_only，2026-10-08 更名，见 src/common/paths.py LANDMARK_OFF_TAG）
+  - merged t0 臂（噪声本底归零变体）：results/Test_1a/arm_t0_merged/univariate/prompt/landmark_0/
   - Δc_field = c(off) − c(t0)
 
 数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event 派生
@@ -84,13 +86,13 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from common.paths import test_results_dir
+from common.paths import LANDMARK_OFF_TAG, test_results_dir
 
 CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
 DEFAULT_T0_ROOT = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
 DEFAULT_OFF_ROOT = (
-    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / "static_only"
+    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / LANDMARK_OFF_TAG
 )
 DEFAULT_MANIFEST = REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -172,11 +174,12 @@ def load_value_diff(dataset: str, off_root: Path) -> dict[str, dict]:
     编码/训练抖动对照组（噪声本底），Δc 的可解释性以它为准。
     """
     # raw bank 目录与 off 臂结果目录同源于 outputs/_raw（见 scripts/s5b_build_raw_field_bank.py）
-    path = (
-        REPO_ROOT / "outputs" / "_raw" / dataset / "field_bank" / "prompt" / "static_only"
-        / "raw_value_diff.json"
-    )
+    # tag 用现行常量 LANDMARK_OFF_TAG(no_mask)
+    base = REPO_ROOT / "outputs" / "_raw" / dataset / "field_bank" / "prompt"
+    path = base / LANDMARK_OFF_TAG / "raw_value_diff.json"
     if not path.exists():
+        path = None
+    if path is None:
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     out = {}
@@ -478,6 +481,18 @@ def noise_floor_stats(rows: list[dict], delta_threshold: float) -> dict:
             "share_abs_ge_threshold": float(np.mean(np.abs(arr) >= delta_threshold)),
         }
     return groups
+
+
+def assert_noise_floor_zero(rows: list[dict], tol: float = 1e-12) -> list[dict]:
+    """merged 臂验收：未改动单元格两臂输入位同 + MLP 重训位确定 ⇒ mask_unaffected Δc 应为精确 0。
+
+    返回违反项（--strict_noise_floor 时由 main 打印并 exit 1）。
+    """
+    return [
+        r
+        for r in rows
+        if r.get("mask_affected") is False and not (abs(float(r["delta_c"])) <= tol)
+    ]
 
 
 def summarize_datasets(rows: list[dict], delta_threshold: float) -> list[dict]:
@@ -1118,6 +1133,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit", action="store_true", help="生成后做 3 组抽查（规格 §5bis 验收）")
     parser.add_argument("--audit_seed", type=int, default=20261002)
     parser.add_argument("--audit_n", type=int, default=3)
+    parser.add_argument(
+        "--strict_noise_floor",
+        action="store_true",
+        help="mask_unaffected 组 Δc 必须精确为 0（merged 臂验收），违反则 exit 1",
+    )
     return parser
 
 
@@ -1264,9 +1284,12 @@ def main(argv: list[str] | None = None) -> int:
         "leak_scatter_plotted": leak_plotted,
         "delta_c_by_mask_group": noise_floor_stats(admitted, args.delta_threshold),
         "noise_floor_note": (
-            "两臂嵌入来自两次独立构建（raw bank vs lm0 bank）；CONCH 文本编码对全局 padding 长度不"
-            "完全不变，故取值未改动（mask_affected=False）的字段仍有非零 Δc —— 该组即本底（噪声本底），"
-            "Δc 归因于 mask 需显著超过它。"
+            "两臂嵌入来自两次独立构建（raw bank vs lm0 bank），编码 batch_size 不同（raw=256 / lm0=64）"
+            "带来 GEMM 浮点舍入级差异（~1e-7，2026-10-08 探针实测；两臂全局 padding 宽度相同，"
+            "padding 机制未激活），故取值未改动（mask_affected=False）的字段仍有非零 Δc —— "
+            "该组即本底（噪声本底），Δc 归因于 mask 需显著超过它。merged 变体（outputs/_merged）"
+            "把未改动单元格直接复用 off 臂行，两臂输入位同，未改动字段 Δc 精确为 0"
+            "（--strict_noise_floor 断言）。"
         ),
         "coverage_join": {
             "n_coverage_off_filled": coverage["n_coverage_off_filled"],
@@ -1279,6 +1302,11 @@ def main(argv: list[str] | None = None) -> int:
             "被排除字段见 Appx_excluded_fields.csv"
         ),
     }
+    noise_zero_violators = assert_noise_floor_zero(admitted)
+    metrics["noise_floor_zero_exact"] = not noise_zero_violators
+    metrics["noise_floor_unaffected_abs_delta_max"] = (
+        metrics["delta_c_by_mask_group"].get("mask_unaffected") or {}
+    ).get("abs_delta_max")
     (out_dir / OUT_META_METRICS).write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -1301,6 +1329,17 @@ def main(argv: list[str] | None = None) -> int:
               f"median Δc={top['median_delta_among_affected']:+.4f}, "
               f"|Δc|>={CONSISTENCY_DELTA} share={top['frac_abs_delta_ge_0p05']:.0%})")
     print(f"[Test_1a] out: {out_dir}")
+
+    if args.strict_noise_floor:
+        if noise_zero_violators:
+            print(
+                f"[Test_1a] STRICT NOISE FLOOR FAIL: {len(noise_zero_violators)} "
+                "mask_unaffected 字段 Δc != 0"
+            )
+            for item in noise_zero_violators[:20]:
+                print(f"[Test_1a]   {item['dataset']} {item['field']}: Δc={item['delta_c']}")
+            return 1
+        print("[Test_1a] STRICT NOISE FLOOR PASS: mask_unaffected Δc 全部精确为 0")
 
     if args.audit:
         checks = run_audit(

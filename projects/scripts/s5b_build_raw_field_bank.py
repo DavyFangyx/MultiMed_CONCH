@@ -6,7 +6,7 @@
                但取值提取 `landmark=False`（不施加 t0 槽位 mask，取值全集）。
 
 产物（每个数据集）：
-    outputs/_raw/{dataset}/field_bank/prompt/static_only/
+    outputs/_raw/{dataset}/field_bank/prompt/no_mask/   # no_mask = 原 static_only（2026-10-08 更名）
         prompts.csv          # 全患者 × lm0 字段表的 prompt（mask off 取值）
         embeddings/pt/*.pt   # CONCH 文本编码（matrix [n_fields,512], mask, patient_id）
         field_index.json     # landmark_policy=off, field_list_source=landmark_0, ...
@@ -18,7 +18,9 @@
     ① 字段表顺序与 lm0 field bank 的 field_index.json 完全一致；
     ② 患者集与 lm0 field bank 的 pt 文件集完全一致（两臂同患者集的前提）；
     ③ 取值差异只允许出现在 timed family 字段（diagnoses[]/follow_ups[] 系）；
-       非 timed family 字段出现差异 = 提取逻辑异常。
+       非 timed family 字段出现差异 = 提取逻辑异常；
+    ④ 两臂全局 token 宽度一致（宽度分歧会移动 CLS 位置编码、激活 padding 噪声，
+       量级远大于 batch_size 舍入；2026-10-08 探针）。
 
 运行环境：conda env conch（编码）。用法：
     conda activate conch
@@ -49,12 +51,17 @@ from common.datasets import (
     load_dataset_configs,
     resolve_dataset_names,
 )
-from common.paths import DEFAULT_CKPT, DEFAULT_DATASETS_CONFIG, PROJECT_ROOT as PATHS_PROJECT_ROOT
+from common.paths import (
+    DEFAULT_CKPT,
+    DEFAULT_DATASETS_CONFIG,
+    LANDMARK_OFF_TAG,
+    PROJECT_ROOT as PATHS_PROJECT_ROOT,
+)
 from discovery.field_bank import generate_field_bank_prompt_row, load_field_bank_template
 from discovery.landmark import timed_family_for_field
 
 RAW_BANK_ROOT = PATHS_PROJECT_ROOT / "outputs" / "_raw"
-RAW_TAG = "static_only"  # 取值 mask 状态 off 的规范 tag
+RAW_TAG = LANDMARK_OFF_TAG  # 取值 mask 状态 off 的规范 tag（2026-10-08 前为 static_only）
 DIFF_CSV = RAW_BANK_ROOT / "_field_value_diff.csv"
 
 
@@ -166,12 +173,37 @@ def _get_encoder(ckpt: str):
     return _ENCODER_CACHE[key]
 
 
+def _prompt_token_width(texts: list[str], tokenizer) -> int:
+    return int(tokenizer(list(texts), padding=True, truncation=True, return_tensors="pt")["input_ids"].shape[1])
+
+
+def _verify_arm_width_consistency(dataset: str, flat_prompts: list[str], tokenizer) -> None:
+    """硬校验④：两臂全局 token 宽度必须一致。
+
+    宽度分歧会移动 CLS 位置编码（padding 机制，编码差异 ~cos0.8 量级，远大于 batch_size 舍入），
+    使"取值未改动"字段的两臂输入不再同源。若触发：先重建 lm0 bank 使两臂宽度对齐，再重跑本脚本。
+    """
+    raw_width = _prompt_token_width(flat_prompts, tokenizer)
+    lm_bank = lm0_bank_dir(dataset)
+    lm_p = pd.read_csv(lm_bank / "prompts.csv", dtype=str).fillna("")
+    lm_cols = [c for c in lm_p.columns if c != "patient_id"]
+    lm_flat = [str(v) for _, row in lm_p.iterrows() for v in row[lm_cols]]
+    lm_width = _prompt_token_width(lm_flat, tokenizer)
+    if raw_width != lm_width:
+        raise ValueError(
+            f"{dataset}: 两臂全局 token 宽度不一致 (raw={raw_width} lm0={lm_width})——"
+            "padding 位置编码噪声会激活（量级远大于 batch_size 舍入）。"
+            "请先重建 lm0 bank 使两臂宽度对齐，再重跑本脚本。"
+        )
+
+
 def encode_records(dataset: str, records: list[dict], cfg: dict, *, batch_size: int, ckpt: str) -> np.ndarray:
     torch_mod, model, tokenizer, device = _get_encoder(ckpt)
 
     patient_prompts = [[rec[col] for col in cfg["output_cols"]] for rec in records]
     flat_prompts = [sentence for sentences in patient_prompts for sentence in sentences]
     encoded = tokenizer(flat_prompts, padding=True, truncation=True, return_tensors="pt")
+    _verify_arm_width_consistency(dataset, flat_prompts, tokenizer)
     all_tokens = encoded["input_ids"]
     chunks = []
     from tqdm import tqdm

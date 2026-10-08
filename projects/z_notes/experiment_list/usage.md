@@ -44,6 +44,10 @@ S5_GPUS=2,3,4 S5_WORKERS=8 bash scripts/s5_univariate_queue.sh watch
 bash scripts/s5b_univariate_queue.sh enqueue
 # off 臂:每 GPU 起一个后台 drainer(换卡/换并发改行首 S5B_GPUS / S5B_WORKERS)
 S5B_GPUS=7 S5B_WORKERS=8 bash scripts/s5b_univariate_queue.sh drain
+# merged t0 臂(噪声本底归零变体):切片合并(outputs/_merged,零 CONCH 重编码)→ 未改动字段 Δc 精确 0
+python scripts/s5c_merge_t0_bank.py --dataset all   # BRCA/GBM 待 raw bank 新字段表重建后补跑
+python scripts/s5c_univariate_enqueue.py enqueue
+S5C_GPUS=1 S5C_WORKERS=8 python scripts/s5c_univariate_enqueue.py watch
 # 判据:两家族 queue 空 && running 空 && done ≥ 15(off 臂 watch 自愈见 runbook.md 阶段 3)
 ```
 ### 阶段 4:Test_2 时间轴链(2a 审计 → 2b 训练)
@@ -90,6 +94,10 @@ python scripts/run_bakeoff_report.py --results-root results/Test_6_search/prompt
 ```bash
 # Test_1a 两臂对照图 / Δc 排序 / leak×Δc 交叉
 python results_display/scripts/Test_1a_field_level.py
+# Test_1a merged 变体:t0 臂指 merged 结果 + 严格断言(mask_unaffected Δc 必须精确 0,否则 exit 1)
+python results_display/scripts/Test_1a_field_level.py \
+  --t0_root results/Test_1a/arm_t0_merged/univariate/prompt/landmark_0 \
+  --out_dir results_display/Test_1a_field_level_merged --strict_noise_floor
 # Test_2b Δc 森林图 / 汇总表(Test_1b 分布 / Test_4 三档见 runbook.md 阶段 8,可在此重跑)
 python results_display/scripts/Test_2b_delta_report.py
 # 判据:4 个脚本退出码 0

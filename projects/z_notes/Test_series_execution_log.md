@@ -10,11 +10,13 @@
 | 编号 | 事项 | 状态 |
 |---|---|---|
 | D14 | 365/730 的 landmark 统计缺失时 `run_field_filter` 的行为（回退 raw 统计 vs 直接报错） | 待用户拍板 |
+| T32 补 | BRCA/GBM：raw bank 用新字段表重建后，补跑 s5c 合并 + merged 臂 c-index + 刷新报表（两臂字段表当前错位：lm0 已重建、raw 未重建） | 待另一会话字段改造完成 |
 
 ## 改动登记（最新在前）
 
 | 编号 | 改动名称 | git 提交 | 时间 | 简单描述 |
 |---|---|---|---|---|
+| T32 | Test_1a 噪声本底归零：切片合并 + 编码参数对齐（决策点） | 工作区（未提交） | 2026-10-08 | 探针定因：两臂编码 batch_size 不同（t0=64/off=256）→ 同句子 GEMM 舍入差异 ~7e-7 → mask_unaffected Δc 本底（±0.0015）根因；padding 宽度机制未激活（15 集两臂同宽实测；固定 127 重编码探针 cos 仅 0.80~0.85，按用户标准排除）；MLP 重训位确定（同 seed/k/输入两跑逐位相同实测）。修复：①field_bank batch_size 默认 64→256 与 off 臂对齐；②s5b 新增硬校验④两臂全局 token 宽度一致（防 padding 噪声激活）；③新增 s5c_merge_t0_bank.py（outputs/_merged 变体根：未改动单元格直接复用 off 臂行，零 CONCH 重编码）+ s5c_univariate_enqueue.py（队列 Test_1a_t0_merged，结果落 results/Test_1a/arm_t0_merged）；④显示脚本加 --strict_noise_floor 断言（mask_unaffected Δc 精确 0，违反 exit 1）+ noise_floor_note 归因更新；验证 = 3 集冒烟 BLCA/COAD/STAD，全量 13 稳定集后续，BRCA/GBM 待 raw bank 新字段表重建后补跑；tag 随 static_only→no_mask 更名改引 LANDMARK_OFF_TAG（s5b/s5c/显示脚本） |
 | T31 | bank-only 编码统一 + Test_3 两臂更名（决策点） | 工作区（未提交） | 2026-10-07 | scheme 句式模板分支整体删除（74 个 template.csv 备份至 z_notes/backup/manual_schemes_template_csv_20261007/），manual_schemes 只保留 fields.json 字段登记（元数据）；Test_3 三臂→两臂：原臂 B（scheme 模板）退役、原臂 B′ 更名臂 B（bank 切片），头条 Δc = C − B；编码统一 bank 切片（materialize_bank_subset 零 CONCH 重编码，与搜索评估同路径）；--landmark_time 值域 {0/365/730, static_only, raw, none=static_only 别名}（raw = mask off + 与 landmark_0 同字段集，时间轴 B_off 对照用；与 static_only 静态字段口径不可混用）；compare 产出 two_arm.csv（原 three_arm 更名，scheme 交叉列删除）；Test_4 去泄露值 = B 行、可达值 = 搜索 best_cv_c_mean；spec §7.2/清单/runbook/usage/命名公约同步修订；pytest 通过 |
 | P19 | 接口修订：撤销一键串行设计 + usage GPU/workers 显式化（决策点） | `4fc6dd2` `6ad20fc` | 2026-10-07 | 删除 scripts/runbook.sh：长序列运行、多处需人工核查审计，一键串行不适用（P17 的 runbook.sh 撤销，runbook.md 相应引用改为分步手动执行说明）；usage.md 删「一键串行」节；usage.md 全部 GPU 消费命令按 9f64feb 模式行首内联 env 赋值（默认值可见可改）：编码=FIELD_BANK_GPU/A_PIPELINE_GPU/S5B_ENC_GPU（两编码内核内部覆盖 CUDA_VISIBLE_DEVICES，故不用 CUDA 前缀），训练=S5_GPUS+S5_WORKERS / S5B_GPUS+S5B_WORKERS / S4_GPU_TRAIN+S4_WORKERS / T3_SEARCH_GPUS / T3_GPU+T3_WORKERS / T5_WORKERS，workers 全部显式可配无硬编码 |
 | P18 | 接口修订：usage 速查 + 命令块注释化 + 筛选入口恢复开放两步（决策点） | `35be4b8` | 2026-10-06 | 新增 z_notes/experiment_list/usage.md（100 行速查：三句开场+一键串行+分步注释命令块）；runbook.md 命令块全部注释+命令即用风格；删除 scripts/run_landmark_first_filter.py（1443af6 引入的封闭入口），恢复 9f64feb 时代开放两步：run_field_stats --landmark_time 0 → run_field_filter --landmark_time 0 --R3_coverage/--R4_n_unique/--R4_mode_share（命令行可覆盖，默认 0.30/2/0.95）；runbook.sh/spec/tcga_pipeline 文档同步；pytest 302 passed 0 failed |

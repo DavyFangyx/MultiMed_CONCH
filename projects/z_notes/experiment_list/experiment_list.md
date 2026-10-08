@@ -38,7 +38,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | 实验 | 内容 | 数据集 | 产物 |
 |---|---|---|---|
 | **Test_0** 可用数据集评估 | 按 n_event 把 33 TCGA 分四档(协议 A);两链准入前提 | 33 TCGA | `results/Test_0_dataset_availability/manifest.csv` |
-| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 15 个主集(n_event ≥100)× landmark_0 kept 字段 | `results/Test_1a/{arm_t0,arm_off}/`、`results_display/Test_1a_field_level/` |
+| **Test_1a** 单字段泄露对照(时间轴链动机) | per-field c(mask off) vs c(t0),与 leak_rate 交叉 | 15 个主集(n_event ≥100)× landmark_0 kept 字段 | `results/Test_1a/{arm_t0,arm_off,arm_t0_merged}/`、`results_display/Test_1a_field_level/` |
 | **Test_1b** 各数据集 Cindex 情况(字段轴链动机) | 单字段 c-index 分布 + 跨数据集分布 + top-k 重叠 | 33 TCGA | `results_display/Test_1b_dataset_cindex/` |
 | **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2a_leak_audit/` |
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
@@ -62,6 +62,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 - **两臂**:臂 off = 取值 mask 关闭(`raw` 变体);臂 t0 = mask 开(= univariate 已完成);**两臂同患者集**(S4 派生 label,gt≤0 排除)。
 - **评估器**:`mlp_clinic_flatten`(univariate 单字段,与 t0 臂一致)。
 - **轮数 / 协议**:5 折 × seed 0 × 2 臂,逐字段;Δc_field = c(off) − c(t0) 与 Test_2a 的 leak_rate 交叉(leak_rate 列后填,依赖用户接手的新审计)。产物 `results_display/Test_1a_field_level/`。
+- **merged t0 臂（噪声本底归零变体，2026-10-08 T32）**:两臂编码 batch_size 差异（64/256）的 GEMM 舍入（~7e-7）是 mask_unaffected Δc 本底的根因；merged 变体把未改动单元格直接复用 off 臂行（`outputs/_merged`，零 CONCH 重编码），两臂输入位同 → mask_unaffected Δc 精确 0（显示脚本 `--strict_noise_floor` 断言）。结果 `results/Test_1a/arm_t0_merged/`，报表 `results_display/Test_1a_field_level_merged/`。BRCA/GBM 待 raw bank 新字段表重建后补跑。
 
 ### Test_1b 各数据集 Cindex 情况(字段轴链动机)
 
