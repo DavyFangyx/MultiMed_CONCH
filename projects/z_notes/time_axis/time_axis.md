@@ -84,11 +84,11 @@ landmark 的 T 是**同一根轴上的点**（天），外部传入的全局 lan
 
 ### 3.1 Test_ 系列实验口径（详见 `z_notes/Test_series_spec.md` §2.1/§2.5）
 
-- **Test_1b 两臂**：臂 A = 取值 mask off（`landmark_time none`，报告值对照）；臂 B = `landmark_0` 三要件全开（去泄露值）。两臂字段集、模板、编码、模型、划分完全一致，唯一差异 = mask。产物：`results/A_manual_landmark/`。
+- **Test_2b 两臂**：report = 取值 mask off（raw 变体切片，报告值对照）；deleak = `landmark_0` 三要件全开（去泄露值）。两臂字段集、模板、编码、模型、划分完全一致，唯一差异 = mask。产物：`results/Test_2b/arm_A`（历史 apipe，已全清）/ `results/Test_2b/arm_B`（含 Test_3_{work}_{ds} bank 行）。
 - **leak_rate（新口径，2026-09-30 纠错）**：`#{患者: 实际进入模型的值来自 t_hi > 0 的槽位} / #{管线产出有效值的患者}`，直接跑论文管线（A_pipeline，不做泄露处理）并追溯每个值的来源槽位。旧口径 `1 − n_valid_t0/n_valid_none` 已作废。
 - **有效事件数**（如需 landmark 门槛重套，当前协议 A 不执行）：`#{event==1 且 gt > T}`。
 - 默认 landmark = `landmark_0`；365/730 作敏感性。原 `landmark_none`（landmark off，取值不裁剪）**现名 `no_mask`**（2026-10-08 更名；2026-10-05—10-08 间曾误称 `static_only`），移出主图仅进补充材料——注意与"取值 mask 状态 off"不是一回事（二者是两条线：tag 命名 vs 值级 mask 开关）。
-- Field Bank 变体（三模式互斥）：`landmark_0/365/730`（数值 landmark）/ `no_mask`（landmark off，全字段不裁剪）/ `static_only`（2026-10-08 新语义：稳定字段子集，剔除 `diagnoses[]`/`follow_ups[]` 路径族全部字段，由 `run_field_bank.py --static_only` 生成）；Test_2 搜索池 = `landmark_0`。
+- Field Bank 变体（三模式互斥）：`landmark_0/365/730`（数值 landmark）/ `no_mask`（landmark off，全字段不裁剪）/ `static_only`（2026-10-08 新语义：稳定字段子集，剔除 `diagnoses[]`/`follow_ups[]` 路径族全部字段，由 `run_field_bank.py --static_only` 生成）；Test_3 搜索池 = `landmark_0`。
 
 ### 3.2  对象级"不建槽"
 ────────────────────────────────────────

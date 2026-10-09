@@ -112,11 +112,19 @@ def load_scheme(scheme: str) -> list[str]:
     return fields
 
 
-def load_greedy_fields(result_json: Path) -> tuple[list[str], str]:
+def load_greedy_fields(result_json: Path, *, kind: str = "ksig") -> tuple[list[str], str]:
+    """读搜索 result.json 的字段子集(2026-10-09 口径订正)。
+
+    kind="ksig" = recommended_subset(gain-only δ=0.005 参考点,主);
+    kind="best" = best_subset(历史任意步最优,附录变体;缺失时回退 recommended)。
+    """
     if not Path(result_json).exists():
         raise SystemExit(f"[test_3] 缺搜索 result.json: {result_json}")
     data = json.loads(Path(result_json).read_text(encoding="utf-8"))
-    subset = data.get("recommended_subset") or data.get("best_subset")
+    if kind == "best":
+        subset = data.get("best_subset") or data.get("recommended_subset")
+    else:
+        subset = data.get("recommended_subset") or data.get("best_subset")
     if not subset:
         raise SystemExit(f"[test_3] result.json 缺 recommended_subset/best_subset: {result_json}")
     algo = data.get("algorithm", "greedy")

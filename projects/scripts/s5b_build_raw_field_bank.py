@@ -57,6 +57,7 @@ from common.paths import (
     LANDMARK_OFF_TAG,
     PROJECT_ROOT as PATHS_PROJECT_ROOT,
 )
+from common.fingerprint import file_sha256
 from common.patient_universe import restrict_cases_to_label_universe
 from discovery.field_bank import generate_field_bank_prompt_row, load_field_bank_template
 from discovery.landmark import timed_family_for_field
@@ -262,6 +263,11 @@ def write_bank(
         "extraction_mask": "off",
         "field_list_source": "landmark_0",
         "variant": "raw",
+        # 2026-10-09 指纹化: skip 守卫的新鲜度判据
+        "template_sha256": file_sha256(cfg["template_file"]),
+        "lm0_template_sha256": json.loads(
+            (lm0_bank_dir(dataset) / "field_index.json").read_text(encoding="utf-8")
+        ).get("template_sha256"),
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "n_patients": len(records),
     }
@@ -315,11 +321,20 @@ def build_one(args, dataset: str, datasets: dict) -> dict:
             f"{summary['untimed_changed_fields']}"
         )
     index_path = out_dir / "field_index.json"
+    # skip 守卫(2026-10-09 指纹化): 患者数 + 模板指纹 + lm0 指纹三者一致才复用;
+    # 模板/lm0 bank 任一变化 → 自动重建(防"改了模板却复用旧编码")。
+    template_fp = file_sha256(cfg["template_file"])
+    lm0_index = json.loads((lm0_bank_dir(dataset) / "field_index.json").read_text(encoding="utf-8"))
+    lm0_fp = lm0_index.get("template_sha256")
     if index_path.exists() and not args.overwrite:
         old = json.loads(index_path.read_text(encoding="utf-8"))
-        if int(old.get("n_patients") or -1) == len(records):
-            print(f"[s5b] skip {dataset}: 已存在（{index_path}）")
+        if (int(old.get("n_patients") or -1) == len(records)
+                and old.get("template_sha256") == template_fp
+                and old.get("lm0_template_sha256") == lm0_fp):
+            print(f"[s5b] skip {dataset}: 已存在且指纹一致（{index_path}）")
             return {"dataset": dataset, "skipped": True, **summary}
+        if old.get("template_sha256") != template_fp or old.get("lm0_template_sha256") != lm0_fp:
+            print(f"[s5b] stale {dataset}: 模板/lm0 指纹变化,重建 raw bank")
 
     embeddings = encode_records(
         dataset, records, cfg, batch_size=args.batch_size, ckpt=args.ckpt

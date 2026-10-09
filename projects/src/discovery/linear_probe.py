@@ -1,4 +1,8 @@
-"""Ridge linear probe for CONCH prompt embeddings vs continuous Field Bank values."""
+"""Ridge linear probe for CONCH prompt embeddings vs continuous Field Bank values.
+
+患者级口径(2026-10-09): 本模块为数值探针分析工具,未接入 label 宇宙前置过滤
+(common.patient_universe);若用于正式实验对比,需先按 label 宇宙过滤病例。
+"""
 
 from __future__ import annotations
 

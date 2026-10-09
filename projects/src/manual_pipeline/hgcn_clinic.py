@@ -395,6 +395,9 @@ def run_hgcn_clinic(
 
     print("\n[1/3] 读取 JSON ...")
     cases = load_clinical_cases(json_paths, project_ids=project_ids)
+    if dataset_name:
+        # 患者级前置过滤(2026-10-09):节点编码与词表拟合同 label 宇宙。
+        cases, _ = restrict_cases_to_label_universe(cases, dataset_name)
     # landmark 与 prompt / baseline 同一条：值级 mask（t_hi <= T）后再取字段值。
     patient_rows = build_patient_rows(
         cases,

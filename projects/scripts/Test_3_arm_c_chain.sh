@@ -2,7 +2,7 @@
 # S6 / Test_3 臂 C 自动接力：搜索 result.json 落盘即生成 → 编码 → 投放，全部就绪后 drained + 汇总 + 出两臂表
 #
 # 背景：搜索（Test_3_search_queue watch）可能跑数小时；臂 C 的位号来自各数据集 result.json 的
-# recommended_subset（D4 sig_stop 参考点；历史最优 best_subset 由 result.json / search_summary.csv 同报，
+# recommended_subset（gain-only δ=0.005 参考点；历史最优 best_subset 由 result.json / search_summary.csv 同报，
 # 需要时另跑 `Test_3_arms.py generate --arm best` 作附录）。本脚本轮询等待，避免人工守候。
 #
 # 纪律：只新增 Test_3_* 产物；GPU 避开 7（S5b 占用）；失败不退出，逐数据集记日志继续。
@@ -44,7 +44,7 @@ while [ "${#pending[@]}" -gt 0 ]; do
         if ! "$PYTHON3" scripts/Test_3_arms.py encode --arm ksig --gpu "$ENC_GPU" --parallel 2 --datasets "$ds"; then
             ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds encode 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
         fi
-        if ! "$PYTHON3" scripts/Test_3_arms.py enqueue --arm ksig --datasets "$ds"; then
+        if ! "$PYTHON3" scripts/exp_queue.py enqueue --arm test_3_arms --variant ksig --datasets "$ds"; then
             ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds enqueue 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
         fi
         ATTEMPTS[$ds]=0
@@ -53,8 +53,8 @@ while [ "${#pending[@]}" -gt 0 ]; do
     [ "${#pending[@]}" -gt 0 ] && sleep "$POLL"
 done
 
-echo "[chain] 15/15 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
-"$PYTHON3" scripts/Test_3_arms.py drain --gpu "$GPU" --workers "$WORKERS"
+echo "[chain] 13/13 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
+"$PYTHON3" scripts/exp_queue.py drain --arm test_3_arms --gpu "$GPU" --workers "$WORKERS"
 echo "[chain] drain 结束 $(date '+%F %T')"
 
 "$PYTHON3" scripts/Test_3_arms.py summarize --arm b   || echo "[chain] summarize b 失败"

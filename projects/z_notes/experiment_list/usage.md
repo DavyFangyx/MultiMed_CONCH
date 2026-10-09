@@ -84,7 +84,7 @@ T3_GPU=1 T3_WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
 bash scripts/exp_queue.sh enqueue --arm test_5
 # 后台多卡调度(GPU 政策硬约束:只用空闲 0-3,脚本内固定;换并发改行首 T5_WORKERS;停止用 scheduler_stop,勿直接 kill)
 T5_WORKERS=2 bash scripts/exp_queue.sh scheduler
-# 判据:四子检查 done ≥ 128/66/128/66 且 queue/running 空;再跑 bash scripts/exp_queue.sh summarize --arm test_5 与 bash scripts/exp_queue.sh q_recompute(diff=0)
+# 判据:四子检查 done ≥ 110/65/146(110+36 parked)/65 且 queue/running 空;再跑 bash scripts/exp_queue.sh summarize --arm test_5 与 bash scripts/exp_queue.sh q_recompute(diff=0)
 ```
 ### 阶段 7:Test_6 搜索算法选型
 ```bash

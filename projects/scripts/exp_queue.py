@@ -63,7 +63,6 @@ SCRIPTS = ROOT / "scripts"
 OUTPUTS = ROOT / "outputs"
 RESULTS = ROOT / "results"
 MANIFEST_CSV = RESULTS / "Test_0_dataset_availability" / "manifest.csv"
-EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 MAIN_N_EVENT_MIN = 100          # R13：训练范围 = label 宇宙有效事件 >= 100 的 TCGA 主集（2026-10-09 口径）
 MAX_RETRIES = 3
 BUCKETS = ("queue", "running", "done", "failed")
@@ -86,16 +85,6 @@ def main_datasets_from_manifest() -> list[str]:
     return main_datasets_by_label_events(threshold=MAIN_N_EVENT_MIN)
 
 
-def n_event_table() -> dict[str, int]:
-    """n_event 表 = label 宇宙有效事件（直接读 label metadata；2026-10-09 口径）。"""
-    from common.patient_universe import tcga_label_event_table
-
-    table = tcga_label_event_table()
-    if not table:
-        raise FileNotFoundError(
-            "[exp_queue] 未找到 label metadata（R13 权威来源：Clinic_Analyzer/data/datasets_csv/metadata）"
-        )
-    return table
 
 
 def datasets_for(arm: "Arm", override: str | None = None) -> list[str]:
@@ -105,17 +94,8 @@ def datasets_for(arm: "Arm", override: str | None = None) -> list[str]:
         if not names:
             raise SystemExit("[exp_queue] --datasets 为空")
         return names
-    if arm.dataset_source == "manifest15":
+    if arm.dataset_source == "main13":
         return main_datasets_from_manifest()
-    if arm.dataset_source == "eventsummary15":
-        table = n_event_table()
-        names = sorted(
-            name for name, n_event in table.items()
-            if name.startswith(("TCGA-", "TCGA_")) and int(n_event) >= MAIN_N_EVENT_MIN
-        )
-        if not names:
-            raise SystemExit(f"[exp_queue] 主集为空（n_event >= {MAIN_N_EVENT_MIN}）")
-        return names
     raise SystemExit(f"[exp_queue] 臂 {arm.name} 的 dataset_source 未实现: {arm.dataset_source}")
 
 
@@ -201,7 +181,7 @@ class Arm:
     tag: str                        # 日志前缀（沿用旧脚本，便于与历史 log 对照）
     queue_root: Path
     env: str                        # 环境变量前缀（S5_/S5B_/S5C_/S4_/T3_/T5_/T6_）
-    dataset_source: str = "manifest15"
+    dataset_source: str = "main13"
     results_root: Path | None = None
     field_csv_root: Path | None = None          # report/status 产物根（univariate）
     drainer_argv: Callable[..., list[str]] | None = None
@@ -242,7 +222,7 @@ _ARM_T0 = Arm(
     queue_root=config_family_dir("Test_1a_t0"),
     results_root=test_results_dir("Test_1a/arm_t0"),
     field_csv_root=test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0",
-    dataset_source="manifest15",
+    dataset_source="main13",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -265,7 +245,7 @@ _ARM_OFF = Arm(
     queue_root=config_family_dir("Test_1a_off"),
     results_root=test_results_dir("Test_1a/arm_off"),
     field_csv_root=test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / LANDMARK_OFF_TAG,
-    dataset_source="eventsummary15",
+    dataset_source="main13",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -299,7 +279,7 @@ _ARM_MERGED = Arm(
     results_root=test_results_dir("Test_1a/arm_t0_merged"),
     field_csv_root=(test_results_dir("Test_1a/arm_t0_merged") / "univariate" / "prompt"
                     / "landmark_0"),
-    dataset_source="eventsummary15",
+    dataset_source="main13",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -344,13 +324,14 @@ _ARM_2B = Arm(
     extras={"slices": ("A1", "A1H", "B1", "B1H", "A2", "A2H", "B2", "B2H",
                        "A3", "A3H", "B3", "B3H"),
             "wave_order": ("A1", "A1H", "B1", "B1H", "A2", "B2", "A3", "B3"),
-            "done_expected": 552,
+            # 2026-10-09 bank 口径: 55 combos(13 主集 × 4 泛癌种 + 3 HGCN 绑定)
+            # × 2 臂(A report raw 变体切片 / B deleak Test_3 切片) × 2 分析器 = 220
+            "done_expected": 220,
             "cindex_results_root": None,          # 逐字同 s4_enqueue.py（None = cindex 默认）
             "log_dir": test_results_dir("Test_2b") / "logs",
             "conda_env_default": "conch", "encode_parallel_default": "2",
-            "encode_list_default": "/tmp/s4_encode_queue.tsv",
-            "validate_script": "s4_validate_firstwave.py"},
-    note="Test_2b 网格（33 TCGA 全量超集，R13 后波 2/3 空）+ 编码队列",
+            "encode_list_default": "/tmp/s4_encode_queue.tsv"},
+    note="Test_2b 网格（label 宇宙有效事件四档；主集 = 13，bank 切片口径，改造不重跑 T39 补）",
 )
 
 # --- cindex：Test_3 两臂 ----------------------------------------------------
@@ -359,7 +340,7 @@ _ARM_3ARMS = Arm(
     name="test_3_arms", backend="cindex", tag="test_3", env="T3_",
     queue_root=config_family_dir("Test_3_arms"),
     results_root=RESULTS / "Test_3_greedy_vs_works",
-    dataset_source="manifest15",
+    dataset_source="main13",
     drain_mode="inprocess",
     variants=("b", "ksig", "best"),
     workers_default=2, workers_env="WORKERS", gpus_default="1",
@@ -377,7 +358,7 @@ def _t5_arm(sub: str, note: str) -> Arm:
         name=f"test_5_{sub}", backend="cindex", tag="test_5", env="T5_",
         queue_root=config_family_dir(f"Test_5_{sub}"),
         results_root=RESULTS / "Test_5_invariance" / sub,
-        dataset_source="manifest15",
+        dataset_source="main13",
         drain_mode="inprocess",
         sub=sub,
         workers_default=1, workers_env="WORKERS", gpus_default="1",
@@ -439,7 +420,7 @@ _ARM_T3_SEARCH = Arm(
     name="test_3_search", backend="search", tag="test_3", env="T3_",
     queue_root=config_family_dir("Test_3_search"),
     results_root=RESULTS / "Test_3_greedy_vs_works",
-    dataset_source="manifest15",
+    dataset_source="main13",
     workers_default=16, workers_env="SEARCH_WORKERS", gpus_default="1,0,3,4,5,6,4,5,3",
     extras={"landmark": "0", "argv": t3_search_argv,
             "report_out": RESULTS / "Test_3_greedy_vs_works" / "search_summary.csv",
@@ -854,6 +835,11 @@ S4_ARMS = {"A": "none", "B": "0"}
 
 
 def s4_load_waves() -> tuple[dict[str, list[str]], set[str]]:
+    """四档分层与主集名单,计数 = label 宇宙有效事件(2026-10-09 口径,同 T39)。
+
+    主集 = n_event_label >= MAIN_N_EVENT_MIN(13 个);波次分层同列
+    (70-100 带 CI / 30-70 补充 / <30 定性)。
+    """
     waves: dict[str, list[str]] = {"1": [], "2": [], "3": []}
     mains: set[str] = set()
     with MANIFEST_CSV.open(newline="") as fh:
@@ -861,7 +847,8 @@ def s4_load_waves() -> tuple[dict[str, list[str]], set[str]]:
             name = row["dataset"]
             if not name.startswith("TCGA"):
                 continue
-            n_event = float(row["n_event"] or 0)
+            raw = row.get("n_event_label") or row.get("n_event") or 0
+            n_event = float(raw)
             if n_event >= MAIN_N_EVENT_MIN:
                 mains.add(name)
             wave = "1" if n_event >= 70 else ("2" if n_event >= 30 else "3")
@@ -893,50 +880,43 @@ def s4_slice_spec(slice_name: str, waves, mains) -> tuple[str, str, list[tuple[s
 
 
 def s4_jobs_for_combos(arm: Arm, combos: list[tuple[str, str]]) -> list[dict]:
+    """2b 两臂的 cindex conf(bank 切片口径,2026-10-09 改造)。
+
+    (dataset, work) → bank 方案名 Test_3_{work}_{ds}(与 Test_3 链同切片):
+      臂 A(report)= raw 变体切片,legacy 子目录(mask 关;待重建批次);
+      臂 B(deleak)= landmark_0 切片(与 Test_3 臂 B 同一产物,零重复编码)。
+    """
+    from common.datasets import load_dataset_configs
     from manual_pipeline.cindex import iter_cindex_jobs
-    from manual_pipeline.datasets import expand_source_jobs, load_source_dataset_configs
     from manual_pipeline.landmark import parse_landmark_setting
-    from manual_pipeline.paths import (
-        DEFAULT_BASELINE_OUT_ROOT,
-        DEFAULT_GDC_DATASETS_CONFIG,
-        DEFAULT_OUT_DIR,
-        DEFAULT_PROMPT_DIR,
-    )
+
+    import Test_3_common as C
 
     slice_arm = combos[0][2] if combos and len(combos[0]) > 2 else None
-    schemes = sorted({scheme for _, scheme, *_ in combos})
-    datasets_by_scheme: dict[str, list[str]] = {}
-    for dataset, scheme, *_ in combos:
-        datasets_by_scheme.setdefault(scheme, []).append(dataset)
+    if slice_arm is None:
+        raise SystemExit("[exp_queue] s4 combos 缺少臂字母(应为 (dataset, scheme, arm))")
+    landmark = parse_landmark_setting(S4_ARMS[slice_arm])
     all_jobs: list[dict] = []
-    for scheme in schemes:
-        dataset_arg = ",".join(datasets_by_scheme[scheme])
-        jobs = expand_source_jobs(
-            dataset_arg,
-            [scheme],
-            load_source_dataset_configs(gdc_config=DEFAULT_GDC_DATASETS_CONFIG),
-            json_path=None,
-            prompt_dir=DEFAULT_PROMPT_DIR,
-            out_dir=DEFAULT_OUT_DIR,
-            baseline_out=DEFAULT_BASELINE_OUT_ROOT,
-        )
-        landmark = parse_landmark_setting(S4_ARMS[slice_arm])
-        for job in jobs:
-            if not job.get("name"):
-                continue
-            all_jobs.extend(
-                iter_cindex_jobs(
-                    dataset_name=job["name"],
-                    schemes=list(job.get("schemes") or []),
-                    datasets=job.get("datasets") or {},
-                    baseline_out=DEFAULT_BASELINE_OUT_ROOT,
-                    encoding=S4_ENCODING,
-                    modalities=S4_ANALYZERS,
-                    results_root=arm.extras["cindex_results_root"],
-                    landmark_tag=landmark.arm_tag,
-                    landmark_time=landmark.landmark_time,
-                )
+    seen: set[tuple[str, str]] = set()
+    for dataset, work, *_ in combos:
+        key = (dataset, work)
+        if key in seen:
+            continue
+        seen.add(key)
+        scheme_name = C.b_scheme_name(work, dataset)  # Test_3_{work}_{ds} 切片方案
+        all_jobs.extend(
+            iter_cindex_jobs(
+                dataset_name=dataset,
+                schemes=[scheme_name],
+                datasets=load_dataset_configs(ROOT / "datasets.json"),
+                baseline_out=str(OUTPUTS),
+                encoding=S4_ENCODING,
+                modalities=S4_ANALYZERS,
+                results_root=arm.extras["cindex_results_root"],
+                landmark_tag=landmark.arm_tag,
+                landmark_time=landmark.landmark_time,
             )
+        )
     return all_jobs
 
 
@@ -949,6 +929,7 @@ def s4_slice_combos(arm: Arm, slice_name: str) -> tuple[str, str, list[tuple[str
 
 def cmd_2b_enqueue(arm: Arm, opts) -> None:
     from manual_pipeline.cindex import enqueue_cindex_jobs
+    from manual_pipeline.config import SCHEME_CONFIG
 
     # 旧 s4_enqueue.py main() 对每个子命令都先注册方案（custom/baseline/HGCN）；
     # 不注册会让 4 个 pan-cancer 方案在整表里来源绑定为 None -> 静默 0 job。
@@ -956,12 +937,20 @@ def cmd_2b_enqueue(arm: Arm, opts) -> None:
     if not opts.slice:
         raise SystemExit("[exp_queue] enqueue --arm test_2b 需要 --slice（如 A1 / B1H；"
                          f"可选 {' '.join(arm.extras['slices'])}）")
+    # 2026-10-09 bank 口径: 2b 两臂切片方案 = Test_3_{work}_{ds},依赖阶段 5 的
+    # Test_3 generate 先登记(fields.json ∩ bank 字段)。
+    registered = {name for name in SCHEME_CONFIG if str(name).startswith("Test_3_")}
+    if not registered:
+        raise SystemExit(
+            "[exp_queue] enqueue --arm test_2b 依赖 Test_3 方案登记:"
+            "请先跑 scripts/Test_3_arms.py generate --arm b(与 encode --arm b),"
+            "2b 的 deleak 臂与 Test_3 臂 B 是同一份 bank 切片。")
     letter, wave, combos = s4_slice_combos(arm, opts.slice)
     if opts.datasets:
         allow = set(datasets_for(arm, opts.datasets))
         combos = [c for c in combos if c[0] in allow]
-    print(f"[{arm.tag}] slice={opts.slice} arm=landmark_{S4_ARMS[letter]} wave={wave} "
-          f"combos={len(combos)} confs_expected={len(combos) * len(S4_ANALYZERS)}")
+    print(f"[{arm.tag}] slice={opts.slice} arm={letter}({'report raw 切片' if letter == 'A' else 'deleak lm0 切片'}) "
+          f"wave={wave} combos={len(combos)} confs_expected={len(combos) * len(S4_ANALYZERS)}")
     jobs = s4_jobs_for_combos(arm, combos)
     queued = enqueue_cindex_jobs(jobs, queue_root=str(arm.queue_root))
     print(f"[{arm.tag}] queue={queued['root']} created={len(queued['created'])} "
@@ -999,26 +988,32 @@ def cmd_2b_summarize(arm: Arm, opts) -> None:
             )
 
 
-def s4_encodes_exist(dataset: str, scheme: str, arm_letter: str) -> bool:
+def s4_encodes_exist(dataset: str, work: str, arm_letter: str) -> bool:
+    """bank 切片产物存在性(2026-10-09 口径):A=legacy 子目录 raw 变体切片,
+    B=landmark_0 子目录(与 Test_3 臂 B 同产物)。切片只有 embeddings/pt,
+    无 prompts.csv(旧 apipe 判据已废弃)。"""
+    import Test_3_common as C
+
+    scheme = C.b_scheme_name(work, dataset)
     subdir = "" if arm_letter == "A" else "landmark_0"
     base = OUTPUTS / dataset / "A_manual" / scheme
     if subdir:
         base = base / subdir
     emb = base / "embeddings" / "pt"
-    return (base / "prompts.csv").is_file() and emb.is_dir() and any(emb.glob("*.pt"))
+    return emb.is_dir() and any(emb.glob("*.pt"))
 
 
 def s4_emit_encodes(arm: Arm) -> list[str]:
-    """缺失编码清单（逐字同 s4_enqueue.py cmd_emit_encodes 的行格式）。"""
+    """缺失编码清单(2026-10-09 口径:scheme 列 = bank 切片方案名 Test_3_{work}_{ds})。"""
     waves, mains = s4_load_waves()
-    lines = ["wave|dataset|scheme|arm|landmark_arg"]
+    lines = ["wave|dataset|scheme(bank)|arm|landmark_arg"]
     for wave in ("1", "2", "3"):
         for letter in ("A", "B"):
             for prefix in ("", "H"):
                 _, _, combos = s4_slice_spec(f"{letter}{wave}{prefix}", waves, mains)
-                for dataset, scheme in combos:
-                    if not s4_encodes_exist(dataset, scheme, letter):
-                        lines.append(f"{wave}|{dataset}|{scheme}|{letter}|{S4_ARMS[letter]}")
+                for dataset, work in combos:
+                    if not s4_encodes_exist(dataset, work, letter):
+                        lines.append(f"{wave}|{dataset}|{work}|{letter}|{S4_ARMS[letter]}")
     return lines
 
 
@@ -1028,13 +1023,11 @@ def cmd_2b_emit_encodes(arm: Arm, opts) -> None:
 
 
 def cmd_2b_list(arm: Arm, opts) -> None:
-    from manual_pipeline.paths import DEFAULT_GDC_DATASETS_CONFIG  # noqa: F401  (口径说明)
-
     waves, mains = s4_load_waves()
     total = 0
     for wave in ("1", "2", "3"):
         print(f"wave {wave}: {len(waves[wave])} datasets {waves[wave]}")
-    print("--- grid ---")
+    print("--- grid (bank 切片口径, 2026-10-09) ---")
     for wave in ("1", "2", "3"):
         for letter in ("A", "B"):
             for prefix in ("", "H"):
@@ -1043,60 +1036,62 @@ def cmd_2b_list(arm: Arm, opts) -> None:
                 missing = [(d, s) for d, s in combos if not s4_encodes_exist(d, s, letter)]
                 total += len(combos)
                 print(f"  slice {name}: {len(combos)} combos, encodes missing {len(missing)}")
-    print(f"total combos: {total} (R13 训练范围 = {len(mains)} 主集, 含 A/B 两臂; "
-          f"confs = {total} x {len(S4_ANALYZERS)} analyzers = {total * len(S4_ANALYZERS)})")
-    print("--- old tables coverage ---")
-    missing_old = 0
-    for wave in ("1", "2", "3"):
-        for prefix in ("", "H"):
-            _, _, combos = s4_slice_spec(f"A{wave}{prefix}", waves, mains)
-            for dataset, scheme in combos:
-                table = test_results_dir("Test_2b/arm_A") / f"{dataset}[gdc]" / "cindex.csv"
-                if not table.exists():
-                    missing_old += 1
-                    continue
-                with table.open(newline="") as fh:
-                    rows = {(r["scheme"], r["modality"]) for r in csv.DictReader(fh)}
-                if (scheme, "clinic_cox") not in rows:
-                    missing_old += 1
-    print(f"combos without old-table clinic_cox row (no diff check possible): {missing_old}")
+    print(f"total combos: {total} (label 宇宙有效事件 ≥ {MAIN_N_EVENT_MIN} 主集 = {len(mains)} 个, "
+          f"含 A/B 两臂; confs = {total} x {len(S4_ANALYZERS)} analyzers = {total * len(S4_ANALYZERS)})")
+    print("注: 臂 A(raw 变体切片)与臂 B(landmark_0 切片)的编码由 cmd_2b_encode / Test_3 链提供;"
+          "历史 apipe 结果表已随 T35 全清、不再恢复(用户拍板)。")
 
 
 def cmd_2b_status(arm: Arm, opts) -> None:
     root = arm.queue_root
     for bucket in ("queue", "running", "done", "failed"):
         print(f"{bucket}: {bucket_counts(root)[bucket]}")
-    done_landmark = len(list((root / "done").glob("*__landmark_*.conf"))) \
-        if (root / "done").is_dir() else 0
-    print(f"done (landmark confs): {done_landmark}")
+    done_all = len(list((root / "done").glob("*.conf"))) if (root / "done").is_dir() else 0
+    print(f"done (all confs): {done_all} / expected {int(arm.extras['done_expected'])}")
     encode_list = Path(os.environ.get(f"{arm.env}ENCODE_LIST",
                                       arm.extras["encode_list_default"]))
     if encode_list.exists():
         rows = [line for line in encode_list.read_text(encoding="utf-8").splitlines() if line.strip()]
         left = 0
-        for line in rows:
+        for line in rows[1:]:  # 跳过表头
             parts = line.split("|")
             if len(parts) < 5:
                 continue
-            _wave, ds, scheme, letter, _lm = parts[:5]
-            if not s4_encodes_exist(ds, scheme, letter):
+            _wave, ds, work, letter, _lm = parts[:5]
+            if not s4_encodes_exist(ds, work, letter):
                 left += 1
-        print(f"encode tasks remaining: {left} / {len(rows)}")
+        print(f"encode tasks remaining: {left} / {max(len(rows) - 1, 0)}")
 
 
 def cmd_2b_encode(arm: Arm, opts) -> int:
-    """已退役(2026-10-09):apipe 全量编码路径整体删除,文本编码统一 field bank 切片。
+    """2b 两臂的 bank 切片装配(2026-10-09 改造,零 CONCH 重编码)。
 
-    2b 两臂的 bank 切片来源:
-      * 臂 B(bank lm0)= Test_3_{work}_{ds} 切片(scripts/Test_3_arms.py encode,零重编码);
-      * 臂 A(bank raw)= materialize_bank_subset(variant="raw"),重建批次落地后提供。
-    旧实现(conda run ... run_a_manual.py pipeline)指向已删除的 json2prompt/encode
-    子命令,不再保留。
+      臂 B(deleak)= Test_3_{work}_{ds} landmark_0 切片 —— 与 Test_3 臂 B 同一
+        产物,由 scripts/Test_3_arms.py encode --arm b 覆盖,此处只报指引;
+      臂 A(report)= raw 变体切片,落 legacy 子目录
+        outputs/{ds}/A_manual/Test_3_{work}_{ds}/embeddings/pt(重建批次投用)。
     """
-    raise SystemExit(
-        "[test_2b][encode] 已退役:文本编码统一 field bank 切片(apipe 全量编码已删除,T31)。\n"
-        "  臂 B(bank lm0)= scripts/Test_3_arms.py encode(Test_3_{work}_{ds} 切片,零重编码);\n"
-        "  臂 A(bank raw)= materialize_bank_subset(variant=\"raw\"),待重建批次落地。")
+    import Test_3_common as C
+    from Test_3_custom_scheme import load_scheme, materialize_bank_subset
+
+    waves, mains = s4_load_waves()
+    n_done = 0
+    for wave in ("1", "2", "3"):
+        for prefix in ("", "H"):
+            letter = "A"
+            _, _, combos = s4_slice_spec(f"A{wave}{prefix}", waves, mains)
+            for dataset, work in combos:
+                if s4_encodes_exist(dataset, work, "A"):
+                    continue
+                scheme_name = C.b_scheme_name(work, dataset)
+                fields = load_scheme(scheme_name)  # fields.json 已只含 bank 内字段
+                out = OUTPUTS / dataset / "A_manual" / scheme_name / "embeddings" / "pt"
+                materialize_bank_subset(dataset, fields, out, variant="raw", overwrite=True)
+                print(f"[{arm.tag}][encode] A {dataset}/{work} → {out} (raw 变体切片)")
+                n_done += 1
+    print(f"[{arm.tag}][encode] 臂 A raw 切片完成 {n_done} 个;"
+          f"臂 B 切片由 Test_3 链覆盖(scripts/Test_3_arms.py encode --arm b)")
+    return 0
 
 
 def s4_start_drainer(arm: Arm, opts) -> int:
@@ -1151,7 +1146,7 @@ def cmd_2b_watch(arm: Arm, opts) -> None:
     while True:
         counts = bucket_counts(root)
         q, r = counts["queue"], counts["running"]
-        done_c = len(list((root / "done").glob("*__landmark_*.conf"))) \
+        done_c = len(list((root / "done").glob("*.conf"))) \
             if (root / "done").is_dir() else 0
         now = time.time()
         alive = pid_alive(pid_from_file(log_dir / "S4_drain.pid"))
@@ -1186,9 +1181,14 @@ def cmd_2b_watch(arm: Arm, opts) -> None:
 
 
 def cmd_2b_validate(arm: Arm, opts) -> int:
-    python_exe = os.environ.get(f"{arm.env}PYTHON3", "python3")
-    return subprocess.call([python_exe, str(SCRIPTS / arm.extras["validate_script"])],
-                           cwd=str(ROOT))
+    """两臂对照不再走 s4_validate_firstwave(硬编码 apipe 历史目录,已随 T35 全清)。
+
+    现行对照 = Test_2b_delta_report(report − deleak)与 Test_3_compare(deleak vs reach):
+    results_display/scripts/Test_2b_delta_report.py / scripts/Test_3_compare.py。
+    """
+    print("[test_2b][validate] 退役引导:两臂对照走 Test_2b_delta_report / Test_3_compare"
+          "(s4_validate_firstwave.py 的 apipe 历史目录已随 T35 全清)")
+    return 0
 
 
 # --- Test_3 两臂（逐字移植 scripts/Test_3_arms.py 的 enqueue/drain/summarize/status）---
@@ -1624,7 +1624,7 @@ def runner_module():
 
 def search_units(arm: Arm) -> list[tuple[str, tuple]]:
     """[(dataset, extra…)]：extra 逐臂不同（Test_3 无；Test_6 为 algo）。"""
-    if arm.dataset_source == "manifest15":
+    if arm.dataset_source == "main13":
         return [(ds, ()) for ds in main_datasets_from_manifest()]
     if arm.dataset_source == "t6_grid":
         return [(ds, (algo,)) for ds in T6_DATASETS for algo in T6_ALGOS]
@@ -1998,21 +1998,21 @@ def main(argv=None) -> int:
     parser.add_argument("--gpu", default=None, help="单卡 GPU 号")
     parser.add_argument("--gpus", default=None, help="多卡 GPU 列表（逗号分隔）")
     parser.add_argument("--interval", type=int, default=None, help="watch 轮询秒数（默认 60）")
-    parser.add_argument("--poll-seconds", type=float, default=None)
-    parser.add_argument("--max-retries", type=int, default=MAX_RETRIES)
-    parser.add_argument("--max-hours", type=float, default=0.0)
+    parser.add_argument("--poll_seconds", type=float, default=None)
+    parser.add_argument("--max_retries", type=int, default=MAX_RETRIES)
+    parser.add_argument("--max_hours", type=float, default=0.0)
     parser.add_argument("--slice", default=None, help="Test_2b 波次切片（A1 / B1H …）")
     parser.add_argument("--variant", default=None, help="Test_3 两臂变体（b / ksig / best）")
     parser.add_argument("--only", action="append", default=[], help="conf 过滤子串，可重复")
-    parser.add_argument("--include-multimodal", action="store_true",
+    parser.add_argument("--include_multimodal", action="store_true",
                         help="Test_5 5M_2b 的 survgc_f/survpgc_f 也按常规投放")
-    parser.add_argument("--allow-partial", action="store_true", help="Test_5 汇总允许缺件")
+    parser.add_argument("--allow_partial", action="store_true", help="Test_5 汇总允许缺件")
     parser.add_argument("--sub", action="append", default=[],
                         help="scheduler 纳入的 Test_5 子检查，可重复")
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--dry_run", action="store_true")
     parser.add_argument("--once", action="store_true", help="scheduler 单轮干跑")
     parser.add_argument("--force", action="store_true", help="scheduler 忽略已存在的 pid")
-    parser.add_argument("--queue-root", default=None,
+    parser.add_argument("--queue_root", default=None,
                         help="覆盖队列根（仅供等价性验证/临时演练；job_key 不含 queue_root，安全）")
     parser.add_argument("extra", nargs="*", help="透传参数（q_recompute 用）")
     opts = parser.parse_args(argv)

@@ -213,7 +213,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 ## 5bis. Test_1a 单字段泄露对照（时间轴链动机 + Test_2b 的机制解释）
 
 - **动机**（用户指令 2026-09-30）：TCGA clinical 记录自带时间，同一字段在有无 t0 时间口径下 c-index 会实质变化——时间处理是应该的；且 Test_2a 只测"可得性"（leak_rate），Test_2b 整组合 Δc≈0 时读者无法解释"为何存在泄露却没有转化为高估"。单字段对照把两个实验连起来。
-- **做法**：对每个 (dataset, field)（field = landmark_0 kept 字段集；dataset 仅 n_event ≥ 100 的 15 个主集，见登记表 T12）：
+- **做法**：对每个 (dataset, field)（field = landmark_0 kept 字段集；dataset 仅 label 宇宙有效事件 ≥ 100 的 13 个主集，见登记表 T12/T39）：
   - 臂 off：同患者集（排除 gt≤0，与 Test_2b 臂 B 一致）、取值 **mask 关闭** → c(field, off)；
   - 臂 t0：同患者集、mask 开 → c(field, landmark_0)；
   - Δc_field = c(off) − c(t0)，与 Test_2a 审计的 leak_rate 交叉。
@@ -336,9 +336,9 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 | 子检查 | 换的轴 | 重复什么 | 范围（13 主集） | 新 confs（估计） |
 |---|---|---|---|---|
 | 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 臂对 {`report`（mask 关）/`deleak`（lm0）}，字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
-| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
+| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 13 主集 × (4 deleak + 1 reach) | ≈65（本轮 ≈33） |
 | 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 臂对 {`report`/`deleak`}（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
-| 5M_3 | M→clinic_cox | Test_3 臂对 {`deleak`/`reach`}（prompt 复用） | 15 × 2 臂 | ≈30 |
+| 5M_3 | M→clinic_cox | Test_3 臂对 {`deleak`/`reach`}（prompt 复用） | 13 主集 × (4 deleak + 1 reach) | ≈65 |
 
 **本轮合计 ≈388 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈188 confs 待模型接入后补跑，全量 ≈546。
 

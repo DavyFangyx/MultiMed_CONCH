@@ -14,6 +14,7 @@ import pandas as pd
 from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
+from common.fingerprint import file_sha256
 from common.missingness import classify_raw_value, clean_value
 from common.patient_universe import restrict_cases_to_label_universe
 from .converters import convert_value, known_converters
@@ -559,11 +560,19 @@ def _run_field_bank_one(args, name, datasets, encoding) -> None:
         if "submitter_id" in case
     ]
     out_dir = resolve_cli_out_dir(args, dataset_field_bank_dir(name, encoding, tag), name, tag)
-    # skip 守卫（2026-10-08 补，与 s5b_build_raw_field_bank / s5c_merge_t0_bank 同款）：
-    # bank 已落盘且未显式 --overwrite 时直接跳过，防每次运行重复 CONCH 编码。
-    if (out_dir / "field_index.json").exists() and not getattr(args, "overwrite", False):
-        print(f"  [skip] bank 已存在且未加 --overwrite: {out_dir}")
-        return
+    # skip 守卫(2026-10-09 指纹化): 模板内容与字段表指纹一致才允许复用;
+    # 模板/字段表改动 → 自动重建(不再仅凭 field_index.json 存在即跳过)。
+    index_path = out_dir / "field_index.json"
+    template_fp = file_sha256(cfg["template_file"])
+    if index_path.exists() and not getattr(args, "overwrite", False):
+        try:
+            old_index = json.loads(index_path.read_text(encoding="utf-8"))
+            if old_index.get("template_sha256") == template_fp and list(old_index.get("fields") or []) == cfg["fields"]:
+                print(f"  [skip] bank 已存在且模板指纹一致: {out_dir}")
+                return
+            print(f"  [stale] bank 模板/字段表已变化,重建: {out_dir}")
+        except (json.JSONDecodeError, OSError):
+            pass
     out_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = out_dir / "prompts.csv"
     prompt_rows = []
@@ -621,6 +630,7 @@ def _run_field_bank_one(args, name, datasets, encoding) -> None:
         "missing_policy": "placeholder_sentence",
         "landmark_policy": landmark_policy(use_landmark),
         "landmark_time": landmark_time,
+        "template_sha256": template_fp,
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "n_patients": len(patient_ids),
     }

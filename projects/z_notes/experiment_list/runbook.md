@@ -8,7 +8,7 @@
 > 所有命令都在 `projects/` 根目录执行。环境:训练 = conda env **SurvPGC**,编码 = conda env **conch**,
 > 投递/监控 = **base python 3.13**。队列纪律:**上一步判据满足再走下一步**(不要并行 stage,除非明确说可并行)。
 > **队列入口已收敛**:投递/监控一律 `bash scripts/exp_queue.sh <verb> --arm <臂>`
-> (臂/别名/组:`bash scripts/exp_queue.py list`;臂注册表与三 backend 见 `scripts/exp_queue.py` 头注释)。
+> (臂/别名/组:`python3 scripts/exp_queue.py list`;臂注册表与三 backend 见 `scripts/exp_queue.py` 头注释)。
 > 例外 = Test_3 搜索 / Test_6 的 **watch·drain**(动态槽位调度):留在 `scripts/Test_3_search_queue.py` / `scripts/t6_scheduler.sh`。
 
 ---
@@ -24,7 +24,7 @@
 | 3 | Test_1a 单字段泄露对照 | `bash scripts/exp_queue.sh enqueue/watch --arm test_1a_t0`(t0 臂)+ `… --arm test_1a_off`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 13 | `results/Test_1a/{arm_t0,arm_off}/` |
 | 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/exp_queue.sh encode/enqueue/drain/watch/validate --arm test_2b` | `Test_2b_arms` queue+running 空 且 done ≥ 256 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/`(apipe 历史口径冻结;bank 重建 = report 臂 raw 切片,见 arm_registry) |
 | 5 | Test_3 字段轴链(+ Test_4 三档收口) | 搜索 `bash scripts/exp_queue.sh enqueue --arm test_3_search`(watch 留 `Test_3_search_queue.py`);两臂 `python scripts/Test_3_arms.py generate/encode` + `bash scripts/exp_queue.sh enqueue/drain --arm test_3_arms`;`python scripts/Test_3_compare.py --all` | `Test_3_search` done ≥ 13;`Test_3_arms` done ≥ 55;`two_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
-| 6 | Test_5 不变性 | `bash scripts/exp_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 128/66/128/66;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
+| 6 | Test_5 不变性 | `bash scripts/exp_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 110/65/146(110+36 parked)/65;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
 | 7 | Test_6 搜索算法选型 | `bash scripts/t6_scheduler.sh`;`python scripts/run_bakeoff_report.py` | `Test_6_search` queue+running 空 且 done ≥ 24;`decision.json` 落盘(人工确认) | `results/Test_6_search/`、`results_display/Test_6_search/` |
 | 8 | 报表(展示层,不训练) | `python results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report,Test_4_three_tiers}.py` | 退出码 0(脚本幂等,可反复跑) | `results_display/` 4 个目录 |
 
@@ -41,7 +41,7 @@
 - **并行例外**:阶段 4(时间轴链)与阶段 5(字段轴链)互不依赖,允许同时投放;其余按编号串行。
 - **GPU 纪律**:Test_5 硬约束只用 GPU 0-3 且放置时为空闲卡(4-7 不碰);编码默认走 GPU 7;最多 4 个 drainer;不 kill 他人进程。
 - **训练范围(R13,2026-10-02)**:训练/搜索限 **label 宇宙有效事件 ≥ 100 的 13 个 TCGA 主集**(名单读 `results/Test_0_dataset_availability/manifest.csv`,脚本内派生,不硬编码);
-  13 主集 = BLCA / BRCA / COAD / GBM / HNSC / KIRC / LAML / LGG / LUAD / LUSC / OV / PAAD / SKCM / STAD / LIHC。
+  13 主集 = BLCA / BRCA / GBM / HNSC / LAML / LGG / LUAD / LUSC / OV / PAAD / SKCM / STAD / LIHC（COAD 90、KIRC 86 出主集）。
   70-100 / 30-70 / <30 档的历史结果保留磁盘,报告按协议 A 四档分层。
 - **队列四桶**:conf 生命周期在 `Clinic_Analyzer/configs/{家族}/{queue,running,done,failed}`(+ `parked/` = 撤下但保留,不被 drainer 读取);
   判据一律 "queue 空 && running 空 && done ≥ 期望数"(桶里可能含历史超集,见"已知坑" 8)。
@@ -134,7 +134,8 @@ export A_PIPELINE_GPU="${A_PIPELINE_GPU:-7}"
 conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
 
 # 2.2 方案组合 L2/L3/L5(在 Field Bank prompt 基座上拼句 + 编码;失败 → 先补 2.1)
-conda run -n conch python scripts/run_schemes.py --dataset all --scheme all --landmark_time 0
+# [退役] L2/L3/L5 组合层已无消费者(P16 删注册、T31 编码统一 bank 切片),跳过:
+# conda run -n conch python scripts/run_schemes.py --dataset all --scheme all --landmark_time 0
 
 # 2.3 论文 / 自定义方案(gdc 线;入口 scripts/run_a_manual.py,现三子命令 = baseline / hgcn_clinic / cindex;
 #    原 json2prompt / encode / pipeline 已随 apipe 全量编码路径删除(T31 + 2026-10-09 收尾),
@@ -202,20 +203,24 @@ bash scripts/exp_queue.sh watch --arm test_1a_off
 # 4a Test_2a:138 组合逐字段 leak_rate 审计(描述性,不训练,33 队列全口径;失败 → 多为输入缺件)
 python scripts/run_leak_audit.py
 
-# 4b 补齐缺失 embeddings(Test_2b:R13 口径 13 主集 × 4 泛癌种 + 4 HGCN 绑定 = 256 confs;conch env,默认 GPU 7)
+# 4b 补齐缺失切片(Test_2b bank 口径: 13 主集 × 4 泛癌种 + 3 HGCN 绑定 = 55 combos × 2 臂 × 2 分析器 = 220 confs;
+#    臂 B = Test_3_{work}_{ds} landmark_0 切片(阶段 5 的 generate/encode 产出,零重编码);
+#    臂 A = raw 变体切片(本命令落 legacy 子目录,零 CONCH;依赖 raw bank 13/13))
 bash scripts/exp_queue.sh encode --arm test_2b
 # 投放波 1 臂 A conf(切片:A1|A1H|B1|B1H|A2|B2|A3|B3;幂等)
 bash scripts/exp_queue.sh enqueue --arm test_2b --slice A1
 # 训练 drainer(GPU 5,8 workers,后台;日志 results/Test_2b/logs/)
 bash scripts/exp_queue.sh drain --arm test_2b
-# 后台自愈:自动分波投放 + drainer 续跑(全 552 conf done 退出)
+# 后台自愈:自动分波投放 + drainer 续跑(全 220 conf done 退出)
 bash scripts/exp_queue.sh watch --arm test_2b
-# 首波校验(clinic_cox 逐位 diff + 字段表审计)【判据满足后跑;失败 → 看 results/Test_2b/logs/】
-bash scripts/exp_queue.sh validate --arm test_2b
+# 两臂对照(validate 已退役;report − deleak 走 Test_2b_delta_report,deleak − reach 走 Test_3_compare)
+python3 results_display/scripts/Test_2b_delta_report.py
 ```
 
-- **判据**:`Test_2b_arms` **queue 空 && running 空 && done ≥ 256**(R13 主集口径;
-  桶内含 R13 前的 552 confs 全量遗留,故用 ≥);`validate` 退出码 0(首波校验通过)。
+- **判据**:`Test_2b_arms` **queue 空 && running 空 && done ≥ 220**(55 combos × 2 臂 × 2 分析器);
+  两臂对照表落盘(Test_2b_delta / Test_3_compare)。
+- **执行顺序(bank 口径)**: 2b 投放依赖 Test_3 方案登记与切片 → 实际先跑阶段 5 的
+  `Test_3_arms.py generate/encode --arm b`,再回投 2b;历史 apipe 结果表已全清且不恢复(用户拍板)。
 - **产物**:`results/Test_2a_leak_audit/{leak_audit_summary.csv,{ds}/G1_*.json}`、
   `results/Test_2b/arm_A/`(报告值)、`results/Test_2b/arm_B/`(去泄露值,含 `labels/{study}__landmark_0.csv`)、
   日志 `results/Test_2b/logs/`。
@@ -283,7 +288,7 @@ bash scripts/exp_queue.sh q_recompute
 ```
 
 - **判据**:四子检查均 **queue 空 && running 空 && done ≥ 期望数** —
-  `5E_2b ≥ 128`、`5E_3 ≥ 66`、`5M_2b ≥ 128`(期望 200,其中 72 个多模态 conf 在 `parked/`)、`5M_3 ≥ 66`。
+  `5E_2b ≥ 110`、`5E_3 ≥ 65`(搜索与 Test_3 generate 之后)、`5M_2b ≥ 146`(其中 36 个多模态 conf 在 `parked/`,BRCA/LIHC)、`5M_3 ≥ 65`(同上)。
   `q_recompute` 报 `diff=0`。
 - **产物**:`results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/{runs/,{ds}/cindex.csv}`、
   汇总 `results/Test_5_invariance/logs/`、Q 轴 `results_display/Test_5_invariance/q_metrics.csv`(命令默认写 `/tmp`,用 `T5_Q_OUT` 覆盖)。
@@ -364,7 +369,7 @@ python results_display/scripts/Test_4_three_tiers.py
    筛选默认消费 `_shared/landmark_0/field_stats.csv`(landmark-first),raw-first 产物已废弃;
    两条链的区别只在"筛选统计用不用 mask 过的值"(取值 mask 一直在 Field Bank 提取期生效)。
 8. **桶内数字可能是历史超集**:判据用 `done ≥ 期望数`。已知:`Test_2b_arms` 552(期望 256)、
-   `Test_1a_t0` 48(期望 15,含 33 队列遗留)、`Test_1a_off` 30(期望 15,含两种 conf 命名)。报告分层时按协议 A 区分主集/旁支。
+   `Test_1a_t0`/`Test_1a_off` 桶计数为历史遗留值(含 33 队列全量与两种 conf 命名);全清重跑后按 13 主集 × kept 字段数投放(以 exp_queue 实际入队数为准)。报告分层时按协议 A 区分主集/旁支。
 9. **Test_5 的 parked 与缺编码**:`5M_2b` 的 `survgc_f`/`survpgc_f`(72 conf)默认撤到 `parked/`
    (需 slide 级 label metadata;决定后用 `--include-multimodal` 或手工 mv 回 `queue/`);
    `enqueue` 对缺编码的 (dataset, scheme, arm) 会 **SKIP 并列出**,不报错——看 `status` 的"缺编码"段。

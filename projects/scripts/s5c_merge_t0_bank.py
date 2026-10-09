@@ -89,8 +89,12 @@ def merge_one(args, dataset: str) -> dict:
         if index_path.exists():
             old = json.loads(index_path.read_text(encoding="utf-8"))
             t0_index = json.loads((t0_dir / "field_index.json").read_text(encoding="utf-8"))
-            if int(old.get("n_patients") or -1) == int(t0_index.get("n_patients") or -1):
-                print(f"[s5c] skip {dataset}: 已存在（{out_dir}）")
+            off_index = json.loads((off_dir / "field_index.json").read_text(encoding="utf-8"))
+            # 2026-10-09 指纹化: 患者数 + 两臂模板指纹一致才复用
+            if (int(old.get("n_patients") or -1) == int(t0_index.get("n_patients") or -1)
+                    and old.get("t0_template_sha256") == t0_index.get("template_sha256")
+                    and old.get("off_template_sha256") == off_index.get("template_sha256")):
+                print(f"[s5c] skip {dataset}: 已存在且指纹一致（{out_dir}）")
                 return {"dataset": dataset, "skipped": True}
         shutil.rmtree(out_dir)
     elif out_dir.exists():
@@ -183,6 +187,11 @@ def merge_one(args, dataset: str) -> dict:
             "variant": "merged_from_raw_off",
             "source_t0_bank": str(t0_dir),
             "source_off_bank": str(off_dir),
+            # 2026-10-09 指纹化: skip 守卫的新鲜度判据
+            "t0_template_sha256": t0_index.get("template_sha256"),
+            "off_template_sha256": json.loads(
+                (off_dir / "field_index.json").read_text(encoding="utf-8")
+            ).get("template_sha256"),
             "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "merge_stats": {
                 "n_patients": len(pids),

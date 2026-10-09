@@ -7,7 +7,7 @@ results/
   Test_0_dataset_availability/          # Test_0 manifest.csv + 各数据集 profile
   Test_1a/
     arm_t0/                              # Test_1a t0 臂(S5 univariate,prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv)
-    arm_off/                             # Test_1a off 臂(mask off;内部 univariate/prompt/landmark_none/... 层由写入方构造)
+    arm_off/                             # Test_1a off 臂(mask off;内部 univariate/prompt/no_mask/... 层由写入方构造)
   Test_2a_leak_audit/                    # Test_2a 逐字段审计(leak_audit_summary.csv、{ds}/G1_*.json)
   Test_2b/
     arm_A/                               # Test_2b 臂 A = 报告值(含历史 A_manual 结果;Test_4 三档来源)

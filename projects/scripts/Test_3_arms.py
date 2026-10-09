@@ -78,7 +78,9 @@ def cmd_generate(arm: str, datasets: list[str]) -> None:
             fields = load_scheme(work)
             note = f"work={work} bank切片(landmark_{C.LANDMARK_TIME})"
         else:
-            fields, algo = load_greedy_fields(C.search_result_json(dataset))
+            fields, algo = load_greedy_fields(
+                C.search_result_json(dataset), kind=("best" if arm == "best" else "ksig")
+            )
             note = f"greedy={C.search_result_json(dataset).name} algo={algo} bank切片(landmark_{C.LANDMARK_TIME})"
         build_scheme(name, dataset, fields, bank_fields, note)
 
@@ -88,13 +90,36 @@ def embeddings_dir(dataset: str, scheme: str) -> Path:
 
 
 def _encode_one(dataset: str, scheme: str, gpu: str) -> str:
-    """bank-only 口径:按方案 fields.json(∩ bank)切片 bank 嵌入矩阵,零 CONCH 重编码。"""
-    from Test_3_custom_scheme import load_scheme, materialize_bank_subset
+    """bank-only 口径:按方案 fields.json(∩ bank)切片 bank 嵌入矩阵,零 CONCH 重编码。
+
+    skip 守卫(2026-10-09 指纹化): 已有切片必须与方案字段位号一致且患者数 =
+    bank 患者数,否则重切(防字段表改动后静默复用旧切片)。
+    """
+    import json
+
+    from Test_3_custom_scheme import (
+        bank_variant_dir,
+        load_bank_field_list,
+        load_scheme,
+        materialize_bank_subset,
+    )
 
     clinic = embeddings_dir(dataset, scheme)
-    if clinic.is_dir() and any(clinic.glob("*")):
-        return f"skip {dataset}/{scheme} (embeddings exist)"
     fields = load_scheme(scheme)  # fields.json 已只含 bank 内字段
+    bank_fields = load_bank_field_list(dataset)
+    desired = sorted(bank_fields.index(f) for f in fields if f in bank_fields)
+    if clinic.is_dir() and any(clinic.glob("*")):
+        meta_path = clinic.parent / "fields.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            bank_pt = bank_variant_dir(dataset, "landmark_0") / "embeddings" / "pt"
+            n_bank = len(list(bank_pt.glob("*.pt")))
+            if (n_bank > 0 and meta.get("subset_idx") == desired
+                    and len(list(clinic.glob("*.pt"))) == n_bank):
+                return f"skip {dataset}/{scheme} (切片与方案字段/患者数一致)"
+        except (json.JSONDecodeError, OSError):
+            pass
+        print(f"[test_3][arms] stale {dataset}/{scheme}: 切片字段/患者数与 bank 不一致,重切")
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     log = LOG_ROOT / f"encode_{dataset}__{scheme}.log"
     try:

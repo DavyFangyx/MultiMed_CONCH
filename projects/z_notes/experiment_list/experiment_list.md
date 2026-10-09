@@ -44,7 +44,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
 | **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(gain_only δ=0.005)最优组合 vs 各工作组合 → 低估证据,两臂 | 主集 13 个(协议 A ≥100 档,label 宇宙有效事件) | `results/Test_3_greedy_vs_works/` |
 | **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口(档 2 = deleak 臂 bank 行;档 1 现读冻结 apipe 历史行,待 report 臂重建替换,见 arm_registry) | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
-| **Test_5** 不变性 | 编码(E)/模型(M)/指标(Q)轴重复 Test_2b 与 Test_3(四子检查 5E_2b/5E_3/5M_2b/5M_3,规格 `Test_series_spec.md` §8bis) | 13 主集(label 宇宙有效事件 ≥100);多模态仅 BRCA/COAD/KIRC/LIHC | `results/Test_5_invariance/`、`results_display/Test_5_invariance/` |
+| **Test_5** 不变性 | 编码(E)/模型(M)/指标(Q)轴重复 Test_2b 与 Test_3(四子检查 5E_2b/5E_3/5M_2b/5M_3,规格 `Test_series_spec.md` §8bis) | 13 主集(label 宇宙有效事件 ≥100);多模态仅 BRCA/LIHC | `results/Test_5_invariance/`、`results_display/Test_5_invariance/` |
 | **Test_6** 搜索算法选型(字段轴链选型) | 同预算 min(B,500) 下 A1–A6 + SEAS 对比,GT = 对比内最好(不做穷举 ANCHOR);试点 3 数据集定胜者,胜者推广生产搜索 | 试点 GBM / LGG / PAAD(landmark_0);生产 = 13 主集 | `Clinic_Analyzer/configs/Test_6_search`、`results/Test_6_search/`、`results_display/Test_6_search/` |
 | ~~旧 Test_3b / H3b~~ | 单字段排序对照 | — | ❌ 已取消 |
 

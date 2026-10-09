@@ -132,9 +132,11 @@ def load_event_summary() -> dict[str, dict]:
         name = str(r["dataset"])
         if name in EXCLUDED_STUDIES:
             continue
+        # 2026-10-09 口径: 分层计数 = label 宇宙有效事件(n_event_label 优先)
+        label_event = r.get("n_event_label")
         out[name] = {
             "n_patients": int(r["n_patients"]),
-            "n_event": int(r["n_event"]),
+            "n_event": int(label_event if pd.notna(label_event) else r["n_event"]),
             "event_rate": float(r["event_rate"]),
         }
     return out

@@ -226,7 +226,9 @@ def assemble_dataset(
         stds[name] = float(row["c_index_std"])
 
     ev = events.get(dataset, {})
-    n_event = int(ev.get("n_event", (manifest.get(dataset) or {}).get("n_event", 0)))
+    # 2026-10-09 口径: 分层计数 = label 宇宙有效事件(n_event_label 优先)
+    label_event = ev.get("n_event_label")
+    n_event = int(label_event if pd.notna(label_event) else ev.get("n_event", (manifest.get(dataset) or {}).get("n_event", 0)))
     n_patients = int(
         ev.get("n_patients", (manifest.get(dataset) or {}).get("n_patients", 0))
     )
