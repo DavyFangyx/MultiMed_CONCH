@@ -2,7 +2,7 @@
 
 口径来源（唯一来源 = `z_notes/Test_series_spec.md` §8bis 与臂注册表
 `z_notes/experiment_list/arm_registry.md`）：
-  5E_2b  E→baseline 复现 Test_2b 臂对 {report(landmark_none)/deleak(landmark_0)} × mlp_clinic_flatten
+  5E_2b  E→baseline 复现 Test_2b 臂对 {report(raw)/deleak(landmark_0)} × mlp_clinic_flatten
   5E_3   E→baseline 复现 Test_3 臂对 {deleak（Test_3_{work}_{dataset}）/ reach（Test_3_greedy_{dataset}）}
   5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（多模态 4 数据集）复现 Test_2b 臂对
   5M_3   M→clinic_cox 复现 Test_3 臂对
@@ -56,7 +56,7 @@ TEMPLATE_DIR = ROOT / "templates" / "manual_schemes"
 INVARIANCE_ROOT = RESULTS_ROOT / "Test_5_invariance"          # 本步唯一可写的 results 子树
 LOG_ROOT = INVARIANCE_ROOT / "logs"
 
-MAIN_N_EVENT_MIN = 100        # 协议 A 主集阈值（R13，spec §12 U1）
+MAIN_N_EVENT_MIN = 100        # 协议 A 主集阈值（R13）：label 宇宙有效事件 >= 100（2026-10-09 口径）
 SEED = 0
 LANDMARK_ARM_TAG = "landmark_0"
 LANDMARK_DAYS = 0
@@ -118,16 +118,10 @@ def load_all_schemes() -> None:
 
 
 def main_datasets() -> list[str]:
-    """协议 A 主集：manifest 中 TCGA 且 n_event >= 100（字典序，不硬编码）。"""
-    rows = list(csv.DictReader(MANIFEST_CSV.open(newline="", encoding="utf-8")))
-    names = sorted(
-        row["dataset"] for row in rows
-        if str(row["dataset"]).upper().startswith("TCGA")
-        and float(row.get("n_event") or 0) >= MAIN_N_EVENT_MIN
-    )
-    if not names:
-        raise SystemExit(f"[test_5] 主集为空（{MANIFEST_CSV}, n_event >= {MAIN_N_EVENT_MIN}）")
-    return names
+    """协议 A 主集：label 宇宙有效事件 >= 100（2026-10-09 口径，13 主集；字典序，不硬编码）。"""
+    from common.patient_universe import main_datasets_by_label_events
+
+    return main_datasets_by_label_events(threshold=MAIN_N_EVENT_MIN)
 
 
 def _datasets_config() -> dict:

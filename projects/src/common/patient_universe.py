@@ -84,6 +84,61 @@ def label_universe_ids(dataset: str, *, analyzer_dir: Path | str | None = None) 
     return {str(x) for x in df["case_id"].tolist()}
 
 
+def label_event_count(dataset: str, *, analyzer_dir: Path | str | None = None) -> dict:
+    """label 宇宙的 (n_patients, n_event, n_censored)。
+
+    协议 A 主集门槛(2026-10-09 用户拍板)的计数口径 = label 宇宙有效事件
+    (censorship==0,SurvPGC 约定 1=删失):患者在字段级预处理之前即已收敛到
+    label 宇宙,门槛须与之同口径(raw n_event 含 gt≤0 等从不进训练的病例)。
+    """
+    path = label_metadata_path(display_to_study(dataset), analyzer_dir=analyzer_dir)
+    if not path.exists():
+        raise FileNotFoundError(f"label metadata 不存在: {path}")
+    df = pd.read_csv(path)
+    censor_cols = [c for c in df.columns if c.lower() == "censorship"]
+    if not censor_cols:
+        raise ValueError(f"{path} has no censorship column")
+    series = pd.to_numeric(df[censor_cols[0]], errors="coerce")
+    n_event = int((series == 0).sum())
+    n_censored = int((series == 1).sum())
+    return {
+        "n_patients": len(df),
+        "n_event": n_event,
+        "n_censored": n_censored,
+    }
+
+
+def tcga_label_event_table() -> dict[str, int]:
+    """显示名 -> label 宇宙有效事件(仅 TCGA,下划线变体优先,字典序可迭代)。"""
+    display_by_study: dict[str, str] = {}
+    for display in sorted(STUDY_BY_DISPLAY):
+        study = STUDY_BY_DISPLAY[display]
+        if study in display_by_study and "_" not in display_by_study[study]:
+            display_by_study[study] = display
+        elif study not in display_by_study:
+            display_by_study[study] = display
+    table: dict[str, int] = {}
+    for study, display in sorted(display_by_study.items()):
+        if not display.upper().startswith("TCGA"):
+            continue
+        try:
+            table[display] = label_event_count(display)["n_event"]
+        except FileNotFoundError:
+            continue
+    return table
+
+
+def main_datasets_by_label_events(threshold: int = 100) -> list[str]:
+    """协议 A 主集(2026-10-09 用户拍板):TCGA 中 label 宇宙有效事件 >= threshold。
+
+    主集 = 13 个: 原 raw≥100 的 15 主集 − COAD(90) − KIRC(86)。
+    """
+    names = sorted(name for name, value in tcga_label_event_table().items() if value >= threshold)
+    if not names:
+        raise RuntimeError(f"主集为空(label 宇宙有效事件 >= {threshold})")
+    return names
+
+
 def restrict_cases_to_label_universe(
     cases: list[dict],
     dataset: str,

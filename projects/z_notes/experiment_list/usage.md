@@ -35,11 +35,11 @@ FIELD_BANK_GPU=7 conda run -n conch python scripts/run_field_bank.py --dataset a
 conda run -n conch python scripts/run_a_manual.py baseline --dataset all --scheme paper
 # off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/;换卡改行首 S5B_ENC_GPU)
 S5B_ENC_GPU=7 bash scripts/exp_queue.sh bank --arm test_1a_off
-# 判据:退出码 0;bash scripts/exp_queue.sh check --arm test_1a_off 通过(raw bank 15/15)+ run_schemes.py 方案组合(见 runbook.md 阶段 2);15 主集 field_index.json 存在
+# 判据:退出码 0;bash scripts/exp_queue.sh check --arm test_1a_off 通过(raw bank 13/13)+ run_schemes.py 方案组合(见 runbook.md 阶段 2);13 主集 field_index.json 存在
 ```
 ### 阶段 3:Test_1a 单字段泄露对照
 ```bash
-# t0 臂:预投放 15 主集 conf(幂等)
+# t0 臂:预投放 13 主集 conf(幂等)
 bash scripts/exp_queue.sh enqueue --arm test_1a_t0
 # t0 臂:后台自愈循环(训练;换卡/换并发改行首 S5_GPUS / S5_WORKERS,全完成 report 退出)
 S5_GPUS=2,3,4 S5_WORKERS=8 bash scripts/exp_queue.sh watch --arm test_1a_t0
@@ -51,7 +51,7 @@ S5B_GPUS=7 S5B_WORKERS=8 bash scripts/exp_queue.sh drain --arm test_1a_off
 python scripts/s5c_merge_t0_bank.py --dataset all   # BRCA/GBM 待 raw bank 新字段表重建后补跑
 bash scripts/exp_queue.sh enqueue --arm test_1a_merged
 S5C_GPUS=1 S5C_WORKERS=8 bash scripts/exp_queue.sh watch --arm test_1a_merged
-# 判据:两家族 queue 空 && running 空 && done ≥ 15(off 臂 watch 自愈见 runbook.md 阶段 3)
+# 判据:两家族 queue 空 && running 空 && done ≥ 13(off 臂 watch 自愈见 runbook.md 阶段 3)
 ```
 ### 阶段 4:Test_2 时间轴链(2a 审计 → 2b 训练)
 ```bash
@@ -64,7 +64,7 @@ S4_GPU_TRAIN=5 S4_WORKERS=8 bash scripts/exp_queue.sh watch --arm test_2b
 ```
 ### 阶段 5:Test_3 字段轴链(搜索 → 两臂 → Test_4)
 ```bash
-# 搜索:预投放 15 主集搜索 conf(幂等)
+# 搜索:预投放 13 主集搜索 conf(幂等)
 bash scripts/exp_queue.sh enqueue --arm test_3_search
 # 搜索:后台 watch 自愈(动态槽位调度保留在 scripts/Test_3_search_queue.py;换卡改 --gpus 列表;全 done 自动 report 退出)
 nohup python scripts/Test_3_search_queue.py watch --gpus 1,0,3,4,5,6 --interval 60 \
@@ -76,7 +76,7 @@ nohup python scripts/Test_3_arms.py encode --arm b --gpu 1 --parallel 3 \
     > results/Test_3_greedy_vs_works/logs/arms_encode_batch.log 2>&1 &
 # 两臂:deleak 臂训练(换卡/换并发改行首 T3_GPU / T3_WORKERS;投放 arms_enqueue 见 runbook.md 阶段 5;drain 家族级不分变体)
 T3_GPU=1 T3_WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
-# 判据:Test_3_search done ≥ 15;Test_3_arms done ≥ 60;总表 python scripts/Test_3_compare.py --all(reach 臂用 nohup bash scripts/Test_3_arm_c_chain.sh 接力;reach 值即搜索 best_cv_c_mean)
+# 判据:Test_3_search done ≥ 13;Test_3_arms done ≥ 55;总表 python scripts/Test_3_compare.py --all(reach 臂用 nohup bash scripts/Test_3_arm_c_chain.sh 接力;reach 值即搜索 best_cv_c_mean)
 ```
 ### 阶段 6:Test_5 不变性
 ```bash

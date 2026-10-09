@@ -117,6 +117,18 @@ def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_d
         n_censored_gt_0 = int(((event == 0) & gt_zero).sum())
         n_unknown_gt_0 = int((event.isna() & gt_zero).sum())
 
+        # label 宇宙列(2026-10-09 患者级前置口径):主集门槛 = n_event_label >= 100。
+        try:
+            from common.patient_universe import label_event_count
+
+            label = label_event_count(name)
+            label_cols = {
+                "n_label_patients": label["n_patients"],
+                "n_event_label": label["n_event"],
+                "n_censored_label": label["n_censored"],
+            }
+        except FileNotFoundError:
+            label_cols = {"n_label_patients": "", "n_event_label": "", "n_censored_label": ""}
         rows.append(
             OrderedDict(
                 dataset=name,
@@ -132,6 +144,7 @@ def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_d
                 n_event_gt_0=n_event_gt_0,
                 n_censored_gt_0=n_censored_gt_0,
                 n_unknown_gt_0=n_unknown_gt_0,
+                **label_cols,
             )
         )
 

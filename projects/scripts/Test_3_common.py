@@ -25,7 +25,10 @@ for _p in (ROOT, ROOT / "src"):
 from common.paths import test_results_dir
 
 # --- 协议 A / R13 -----------------------------------------------------------
-MAIN_N_EVENT_MIN = 100  # 协议 A 主集阈值（R13：训练类实验只在 n_event >= 100 上训练）
+# 2026-10-09 用户拍板: 主集门槛计数口径 = label 宇宙有效事件(患者级前置过滤
+# 同口径;raw n_event 含 gt≤0 等从不进训练的病例)。阈值 100 不变,
+# 主集 = 13 个(原 15 主集 − COAD 90 − KIRC 86)。
+MAIN_N_EVENT_MIN = 100  # 协议 A 主集阈值(R13): label 宇宙有效事件 >= 100
 
 MANIFEST_CSV = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -62,16 +65,15 @@ def tcga_prefix(name: str) -> bool:
 def load_n_event(manifest_csv: Path | str = MANIFEST_CSV,
                  event_summary_csv: Path | str = EVENT_SUMMARY_CSV,
                  *, strict: bool = True) -> dict[str, int]:
-    """dataset -> n_event。两个来源交叉核对（S5c 已验证一致），不一致即报错。"""
-    manifest: dict[str, int] = {}
-    manifest_path = Path(manifest_csv)
-    if manifest_path.exists():
-        with manifest_path.open(newline="") as fh:
-            for row in csv.DictReader(fh):
-                name = (row.get("dataset") or "").strip()
-                if not name or not tcga_prefix(name):
-                    continue
-                manifest[name] = int(float(row.get("n_event") or 0))
+    """dataset -> label 宇宙有效事件(2026-10-09 口径)。
+
+    计数直接读 label metadata(censorship==0 行数),不依赖 raw 统计;
+    若 event_summary 已有 n_event_label 列则交叉核对(不一致即报错)。
+    """
+    from common.patient_universe import tcga_label_event_table
+
+    label_events = tcga_label_event_table()
+
     summary: dict[str, int] = {}
     summary_path = Path(event_summary_csv)
     if summary_path.exists():
@@ -80,29 +82,30 @@ def load_n_event(manifest_csv: Path | str = MANIFEST_CSV,
                 name = (row.get("dataset") or row.get("study") or row.get("name") or "").strip()
                 if not name or not tcga_prefix(name):
                     continue
-                value = row.get("n_event")
+                value = row.get("n_event_label")
                 if value in (None, ""):
                     continue
                 summary[name] = int(float(value))
-    if strict and manifest and summary:
-        diff = {name: (manifest[name], summary.get(name)) for name in manifest
-                if summary.get(name) is not None and summary[name] != manifest[name]}
+    if strict and label_events and summary:
+        diff = {name: (label_events[name], summary.get(name)) for name in label_events
+                if summary.get(name) is not None and label_events[name] != summary[name]}
         if diff:
-            raise ValueError(f"n_event 两来源不一致: {diff}")
-    merged = dict(summary)
-    merged.update(manifest)  # manifest 优先
-    if not merged:
-        raise SystemExit(f"[test_3] 读不到 n_event（{manifest_path} / {summary_path}）")
-    return merged
+            raise ValueError(f"n_event_label 与 label metadata 不一致: {diff}")
+    if not label_events:
+        raise SystemExit("[test_3] 读不到 label 宇宙有效事件(Clinic_Analyzer/data/datasets_csv/metadata)")
+    return label_events
 
 
 def main_datasets(n_event: dict[str, int] | None = None, *, threshold: int = MAIN_N_EVENT_MIN) -> list[str]:
-    """协议 A 主集：TCGA 中 n_event >= threshold，字典序（不硬编码名单）。"""
-    table = load_n_event() if n_event is None else n_event
-    names = sorted(name for name, value in table.items() if tcga_prefix(name) and value >= threshold)
-    if not names:
-        raise SystemExit(f"[test_3] 主集为空（n_event >= {threshold}）")
-    return names
+    """协议 A 主集：TCGA 中 label 宇宙有效事件 >= threshold，字典序（不硬编码名单）。"""
+    from common.patient_universe import main_datasets_by_label_events
+
+    if n_event is not None:
+        names = sorted(name for name, value in n_event.items() if tcga_prefix(name) and value >= threshold)
+        if not names:
+            raise SystemExit(f"[test_3] 主集为空（label 宇宙有效事件 >= {threshold}）")
+        return names
+    return main_datasets_by_label_events(threshold=threshold)
 
 
 def work_pairs(datasets: list[str]) -> list[tuple[str, str]]:

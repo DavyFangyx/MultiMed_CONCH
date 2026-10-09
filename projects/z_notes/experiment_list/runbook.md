@@ -19,11 +19,11 @@
 |---|---|---|---|---|
 | 0 | 前置闸门 | `python scripts/check_search_labels.py`;`python scripts/cache_status.py` | 退出码 0 | 只读报告,无产物 |
 | 1 | 原始文件审查(扫描/统计/筛选) | `scripts/run_scan_fields.py` → `run_field_presence.py` → `run_field_stats.py --landmark_time 0` → `run_field_filter.py --landmark_time 0` | 退出码 0;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(36 数据集) | `rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
-| 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | 退出码 0;15 主集 Field Bank 基座齐备;off 臂 raw bank 15/15(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
+| 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | 退出码 0;13 主集 Field Bank 基座齐备;off 臂 raw bank 13/13(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
 
-| 3 | Test_1a 单字段泄露对照 | `bash scripts/exp_queue.sh enqueue/watch --arm test_1a_t0`(t0 臂)+ `… --arm test_1a_off`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 15 | `results/Test_1a/{arm_t0,arm_off}/` |
+| 3 | Test_1a 单字段泄露对照 | `bash scripts/exp_queue.sh enqueue/watch --arm test_1a_t0`(t0 臂)+ `… --arm test_1a_off`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 13 | `results/Test_1a/{arm_t0,arm_off}/` |
 | 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/exp_queue.sh encode/enqueue/drain/watch/validate --arm test_2b` | `Test_2b_arms` queue+running 空 且 done ≥ 256 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/`(apipe 历史口径冻结;bank 重建 = report 臂 raw 切片,见 arm_registry) |
-| 5 | Test_3 字段轴链(+ Test_4 三档收口) | 搜索 `bash scripts/exp_queue.sh enqueue --arm test_3_search`(watch 留 `Test_3_search_queue.py`);两臂 `python scripts/Test_3_arms.py generate/encode` + `bash scripts/exp_queue.sh enqueue/drain --arm test_3_arms`;`python scripts/Test_3_compare.py --all` | `Test_3_search` done ≥ 15;`Test_3_arms` done ≥ 60;`two_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
+| 5 | Test_3 字段轴链(+ Test_4 三档收口) | 搜索 `bash scripts/exp_queue.sh enqueue --arm test_3_search`(watch 留 `Test_3_search_queue.py`);两臂 `python scripts/Test_3_arms.py generate/encode` + `bash scripts/exp_queue.sh enqueue/drain --arm test_3_arms`;`python scripts/Test_3_compare.py --all` | `Test_3_search` done ≥ 13;`Test_3_arms` done ≥ 55;`two_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
 | 6 | Test_5 不变性 | `bash scripts/exp_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 128/66/128/66;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
 | 7 | Test_6 搜索算法选型 | `bash scripts/t6_scheduler.sh`;`python scripts/run_bakeoff_report.py` | `Test_6_search` queue+running 空 且 done ≥ 24;`decision.json` 落盘(人工确认) | `results/Test_6_search/`、`results_display/Test_6_search/` |
 | 8 | 报表(展示层,不训练) | `python results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report,Test_4_three_tiers}.py` | 退出码 0(脚本幂等,可反复跑) | `results_display/` 4 个目录 |
@@ -40,8 +40,8 @@
 
 - **并行例外**:阶段 4(时间轴链)与阶段 5(字段轴链)互不依赖,允许同时投放;其余按编号串行。
 - **GPU 纪律**:Test_5 硬约束只用 GPU 0-3 且放置时为空闲卡(4-7 不碰);编码默认走 GPU 7;最多 4 个 drainer;不 kill 他人进程。
-- **训练范围(R13,2026-10-02)**:训练/搜索限 **n_event ≥ 100 的 15 个 TCGA 主集**(名单读 `results/Test_0_dataset_availability/manifest.csv`,脚本内派生,不硬编码);
-  15 主集 = BLCA / BRCA / COAD / GBM / HNSC / KIRC / LAML / LGG / LUAD / LUSC / OV / PAAD / SKCM / STAD / LIHC。
+- **训练范围(R13,2026-10-02)**:训练/搜索限 **label 宇宙有效事件 ≥ 100 的 13 个 TCGA 主集**(名单读 `results/Test_0_dataset_availability/manifest.csv`,脚本内派生,不硬编码);
+  13 主集 = BLCA / BRCA / COAD / GBM / HNSC / KIRC / LAML / LGG / LUAD / LUSC / OV / PAAD / SKCM / STAD / LIHC。
   70-100 / 30-70 / <30 档的历史结果保留磁盘,报告按协议 A 四档分层。
 - **队列四桶**:conf 生命周期在 `Clinic_Analyzer/configs/{家族}/{queue,running,done,failed}`(+ `parked/` = 撤下但保留,不被 drainer 读取);
   判据一律 "queue 空 && running 空 && done ≥ 期望数"(桶里可能含历史超集,见"已知坑" 8)。
@@ -148,12 +148,12 @@ python scripts/run_a_manual.py hgcn_clinic --dataset all --scheme paper
 
 # 2.4 Test_1a off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/;失败 → 重跑本行,已存在的跳过)
 bash scripts/exp_queue.sh bank --arm test_1a_off
-# 校验 R13 主集 raw bank 15/15(不全 → 看上方输出缺哪个数据集)
+# 校验 R13 主集 raw bank 13/13(不全 → 看上方输出缺哪个数据集)
 bash scripts/exp_queue.sh check --arm test_1a_off
 ```
 
-- **判据**:各命令退出码 0;`bash scripts/exp_queue.sh check --arm test_1a_off` 通过(15/15);
-  15 主集的 `outputs/{ds}/field_bank/prompt/landmark_0/field_index.json` 存在。
+- **判据**:各命令退出码 0;`bash scripts/exp_queue.sh check --arm test_1a_off` 通过(13/13);
+  13 主集的 `outputs/{ds}/field_bank/prompt/landmark_0/field_index.json` 存在。
 - **产物**:`outputs/{ds}/field_bank/prompt/landmark_0/{prompts.csv,embeddings/pt/*.pt,field_index.json}`、
   `outputs/{ds}/schemes/landmark_0_{L2,L3,L5}/`、`outputs/{ds}/A_manual/{scheme}/[landmark_0/]`、
   `outputs/_raw/{ds}/field_bank/prompt/no_mask/`(off 臂 raw bank)。
@@ -167,10 +167,10 @@ bash scripts/exp_queue.sh check --arm test_1a_off
 ## 阶段 3:Test_1a 单字段泄露对照
 
 两臂 = t0 臂(`results/univariate`,`arm_t0` 软链指过去)与 off 臂(`results/Test_1a/arm_off`),
-唯一差异是**取值 mask**;R13 主集 15 个 × `landmark_0` × `mlp_clinic_flatten` × seed 0。
+唯一差异是**取值 mask**;R13 主集 13 个 × `landmark_0` × `mlp_clinic_flatten` × seed 0。
 
 ```bash
-# t0 臂(Test_1a_t0 家族):预投放 15 主集 conf(幂等,可重跑;投递/监控 = base python 3.13)
+# t0 臂(Test_1a_t0 家族):预投放 13 主集 conf(幂等,可重跑;投递/监控 = base python 3.13)
 bash scripts/exp_queue.sh enqueue --arm test_1a_t0
 # 后台自愈循环(自动拉起 drainer,全完成 report 退出)
 bash scripts/exp_queue.sh watch --arm test_1a_t0
@@ -188,7 +188,7 @@ bash scripts/exp_queue.sh watch --arm test_1a_off
 # python scripts/s5b_audit_arms.py                       # 两臂患者集一致性审计
 ```
 
-- **判据**:`Test_1a_t0` 与 `Test_1a_off` 两家族均 **queue 空 && running 空 && done ≥ 15**。
+- **判据**:`Test_1a_t0` 与 `Test_1a_off` 两家族均 **queue 空 && running 空 && done ≥ 13**。
 - **产物**:t0 臂 `results/univariate/prompt/landmark_0/{ds}/mlp_clinic_flatten/field_cindex.csv`(+ `runs/`);
   off 臂 `results/Test_1a/arm_off/univariate/prompt/no_mask/{ds}/mlp_clinic_flatten/field_cindex.csv`,
   汇总 `results/Test_1a/arm_off/_s5b_report.json`。
@@ -202,7 +202,7 @@ bash scripts/exp_queue.sh watch --arm test_1a_off
 # 4a Test_2a:138 组合逐字段 leak_rate 审计(描述性,不训练,33 队列全口径;失败 → 多为输入缺件)
 python scripts/run_leak_audit.py
 
-# 4b 补齐缺失 embeddings(Test_2b:R13 口径 15 主集 × 4 泛癌种 + 4 HGCN 绑定 = 256 confs;conch env,默认 GPU 7)
+# 4b 补齐缺失 embeddings(Test_2b:R13 口径 13 主集 × 4 泛癌种 + 4 HGCN 绑定 = 256 confs;conch env,默认 GPU 7)
 bash scripts/exp_queue.sh encode --arm test_2b
 # 投放波 1 臂 A conf(切片:A1|A1H|B1|B1H|A2|B2|A3|B3;幂等)
 bash scripts/exp_queue.sh enqueue --arm test_2b --slice A1
@@ -226,15 +226,15 @@ bash scripts/exp_queue.sh validate --arm test_2b
 ## 阶段 5:Test_3 字段轴链(搜索 → 两臂 → Test_4)
 
 ```bash
-# 5a 搜索:预投放搜索 conf(幂等;15 主集 × A2_greedy × landmark_0 × seed 0;缓存 results/Test_3_search/cache.sqlite)
+# 5a 搜索:预投放搜索 conf(幂等;13 主集 × A2_greedy × landmark_0 × seed 0;缓存 results/Test_3_search/cache.sqlite)
 bash scripts/exp_queue.sh enqueue --arm test_3_search
 # 后台 watch 自愈(动态槽位调度,留在 Test_3_search_queue.py;全 done 自动 report 退出)
 nohup python scripts/Test_3_search_queue.py watch --gpus 1,0,3,4,5,6 --interval 60 \
     > results/Test_3_greedy_vs_works/logs/watch.log 2>&1 &
-# 确认 15/15 搜索落盘(只读,随时可用)
+# 确认 13/13 搜索落盘(只读,随时可用)
 bash scripts/exp_queue.sh status --arm test_3_search --arm test_3_arms
 
-# 5b 生成臂 B 登记(fields.json ∩ bank 字段,注册进 schemes.json;bank-only 口径 T31,B = 4 泛癌种工作 × 15 主集)
+# 5b 生成臂 B 登记(fields.json ∩ bank 字段,注册进 schemes.json;bank-only 口径 T31,B = 4 泛癌种工作 × 13 主集)
 python scripts/Test_3_arms.py generate --arm b
 # 臂 B 切片(零 CONCH 重编码,替代旧编码)
 nohup python scripts/Test_3_arms.py encode --arm b --gpu 1 --parallel 3 \
@@ -256,8 +256,8 @@ python scripts/Test_3_compare.py --all
 python results_display/scripts/Test_4_three_tiers.py
 ```
 
-- **判据**:`Test_3_search` queue 空 && running 空 && done ≥ 15;
-  `Test_3_arms` queue 空 && running 空 && done ≥ 60(B = 15×4;C 臂与 HGCN 变体另计);
+- **判据**:`Test_3_search` queue 空 && running 空 && done ≥ 13;
+  `Test_3_arms` queue 空 && running 空 && done ≥ 55(B = 13×4 + 3 HGCN 绑定;C 臂另计);
   `results/Test_3_greedy_vs_works/two_arm.csv` 落盘。
 - **产物**:`results/Test_3_greedy_vs_works/{search/{ds}/mlp_clinic_flatten/seed_0/result.json,compare/,two_arm.csv,missed_fields.csv,search_summary.csv}`、
   `results_display/Test_4_three_tiers/{Main_three_tiers.csv,Main_three_tiers.png,Main_tier_summary.csv}`。
@@ -348,7 +348,7 @@ python results_display/scripts/Test_4_three_tiers.py
 ## 已知坑清单
 
 1. **(已修,留档;脚本已退休)** `s5_univariate_queue.sh`(现 `bash scripts/exp_queue.sh … --arm test_1a_t0`)早期 `DS_LIST`/`EXPECTED` 是全 33 队列遗留、`QUEUE_ROOT` 是旧名 `configs/univariate`;
-   现已按 `manifest.csv` 的 n_event ≥ 100 派生 15 主集、`QUEUE_ROOT=configs/Test_1a_t0`(同 `s5b` 写法)。
+   现已按 `manifest.csv` 的 n_event ≥ 100 派生 13 主集、`QUEUE_ROOT=configs/Test_1a_t0`(同 `s5b` 写法)。
 2. **flag 必须下划线拼写**:`run_e2_selection_queue.py` / `run_e2_selection.py` 用 `--stop_mode`、`--budget_cap`、`--landmark_time`;
    连字符会被 queue 的 `_command()` 重建链路拒收(单测抓不到,投递后才发现)。
 3. **评估缓存**:`results/Test_3_search/cache.sqlite` 的 key 含 label 哈希 + schema `e2-v2`;

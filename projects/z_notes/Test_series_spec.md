@@ -66,7 +66,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   1. **风险集**：只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T` 者——T 前死亡者不在 T 风险集，T 前删失者无 T 后随访）；
   2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
-- **三要件已全部落地（P1，2026-09-30）**：① mask 在 `A_pipeline/src/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位）；② 风险集与 ③ 平移在 `A_pipeline/src/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；平移为固定协议动作，无开关——不变性已由历史自检证实，`--landmark_shift` 自检开关已移除）。口径总表见 `z_notes/time_axis/time_axis.md` §3。
+- **三要件已全部落地（P1，2026-09-30）**：① mask 在 `src/manual_pipeline/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位；原 A_pipeline 已吸收，2026-10-09 订正）；② 风险集与 ③ 平移在 `src/manual_pipeline/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；平移为固定协议动作，无开关——不变性已由历史自检证实，`--landmark_shift` 自检开关已移除）。口径总表见 `z_notes/time_axis/time_axis.md` §3。
 - **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与两臂）默认 t0。
 - **患者资格（2026-10-05 用户拍板）**：`ground_truth_time ≤ 0` 的患者（`days_to_death=0` 占位坑 + 负末次随访，见 `time_axis.md` §2.3）从**所有实验的所有臂**（含报告值对照臂 `landmark_none`）中全局剔除；split 文件不动。实现落点 `Clinic_Analyzer/datasets/dataset_survival.py`（读 label 后即过滤，NaN 保留）；与 landmark 要件②的区别：要件②只作用于 landmark 臂（按 T），本条是跨臂全局数据质量过滤。
 - **主诊断判定（2026-10-06 修正）**：`get_primary_diagnosis` 按 `days_to_diagnosis` 最小锚定主诊断（flag 仅同 days 时 tie-break）——GDC `diagnosis_is_primary_disease` 是"研究重点疾病"归属标记而非时间锚点（SKCM 75% 错位，见 `time_axis.md` §2.3）。所有臂（含报告值对照臂）与泄露审计共用该判定。
@@ -329,11 +329,11 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 | M 分析器 | **mlp_clinic_flatten** / snn_clinic_flatten / clinic_cox / survgc_f、survpgc_f（多模态） | Clinic_Analyzer `--modality` |
 | Q 指标 | **cv_c_mean**（5 折 val c-index）/ IBS（月网格 1–60）/ 时依 AUC@24/60 / IPCW c-index | 修复后的 sksurv 指标层（§8bis.4） |
 
-**锁定基线**（除被换轴外一律不变）：E=prompt、M=mlp_clinic_flatten、Q=cv_c_mean、landmark_0、5 折 × seed 0、协议 A 训练范围（**只在 n_event ≥ 100 的 15 个主集上新增训练**，R13；低档数据集不新增训练）。
+**锁定基线**（除被换轴外一律不变）：E=prompt、M=mlp_clinic_flatten、Q=cv_c_mean、landmark_0、5 折 × seed 0、协议 A 训练范围（**只在 label 宇宙有效事件 ≥ 100 的 13 个主集上新增训练**，R13；低档数据集不新增训练）。
 
 ### 8bis.2 四个子检查
 
-| 子检查 | 换的轴 | 重复什么 | 范围（15 主集） | 新 confs（估计） |
+| 子检查 | 换的轴 | 重复什么 | 范围（13 主集） | 新 confs（估计） |
 |---|---|---|---|---|
 | 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 臂对 {`report`（mask 关）/`deleak`（lm0）}，字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
 | 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
@@ -342,7 +342,7 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 
 **本轮合计 ≈388 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈188 confs 待模型接入后补跑，全量 ≈546。
 
-- **多模态子集（用户确认 2026-10-03）** = 协议 A 15 主集 ∩ registry 多模态 5 数据集 = **BRCA / COAD / KIRC / LIHC**（KIRP 44 事件被排除）。survgc_f / survpgc_f 只在这 4 个数据集上跑。
+- **多模态子集（用户确认 2026-10-03；2026-10-09 随 13 主集收窄）** = 协议 A 13 主集 ∩ registry 多模态 5 数据集 = **BRCA / LIHC**（COAD 90、KIRC 86 出主集；KIRP 44 事件被排除）。survgc_f / survpgc_f 只在这 2 个数据集上跑。
 
 ### 8bis.3 HGCN：编码先落地、模型暂不接入（用户指令 2026-10-03）
 
@@ -402,16 +402,16 @@ Clinic_Analyzer 现有 `utils/core_utils.py::_calculate_metrics`（:535-617）6 
 
 ## 12. 未解决问题（Open Issues）
 
-- **U1（D12 门槛锚点）**：已弃用无推导的 0.05 断言。**用户数据协议（2026-09-30）——n_event 判据（作用=评估方差下限）已定**，适用于 Test_ 系列全部 TCGA 使用（泛癌种工作同样适用）：
+- **U1（D12 门槛锚点）**：已弃用无推导的 0.05 断言。**用户数据协议（2026-09-30）——n_event 判据（作用=评估方差下限）已定**，适用于 Test_ 系列全部 TCGA 使用（泛癌种工作同样适用）。**2026-10-09 修订（用户拍板）**：门槛计数口径 = **label 宇宙有效事件**（患者级前置过滤同口径；raw n_event 含 gt≤0 等从不进训练的病例），主集由此收敛为 13 个。
 
-  | n_event 档 | 处理 | 33 TCGA 数据集 |
+  | n_event 档（label 宇宙有效事件） | 处理 | 33 TCGA 数据集 |
   |---|---|---|
-  | ≥100 | 主图，干净集 | 15 个（PAAD、COAD、LGG、LIHC、LAML、BRCA、STAD、KIRC、BLCA、LUAD、LUSC、SKCM、HNSC、OV、GBM） |
-  | 70–100 | 进主图，**必须报告 CI，不参与严格排名** | CESC、MESO、ESCA、UCEC、SARC |
+  | ≥100 | 主图，干净集 | **13 个**（PAAD、LGG、LIHC、LAML、BRCA、STAD、BLCA、LUAD、LUSC、SKCM、HNSC、OV、GBM；COAD 90、KIRC 86 出主集） |
+  | 70–100 | 进主图，**必须报告 CI，不参与严格排名** | CESC、MESO、ESCA、UCEC、SARC、COAD、KIRC |
   | 30–70 | 补充材料，bootstrap/重采样 CI，不排名 | UVM、ACC、UCS、KIRP |
   | <30 | 定量图不收录；单列"低事件组"定性讨论 | 9 个（READ、CHOL、THCA、KICH、PRAD、DLBC、THYM、TGCT、PCPG） |
 
-  **训练范围（T12，2026-10-02 用户指令）**：后续训练类实验**只在 n_event ≥ 100 的 15 个数据集上训练**；<100 档不新增训练，其已有训练结果按协议 A 分层报告（70–100 带 CI 不排名、30–70 补充、<30 定性）。Test_3 的主集即这 15 个。
+  **训练范围（T12，2026-10-02 用户指令；2026-10-09 修订口径）**：后续训练类实验**只在 label 宇宙有效事件 ≥ 100 的 13 个数据集上训练**；<100 档不新增训练，其已有训练结果按协议 A 分层报告（70–100 带 CI 不排名、30–70 补充、<30 定性）。Test_3 的主集即这 13 个。
 
   **B/C/D 判据：用户 2026-09-30 指令——暂不执行，保持简单**：B（多字段门槛：≥150 可跑 / 100–150 字段数≤3）、C（landmark 有效事件重套）**存档备查**（见执行日志 R5/R6），当前实验执行**全部按 A 判据**；D（次级修正）不采用。若后续需要再启用 B/C，再议。
 - **U2（泛癌种方案绑定）**：MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN 是否按各自论文原始队列绑定，**暂按全部 33 TCGA 执行**，记录为未解决问题；待用户给出各论文队列口径后修正。
