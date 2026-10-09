@@ -1,6 +1,6 @@
 # 实验清单与协议速查
 
-口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。三处目录命名(configs/results/results_display)的唯一公约见 [naming_convention.md](naming_convention.md)。全量重跑操作手册见 [runbook.md](runbook.md)。
+口径唯一来源:`z_notes/Test_series_spec.md`(规格)与 `z_notes/Test_series_execution_log.md`(执行日志)。本文件只是一页速查,冲突时以规格为准。臂(实验条件)定义唯一来源 = [arm_registry.md](arm_registry.md)(臂 = {F 字段组合, T 时间口径, P 编码路径} 条件元组 + 语义名;字母代号已退役)。三处目录命名(configs/results/results_display)的唯一公约见 [naming_convention.md](naming_convention.md)。全量重跑操作手册见 [runbook.md](runbook.md)。
 
 ## 背景(一句话)
 
@@ -43,7 +43,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 | **Test_2a** 泄露审计(时间轴链主体) | 138 组合逐字段量化 leak_rate(新口径) | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2a_leak_audit/` |
 | **Test_2b** 去泄露对照(时间轴链主体) | 同字段集两臂(含泄露 vs landmark_0),Δc = A−B | 33 TCGA × 10 方案按绑定(138 组合) | `results/Test_2b/arm_B`、`results_display/Test_2b_delta/` |
 | **Test_3** 贪婪搜索对照(字段轴链主体) | 前向贪婪(gain_only δ=0.005)最优组合 vs 各工作组合 → 低估证据,两臂 | 主集 15 个(协议 A ≥100 档) | `results/Test_3_greedy_vs_works/` |
-| **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口 | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
+| **Test_4 三档汇总表**(非实验) | 报告值 / 去泄露值 / 可达值,两链收口(档 2 = deleak 臂 bank 行;档 1 现读冻结 apipe 历史行,待 report 臂重建替换,见 arm_registry) | 33 TCGA(报告按协议 A 四档分层) | `results_display/Test_4_three_tiers/` |
 | **Test_5** 不变性 | 编码(E)/模型(M)/指标(Q)轴重复 Test_2b 与 Test_3(四子检查 5E_2b/5E_3/5M_2b/5M_3,规格 `Test_series_spec.md` §8bis) | 15 主集(n_event ≥100);多模态仅 BRCA/COAD/KIRC/LIHC | `results/Test_5_invariance/`、`results_display/Test_5_invariance/` |
 | **Test_6** 搜索算法选型(字段轴链选型) | 同预算 min(B,500) 下 A1–A6 + SEAS 对比,GT = 对比内最好(不做穷举 ANCHOR);试点 3 数据集定胜者,胜者推广生产搜索 | 试点 GBM / LGG / PAAD(landmark_0);生产 = 15 主集 | `Clinic_Analyzer/configs/Test_6_search`、`results/Test_6_search/`、`results_display/Test_6_search/` |
 | ~~旧 Test_3b / H3b~~ | 单字段排序对照 | — | ❌ 已取消 |
@@ -79,7 +79,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 ### Test_2b 去泄露对照(时间轴链主体,已跑完)
 
 - **数据集**:33 TCGA × 10 方案按绑定(138 组合)。
-- **两臂**:臂 A = 原字段集 × mask 关闭(报告值对照);臂 B = 同字段集 × landmark_0 三要件(去泄露值)。**唯一差异 = mask**。
+- **两臂**:臂 A = 原字段集 × mask 关闭(报告值对照);臂 B = 同字段集 × landmark_0 三要件(去泄露值)。**唯一差异 = mask**。编码路径 = apipe 全量 CONCH(历史;该路径已退役删除,两臂结果冻结为历史口径,见 arm_registry 退役臂表)。
 - **评估器**:`clinic_cox` + `mlp_clinic_flatten`(2 个)。
 - **轮数 / 协议**:5 折 × seed 0 × 2 臂 × 2 评估器 = **552 confs**;控制变量审计、按模态一致性判据验收。产物 `results/Test_2b/arm_B`、`results_display/Test_2b_delta/`。
 - **结论**:无数据集级系统性高估;MULTISURV × Cox 方向一致率最高(10/15)。
@@ -88,21 +88,21 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 
 - **数据集**:manifest 主集(协议 A ≥100 档,15 个);低事件档仅定性。
 - **搜索**:池 = landmark_0 field bank(模板 33/33 已填齐);算法 = 前向贪婪(A2_greedy),早停 sig_stop = gain < 0.005 且 paired Wilcoxon p ≥ 0.05 连续 3 步(D4 已确认)。
-- **两臂**(全走 bank 切片链路,同编码器/模型/划分/seed):B = 工作组合 × bank 模板 × lm0(去泄露值;原臂 B′ 更名);C = 贪婪最优 × bank 模板 × lm0(可达值)。头条 Δc = C − B。scheme 模板分支已删除(T31),论文方案仅保留 fields.json 字段登记。
+- **两臂**(全走 bank 切片链路,同编码器/模型/划分/seed;臂语义见 arm_registry):`deleak` = work × bank 切片 × lm0(去泄露值,原"臂 B′"更名而来);`reach` = greedy × bank 切片 × lm0(可达值)。头条 Δc = reach − deleak。scheme 模板分支已删除(T31),论文方案仅保留 fields.json 字段登记。
 - **评估器**:`mlp_clinic_flatten`(E2 唯一搜索目标模型)。
 - **轮数 / 协议**:5 折 val c-index × seed 0(默认;E2 规格支持逗号列表多 seed,跨 seed 报均值 ± std)。产物 `results/Test_3_greedy_vs_works/`。
 
 ### Test_4 三档汇总表(非实验,收口)
 
 - **数据集**:33 TCGA(报告按协议 A 四档分层)。
-- **评估器**:不新增训练——报告值 / 去泄露值来自 Test_2b 两臂(`clinic_cox` + `mlp_clinic_flatten`),可达值来自 Test_3(`mlp_clinic_flatten`)。
+- **评估器**:不新增训练——报告值(冻结 apipe 历史)/ 去泄露值 = deleak 臂(bank 切片)、可达值 = reach 臂,口径见 arm_registry 磁盘落点映射。
 - **轮数 / 协议**:纯汇总;每 (dataset, work) 一行三档 + 档间 Δ,并列 n_event / 每折事件数。产物 `results_display/Test_4_three_tiers/`。
 
-### Test_5 不变性(规格已落地 2026-10-03,详见 `Test_series_spec.md` §8bis)
+### Test_5 不变性(规格已落地 2026-10-03,详见 `Test_series_spec.md` §8bis;臂对定义见 arm_registry)
 
 - **命题**:Test_2b(时间轴链)与 Test_3(字段轴链)的结论在换编码(E)、换分析器(M)、换指标(Q)后依然成立。
-- **三轴**:E = prompt(CONCH 文本,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图节点,**编码先落地、评估臂待 HGCN 模型接入后补跑**);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC,本轮不含 HGCN 模型);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
-- **四个子检查**:5E_2b / 5E_3(换编码,本轮只跑 baseline 臂)、5M_2b / 5M_3(换分析器),本轮约 388 新 confs(hgcn 评估臂 ≈188 待模型接入,全量 ≈546);锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
+- **三轴**:E = prompt(CONCH 文本 = field bank 切片,基线)/ baseline(D-向量)/ hgcn_clinic(全连接图节点,**编码先落地、评估臂待 HGCN 模型接入后补跑**);M = mlp_clinic_flatten(基线)/ snn_clinic_flatten / clinic_cox / survgc_f+survpgc_f(多模态,仅 BRCA/COAD/KIRC/LIHC,本轮不含 HGCN 模型);Q = cv_c_mean(基线)+ IBS(1–60 月)+ AUC@24/60 + IPCW(Q 层先修复 Clinic_Analyzer 指标实现再统一重算)。
+- **四个子检查 = 轴 × 臂对**:5E_2b / 5E_3(换编码,本轮只跑 baseline 臂)、5M_2b / 5M_3(换分析器),臂对映射见 arm_registry「Test_5 子检查 = 轴 × 臂对」;5E_2b/5M_2b 的历史产物基于已删 apipe 编码,重建批次待排期;本轮约 388 新 confs(hgcn 评估臂 ≈188 待模型接入,全量 ≈546);锁定基线(landmark_0、5 折 seed 0、15 主集)不变;数据轴(CPTAC/MMRF)另行。
 - **HGCN**(用户指令 2026-10-03):编码先落地(P5:任意 scheme + landmark,pkl 格式不变 + L0-L5 等价性回归),模型暂不接入(用户移植的训练器为独立工作);既有 `outputs/*/A_manual/HGCN_clinic/`(9 数据集)冻结,已备份仓库外。
 
 ### Test_6 搜索算法选型(字段轴链选型)

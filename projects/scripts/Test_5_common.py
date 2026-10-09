@@ -1,10 +1,17 @@
 """Test_5 不变性批跑（spec §8bis）共享定义：子检查 → conf 枚举 / 队列 / EXP_GROUP 映射。
 
-口径来源（唯一来源 = `z_notes/Test_series_spec.md` §8bis）：
-  5E_2b  E→baseline 复现 Test_2b 两臂 A(landmark_none)/B(landmark_0) × mlp_clinic_flatten
-  5E_3   E→baseline 复现 Test_3 臂 B（Test_3_{work}_{dataset}）/ C（Test_3_greedy_{dataset}）
-  5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（多模态 4 数据集）复现 Test_2b 两臂
-  5M_3   M→clinic_cox 复现 Test_3 臂 B/C
+口径来源（唯一来源 = `z_notes/Test_series_spec.md` §8bis 与臂注册表
+`z_notes/experiment_list/arm_registry.md`）：
+  5E_2b  E→baseline 复现 Test_2b 臂对 {report(landmark_none)/deleak(landmark_0)} × mlp_clinic_flatten
+  5E_3   E→baseline 复现 Test_3 臂对 {deleak（Test_3_{work}_{dataset}）/ reach（Test_3_greedy_{dataset}）}
+  5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（多模态 4 数据集）复现 Test_2b 臂对
+  5M_3   M→clinic_cox 复现 Test_3 臂对
+
+臂语义（arm_registry.md，F=字段组合 / T=时间口径 / P=编码路径）：
+  report = work × raw(mask off) × bank 切片    —— 报告值（Test_2b 臂 A 的 bank 版）
+  deleak = work × lm0 × bank 切片              —— 去泄露值（Test_3 臂 B，原"臂 B′"）
+  reach  = greedy × lm0 × bank 切片            —— 可达值（Test_3 臂 C）
+  （Test_2b 历史 apipe 臂 A/B 已退役：编码产物删除，结果表冻结为历史口径。）
 
 纪律（spec §2.4 / §8bis.5）：
   * 数据集名单一律读 results/Test_0_dataset_availability/manifest.csv（n_event >= 100 的 15 主集）；
@@ -56,26 +63,27 @@ LANDMARK_DAYS = 0
 SUBS = ("5E_2b", "5E_3", "5M_2b", "5M_3")
 
 # 子检查语义（臂 × 编码 × 模型）；方案集合与数据集绑定全部从数据派生。
+# 臂标签 = arm_registry.md 的短标签（report / deleak / reach），不再用字母代号。
 SUB_SPEC = {
-    "5E_2b": {"encoding": "baseline", "arms": ("A", "B"), "modalities": ("mlp_clinic_flatten",),
-              "schemes": "work"},
-    "5E_3": {"encoding": "baseline", "arms": ("Bp", "C"), "modalities": ("mlp_clinic_flatten",),
-             "schemes": "test3"},
-    "5M_2b": {"encoding": "text", "arms": ("A", "B"),
+    "5E_2b": {"encoding": "baseline", "arms": ("report", "deleak"),
+              "modalities": ("mlp_clinic_flatten",), "schemes": "work"},
+    "5E_3": {"encoding": "baseline", "arms": ("deleak", "reach"),
+             "modalities": ("mlp_clinic_flatten",), "schemes": "test3"},
+    "5M_2b": {"encoding": "text", "arms": ("report", "deleak"),
               "modalities": ("snn_clinic_flatten", "survgc_f", "survpgc_f"), "schemes": "work"},
-    "5M_3": {"encoding": "text", "arms": ("Bp", "C"), "modalities": ("clinic_cox",),
+    "5M_3": {"encoding": "text", "arms": ("deleak", "reach"), "modalities": ("clinic_cox",),
              "schemes": "test3"},
 }
 
-# 臂 → (landmark_tag, landmark_time)：A = Test_2b 臂 A（mask 关，label 回退默认 metadata），
+# 臂 → (landmark_tag, landmark_time)：report = mask 关（label 回退默认 metadata），
 # 其余 = landmark_0（landmark mask + 风险集 + 时间原点平移 + 派生 label 文件）。
-ARM_LANDMARK = {"A": ("", None), "B": (LANDMARK_ARM_TAG, LANDMARK_DAYS),
-                "Bp": (LANDMARK_ARM_TAG, LANDMARK_DAYS), "C": (LANDMARK_ARM_TAG, LANDMARK_DAYS)}
+ARM_LANDMARK = {"report": ("", None), "deleak": (LANDMARK_ARM_TAG, LANDMARK_DAYS),
+                "reach": (LANDMARK_ARM_TAG, LANDMARK_DAYS)}
 
-# Test_3 臂 B 的本轮范围 = 4 个泛癌种工作 × 15 主集（spec §8bis.2 "15 × 2 臂"）。
-# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC）不在本轮 B 范围：
-# S12a 只为 60 个 B 落了 baseline 编码，5E_3 的 E 轴对照需要有同集合 baseline 产物。
-BP_WORKS = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
+# deleak 臂（Test_3 臂 B）的本轮范围 = 4 个泛癌种工作 × 15 主集（spec §8bis.2 "15 × 2 臂"）。
+# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC）不在本轮 deleak 范围：
+# S12a 只为 60 个 deleak 落了 baseline 编码，5E_3 的 E 轴对照需要有同集合 baseline 产物。
+DELEAK_WORKS = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
 
 # 多模态（WSI+omics）模型：本轮暂不投放（parked/），原因见 park_reason()。
 # 实证：2026-10-04 BRCA survgc_f 试跑，"[WSI filter] kept cases: 0 | removed cases: 1030"
@@ -159,15 +167,15 @@ def work_schemes(dataset: str) -> list[str]:
                   if work_bound_to(s, dataset) and scheme_applies_to_dataset(s, dataset, datasets))
 
 
-def b_schemes(dataset: str) -> list[str]:
-    """Test_3 臂 B 方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
+def deleak_schemes(dataset: str) -> list[str]:
+    """deleak 臂（Test_3 臂 B）方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
     from manual_pipeline.config import SCHEME_CONFIG
 
-    return [name for name in (f"Test_3_{w}_{dataset}" for w in BP_WORKS) if name in SCHEME_CONFIG]
+    return [name for name in (f"Test_3_{w}_{dataset}" for w in DELEAK_WORKS) if name in SCHEME_CONFIG]
 
 
-def c_schemes(dataset: str) -> list[str]:
-    """Test_3 臂 C（贪婪最优，模板/编码存在才算；否则空 = 该数据集本轮无 C）。"""
+def reach_schemes(dataset: str) -> list[str]:
+    """reach 臂（贪婪最优，模板/编码存在才算；否则空 = 该数据集本轮无 reach）。"""
     from manual_pipeline.config import SCHEME_CONFIG
 
     name = f"Test_3_greedy_{dataset}"
@@ -209,7 +217,7 @@ def exp_group_override(sub: str, *, tables: bool = False):
         （result_table_dir = root/DEFAULT_*_ / dataset，summarize_dataset 用）。
     不覆写会把 run/表写到 results/Test_2b/arm_A|arm_B（cindex 的默认 arm 落点）。
     """
-    from src import cindex
+    from manual_pipeline import cindex
 
     group = tables_group(sub) if tables else runs_group(sub)
     saved = (cindex.ANALYZER_EXP_GROUP, cindex.LANDMARK_ANALYZER_EXP_GROUP,
@@ -258,7 +266,7 @@ def arm_plans(sub: str, dataset: str) -> list[ArmPlan]:
             schemes = work_schemes(dataset)
             notes = []
         else:
-            schemes = (b_schemes(dataset) if arm == "B" else c_schemes(dataset))
+            schemes = (deleak_schemes(dataset) if arm == "deleak" else reach_schemes(dataset))
             notes = [] if schemes else ["no template/registration"]
         if sub == "5M_2b":
             modalities = _multimodal_modalities(dataset)
@@ -412,7 +420,7 @@ def print_status(datasets: list[str] | None = None) -> None:
     counts = expected_counts(datasets)
     grand = 0
     print(f"[test_5] 主集 {len(datasets)}: {', '.join(datasets)}")
-    print(f"[test_5] 有 greedy 模板的数据集（臂 C 来源）: {', '.join(greedy_template_datasets())}")
+    print(f"[test_5] 有 greedy 模板的数据集（reach 臂来源）: {', '.join(greedy_template_datasets())}")
     for sub in SUBS:
         st = queue_status(sub)
         n = counts[sub]["total"]

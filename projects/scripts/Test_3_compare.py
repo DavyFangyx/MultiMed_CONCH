@@ -1,9 +1,10 @@
 """Test_3 两臂对照报表: 贪婪最优组合 vs 各工作组合（字段轴链收口, spec §7.2 T31）。
 
-两臂（全部 landmark_0 × mlp_clinic_flatten × seed 0 × 5 折, bank 切片链路）:
-  臂 B = 工作完整组合 × bank 模板（自定义方案 Test_3_{work}_{dataset}）
-  臂 C = 贪婪最优组合 × bank 模板（自定义方案 Test_3_greedy_{dataset}, field 取搜索 result.json;
-        其 c-index 即搜索 best_cv_c_mean, 同嵌入同模型同折同 seed）
+两臂（全部 landmark_0 × mlp_clinic_flatten × seed 0 × 5 折, bank 切片链路;
+臂语义见 z_notes/experiment_list/arm_registry.md）:
+  deleak = 工作完整组合 × bank 切片（自定义方案 Test_3_{work}_{dataset}）
+  reach  = 贪婪最优组合 × bank 切片（自定义方案 Test_3_greedy_{dataset}, field 取搜索 result.json;
+           其 c-index 即搜索 best_cv_c_mean, 同嵌入同模型同折同 seed）
 
 输出:
   * results/Test_3_greedy_vs_works/compare/{dataset}__{work}.json  逐 (dataset, work) 明细

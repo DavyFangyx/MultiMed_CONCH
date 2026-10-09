@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""S12b 臂 C 的 baseline 编码（Test_3_greedy_{dataset} × onehot_ordinary）。
+"""S12b reach 臂的 baseline 编码（Test_3_greedy_{dataset} × onehot_ordinary）。
 
-背景：S12a 按规格跳过了 arm C 的 baseline 编码（当时模板仅 2/15）。5E_3/5M_3 的臂 C
+背景：S12a 按规格跳过了 reach 臂的 baseline 编码（当时模板仅 2/15）。5E_3/5M_3 的 reach 臂
 本轮要跑，E 轴的 baseline 档需要 outputs/{ds}/A_manual/baseline/Test_3_greedy_{ds}/。
 
 口径（与 S12a phase 3 完全相同，只换方案名单）：

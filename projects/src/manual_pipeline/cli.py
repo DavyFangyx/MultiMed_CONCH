@@ -1,7 +1,9 @@
-"""CLI for the manual (A_manual) pipeline: prompt/CONCH embeddings, D vectors, HGCN_clinic, cindex.
+"""CLI for the manual (A_manual) pipeline: D vectors, HGCN_clinic, cindex.
 
 吸收自原独立子项目 ``A_pipeline``（gdc 线）：入口是 ``scripts/run_a_manual.py``。
 数据源只剩 gdc（``projects/datasets.json``）；lizhe 数据源与 L0-L5/D0-D5 的 lizhe 运行配置属 PGC 线。
+文本嵌入统一走 field bank 切片（零重编码）：json2prompt / encode / pipeline 三子命令已随
+句式模板退役（T31）整体删除，不再提供任何 CONCH 全量编码入口。
 """
 
 from __future__ import annotations
@@ -32,9 +34,7 @@ from .baseline import (
     run_baseline_encode,
     save_global_baseline_metadata,
 )
-from .config import load_custom_schemes, resolve_scheme_names
-from .encode import run_encode
-from .json2prompt import run_json2prompt
+from .config import load_custom_schemes
 from .hgcn_clinic import (
     load_hgcn_scheme_fields,
     prepare_hgcn_nominal_mappings,
@@ -74,7 +74,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--gpu",
         default=None,
-        help="encode 的可见 GPU（写 CUDA_VISIBLE_DEVICES）。不传=环境变量 A_PIPELINE_GPU，再默认 7。",
+        help="保留兼容（原 encode 子命令用；现子命令不使用）。",
     )
     parser.add_argument("--baseline_out", default=DEFAULT_BASELINE_OUT_ROOT)
     parser.add_argument("--baseline_stats_dir", default=None)
@@ -139,12 +139,12 @@ def _add_common_args(parser: argparse.ArgumentParser):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="run_a_manual.py",
-        description="manual pipeline: clinical JSON → Prompt CSV → CONCH embedding / D baseline / HGCN clinic / cindex",
+        description="manual pipeline: clinical JSON → D baseline / HGCN clinic / cindex（文本嵌入统一走 field bank 切片）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "人工方案通路（原 A_pipeline gdc 线，已吸收进主项目；入口 scripts/run_a_manual.py）。\n"
             "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: paper=论文方案，all=论文方案；manual=L0-L5 已随 PGC 线独立化移除（PGC 线入口 A_pipeline_pgc/run.py）。"
-            "encoding: text=CONCH embedding，baseline=D 向量，all=两种都处理。\n"
+            "encoding: text=bank 切片（Test_3_* / Test_2b_* 等 custom scheme），baseline=D 向量，all=两种都处理。\n"
             "数据集只有 gdc 一个来源：projects/datasets.json（官方 33 队列）；方案在 templates/manual_schemes/{scheme}/fields.json 写 source=gdc。\n"
             "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed} 再抢活；"
             "汇总表写到 results/Test_2b/arm_A（landmark 臂 arm_B）。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。\n"
@@ -153,9 +153,6 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, help_text in [
-        ("json2prompt", "JSON → prompt CSV"),
-        ("encode", "prompt CSV → CONCH embedding"),
-        ("pipeline", "json2prompt + encode"),
         ("baseline", "JSON → D 向量（one-hot / 连续 / 有序）"),
         ("hgcn_clinic", "JSON → HGCN clinic graph-node pkl"),
         ("cindex", "A_manual embeddings → Clinic_Analyzer queue → 5-fold val c-index"),
@@ -190,11 +187,6 @@ def main(argv=None):
     elif args.cmd == "cindex":
         try:
             schemes = resolve_cindex_schemes(args.scheme, args.encoding)
-        except ValueError as exc:
-            parser.error(str(exc))
-    else:
-        try:
-            schemes = resolve_scheme_names(args.scheme)
         except ValueError as exc:
             parser.error(str(exc))
 
@@ -303,31 +295,6 @@ def main(argv=None):
         if not job_schemes:
             print("  当前 dataset 没有可跑的绑定方案，跳过。")
             continue
-
-        if args.cmd in ("json2prompt", "pipeline"):
-            for scheme in job_schemes:
-                run_json2prompt(
-                    json_path=job["json_paths"],
-                    scheme=scheme,
-                    template_dir=args.template_dir,
-                    prompt_dir=job["prompt_dir"],
-                    project_ids=job["project_ids"],
-                    dataset_name=job["name"],
-                    landmark_time=landmark_setting.landmark_time,
-                    landmark_subdir=landmark_setting.encode_subdir,
-                )
-
-        if args.cmd in ("encode", "pipeline"):
-            for scheme in job_schemes:
-                run_encode(
-                    scheme=scheme,
-                    prompt_dir=job["prompt_dir"],
-                    ckpt=args.ckpt,
-                    out_dir=job["out_dir"],
-                    batch_size=args.batch_size,
-                    landmark_subdir=landmark_setting.encode_subdir,
-                    gpu=args.gpu,
-                )
 
         if args.cmd == "baseline":
             source = job.get("source") or "gdc"

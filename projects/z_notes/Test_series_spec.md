@@ -279,17 +279,19 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 
 ### 7.2 两臂对照（全部走 bank 切片链路，同编码器/模型/划分/seed）
 
+> 臂语义唯一来源 = `z_notes/experiment_list/arm_registry.md`；本节的 `deleak` / `reach` 即注册表短标签。
+
 ```text
-臂 B : 工作完整组合 × bank 模板 × landmark_0   (去泄露值;原"臂 B′"更名而来)
-臂 C : 贪婪最优组合 × bank 模板 × landmark_0   (可达值;fields 由搜索结果生成)
+deleak : 工作完整组合 × bank 切片 × landmark_0   (去泄露值;原"臂 B′"更名而来)
+reach  : 贪婪最优组合 × bank 切片 × landmark_0   (可达值;fields 由搜索结果生成)
 ```
 
-- **T31 修订（2026-10-07，用户拍板）**：编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；原"臂 B（scheme 模板）"随之退役，原"臂 B′（bank 模板）"更名为**臂 B**。三臂变两臂。
+- **T31 修订（2026-10-07，用户拍板）**：编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；原"臂 B（scheme 模板）"随之退役，原"臂 B′（bank 模板）"更名为**臂 B**（现名 `deleak`）。三臂变两臂。
 - **编码路径**：任何字段组合（论文的、贪婪的）一律按字段索引**切片 bank 嵌入矩阵**（零 CONCH 重编码，与 E2 搜索评估器同路径，切片与 bank 行逐位一致）。`--landmark_time` 值域：`0|365|730`（mask 开）、`none`/`no_mask`（landmark off，mask 关 + 与 landmark_0 同字段集，时间轴对照用；Test_3 侧 bank 变体名 `raw`）、`static_only`（稳定字段子集，剔除 `diagnoses[]`/`follow_ups[]` 字段，字段集不同；2026-10-08 新语义，`run_field_bank.py --static_only` 生成）。三者不可混用。
-- 臂 B 字段集 = 论文方案 fields.json ∩ bank 字段索引；不在 bank 的字段记入遗漏清单（"无依据导致遗漏"的物证）。
-- 头条 Δc = C − B（模板、编码、模型、划分全同，唯一差异 = 字段集）。
-- 时间轴对照（mask 效应） = B_off（工作组合 × `raw` bank）− B（landmark_0）；报告值 = 论文历史报告数（外部数字，不复跑）。
-- 臂 C 的 c-index 即搜索 result.json 的 `best_cv_c_mean`（同嵌入、同模型、同 5 折、同 seed）；如需独立落表训练，走与 B 相同的切片流程。
+- deleak 字段集 = 论文方案 fields.json ∩ bank 字段索引；不在 bank 的字段记入遗漏清单（"无依据导致遗漏"的物证）。
+- 头条 Δc = reach − deleak（模板、编码、模型、划分全同，唯一差异 = 字段集）。
+- 时间轴对照（mask 效应） = report（工作组合 × `raw` bank）− deleak（landmark_0）；报告值 = 论文历史报告数（外部数字，不复跑）。
+- reach 的 c-index 即搜索 result.json 的 `best_cv_c_mean`（同嵌入、同模型、同 5 折、同 seed）；如需独立落表训练，走与 deleak 相同的切片流程。
 
 ### 7.3 产物
 
@@ -298,10 +300,15 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 ## 8. Test_4 三档汇总表（非实验，收口 Test_2+Test_3）
 
 - **定位**（用户指令 2026-10-02）：Test_4 不是独立实验，只是 Test_2（高估链）与 Test_3（低估链）的**汇总产物表**——一个 Test 可以对应多张表，表本身不占实验命题。两个档差分别收口两条链：报告值−去泄露值 = 时间轴链收口；去泄露值−可达值 = 字段轴链收口。
-- **3a 三档表**：每 (dataset, work) 一行：报告值（旧 A_manual）、去泄露值（Test_2b 臂 B）、可达值（Test_3 臂 C）、档间 Δ；主集定量、扩展集带 CI；并列 n_event / event_rate / 每折事件数。
+- **3a 三档表**：每 (dataset, work) 一行：报告值（冻结 apipe 历史 = 旧 A_manual，待 report 臂 bank 重建替换）、去泄露值（deleak 臂 = Test_3_{work}_{ds} bank 行）、可达值（reach 臂 = 搜索 best_cv_c_mean）、档间 Δ；主集定量、扩展集带 CI；并列 n_event / event_rate / 每折事件数。
 - 产物：`results_display/Test_4_three_tiers/`。
 
 ## 8bis. Test_5 规格（不变性：编码 / 模型 / 指标轴）
+
+> 臂（实验条件）定义唯一来源 = `z_notes/experiment_list/arm_registry.md`。Test_5 子检查 =
+> 轴 × 臂对：{5E_2b,5M_2b} 重复 {`report`, `deleak`}，{5E_3,5M_3} 重复 {`deleak`, `reach`}。
+> 历史字母代号 A/B/Bp/C 已退役；apipe 全量编码路径已删除（T31 + 2026-10-09 收尾），
+> 5E_2b/5M_2b 的历史产物基于已删编码，bank 重建批次待排期。
 
 ### 8bis.1 命题与三轴
 
@@ -324,10 +331,10 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 
 | 子检查 | 换的轴 | 重复什么 | 范围（15 主集） | 新 confs（估计） |
 |---|---|---|---|---|
-| 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 两臂 A（mask 关）/B（lm0），字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
-| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂 B/C（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
-| 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 两臂（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
-| 5M_3 | M→clinic_cox | Test_3 臂 B/C（prompt 复用） | 15 × 2 臂 | ≈30 |
+| 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 臂对 {`report`（mask 关）/`deleak`（lm0）}，字段集、模板、划分全同 | 绑定 combos ≈64 × 2 臂 × 2 编码 | ≈256（本轮 ≈128） |
+| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 15 × 2 臂 × 2 编码 | ≈60（本轮 ≈30） |
+| 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 臂对 {`report`/`deleak`}（prompt 复用既有编码产物） | ≈64 × 2 臂 × snn；4 多模态数据集 × 绑定 × 2 臂 × 2 模型 | ≈128 + ≈72 |
+| 5M_3 | M→clinic_cox | Test_3 臂对 {`deleak`/`reach`}（prompt 复用） | 15 × 2 臂 | ≈30 |
 
 **本轮合计 ≈388 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈188 confs 待模型接入后补跑，全量 ≈546。
 

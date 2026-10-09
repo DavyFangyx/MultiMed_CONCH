@@ -1,6 +1,6 @@
 # 命名公约:Test 编号为主键的三处目录统一
 
-本文档是实验目录命名的**唯一公约来源**。实验编号口径见 `z_notes/Test_series_spec.md`;本页只回答「某个 Test 的产物在三处叫什么」。
+本文档是实验目录命名的**唯一公约来源**。实验编号口径见 `z_notes/Test_series_spec.md`;**臂(实验条件)命名的唯一来源 = 同目录 [arm_registry.md](arm_registry.md)**(语义名 + 短标签 + 条件元组;字母代号 A/B/Bp/C 已退役)。本页只回答「某个 Test 的产物在三处叫什么」。
 
 ## 公约(三句话)
 
@@ -20,8 +20,8 @@
 | `results/` | `univariate` | `Test_1a/arm_t0` | |
 | `results/` | `univariate_raw` | `Test_1a/arm_off` | 内部 `univariate/prompt/...` 层由写入方构造,保留 |
 | `results/` | `leak_audit` | `Test_2a_leak_audit` | |
-| `results/` | `A_manual` | `Test_2b/arm_A` | 报告值(Test_4 三档来源) |
-| `results/` | `A_manual_landmark` | `Test_2b/arm_B` | 去泄露值(含 Test_3 臂 B 合并行) |
+| `results/` | `A_manual` | `Test_2b/arm_A` | 报告值(Test_4 三档来源;冻结 apipe 历史,待 report 臂 bank 重建替换,见 arm_registry) |
+| `results/` | `A_manual_landmark` | `Test_2b/arm_B` | 去泄露值(含 deleak 臂 Test_3_* 合并行;apipe 历史行冻结,见 arm_registry 磁盘落点映射) |
 | `results/` | `E2_selection` | `Test_3_search` | 搜索缓存 cache.sqlite |
 | `results/` | `greedy` `Test_2_selection` | `results/_archive/` | 遗留,空则删 |
 | `results_display/` | `leak_audit` | `Test_2a_leak_audit` | 含 scripts/audit_leak.py |

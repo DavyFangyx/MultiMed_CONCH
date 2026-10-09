@@ -2,7 +2,8 @@
 """Test_2b Δc 对照报表生成器（纯汇总，无训练）。
 
 口径（z_notes/Test_series_spec.md §6.4 / §12 U1 协议 A）：
-  - 臂 A（报告值对照）= scheme__landmark_none（S4 新链路，同字段集、同编码、同模型、同划分）
+  - 臂 A（报告值对照）= scheme__landmark_none（apipe 全量编码历史口径，已冻结；
+    臂语义见 z_notes/experiment_list/arm_registry.md 退役臂表 report_apipe / deleak_apipe）
   - 臂 B（去泄露值）  = scheme__landmark_0（经典 landmark 三要件全开）
   - Δc = c(A) − c(B)；Δc > 0 表示去掉未来信息后 c-index 下降 = 文献报告值被高估的证据
   - 数据集分层按 n_event 四档（协议 A）：≥100 main / 70–100 main_ci（必须带 CI，不排名）

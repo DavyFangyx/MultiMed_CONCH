@@ -653,34 +653,9 @@ def test_cli_hgcn_clinic_landmark_and_out_root_routing(tmp_path, monkeypatch):
 
 def test_cli_rejects_bad_landmark_time(capsys):
     with pytest.raises(SystemExit) as exc:
-        manual_main(["json2prompt", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_time", "abc"])
+        manual_main(["cindex", "--dataset", "TCGA-READ", "--scheme", "MULTISURV", "--landmark_time", "abc"])
     assert exc.value.code == 2
     assert "--landmark_time" in capsys.readouterr().err
-
-
-def test_cli_json2prompt_retired_fails_fast(tmp_path):
-    """json2prompt 已退役:CLI 调用必须快速失败并提示 bank 切片。"""
-    _load_scheme_fields()
-    json_path = _write_json_dir(tmp_path)
-    prompt_root = tmp_path / "outputs" / "TCGA-KIRC" / "A_manual"
-    with pytest.raises(SystemExit) as exc:
-        manual_main(
-            [
-                "json2prompt",
-                "--json_path",
-                str(json_path),
-                "--scheme",
-                "MULTISURV",
-                "--template_dir",
-                DEFAULT_TEMPLATE_DIR,
-                "--prompt_dir",
-                str(prompt_root),
-                "--landmark_time",
-                "0",
-            ]
-        )
-    assert "bank" in str(exc.value)
-    assert not (prompt_root / "MULTISURV" / "landmark_0" / "prompts.csv").exists()
 
 
 

@@ -41,7 +41,7 @@ def registered_test3_schemes(schemes_json: Path = SCHEMES_JSON) -> list[str]:
 def main(argv=None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--gpu", default=None, help="encode 可见 GPU，透传给 CLI 的 --gpu")
+    parser.add_argument("--gpu", default=None, help="保留兼容透传（现子命令不使用）")
     parser.add_argument(
         "--print-schemes",
         action="store_true",

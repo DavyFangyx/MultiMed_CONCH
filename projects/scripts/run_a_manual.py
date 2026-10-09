@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """A_manual 人工方案管线的唯一入口（原 A_pipeline/run.py + run.sh + bg.sh 的合并替代）。
 
-六个子命令与旧 A_pipeline 完全同义：json2prompt / encode / pipeline / baseline /
-hgcn_clinic / cindex。内核在 src/manual_pipeline/，方案模板在 templates/manual_schemes/。
+三个子命令：baseline / hgcn_clinic / cindex。内核在 src/manual_pipeline/，
+方案模板在 templates/manual_schemes/。文本嵌入统一走 field bank 切片（零重编码，
+见 scripts/Test_3_arms.py / Test_3_custom_scheme.py）；原 json2prompt / encode /
+pipeline 三子命令已随句式模板退役（T31，2026-10-07）整体删除。
 
 用法（在 projects/ 根目录执行）：
-  # 编码：JSON → prompt CSV → CONCH 文本塔 embedding（需 conch conda 环境）
-  python scripts/run_a_manual.py pipeline --dataset TCGA-BRCA --scheme MULTISURV
-  python scripts/run_a_manual.py json2prompt --dataset TCGA-BRCA --scheme MULTISURV
-  python scripts/run_a_manual.py encode --dataset TCGA-BRCA --scheme MULTISURV --gpu 1
-
   # D 向量（baseline one-hot / 连续 / 有序）
   python scripts/run_a_manual.py baseline --dataset all --scheme paper
 
@@ -25,8 +22,7 @@ hgcn_clinic / cindex。内核在 src/manual_pipeline/，方案模板在 template
 后台跑（等价旧 `bash A_pipeline/bg.sh <log>`，调度日志进指定文件）：
   nohup python scripts/run_a_manual.py cindex ... > A_drain.log 2>&1 & echo $! > A_drain.pid
 
-编码 GPU（--gpu）优先于环境变量 A_PIPELINE_GPU，再默认 7，写进 CUDA_VISIBLE_DEVICES；
-cindex 训练用各终端自己的 CUDA_VISIBLE_DEVICES，不受 --gpu 影响。
+cindex 训练用各终端自己的 CUDA_VISIBLE_DEVICES。
 """
 
 import sys

@@ -1,28 +1,29 @@
 """Test_3 两臂编排(全走同一条编码/模型/划分/seed;spec §7.2,bank-only 口径 2026-10-07)。
 
-  臂 B  = 论文完整组合 × landmark_0(Test_2b 产物,历史口径;只读不跑,保留为交叉参考)
-  臂 B = 论文组合 ∩ bank 字段 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}(去泄露值)
-  臂 C  = 贪婪最优子集 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}(可达值;
-          recommended_subset = gain-only δ=0.005 参考点;--arm best 用历史 best_subset)
+臂语义唯一来源 = z_notes/experiment_list/arm_registry.md:
+  deleak = 论文组合 ∩ bank 字段 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}(去泄露值)
+  reach  = 贪婪最优子集 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}(可达值;
+           recommended_subset = gain-only δ=0.005 参考点;--arm best 用历史 best_subset)
+  (deleak_apipe = 论文完整组合 × lm0 的 Test_2b 历史产物,冻结只读,保留为交叉参考)
 
 链路:generate(fields.json ∩ bank 登记)→ encode(bank 切片,零 CONCH 重编码)
-      → enqueue(manual pipeline cindex conf)→ drain(Clinic_Analyzer/run.sh)
-      → summarize(写 arm_B 表,按行键合并)。臂 C 的 c-index 与搜索 best_cv_c_mean 同口径,
+      → enqueue/drain(已收敛到 `scripts/exp_queue.py --arm test_3_arms`,本文件不再实现)
+      → summarize(写 arm_B 表,按行键合并)。reach 的 c-index 与搜索 best_cv_c_mean 同口径,
       可直接引用搜索 result.json,无需重新训练。
 
 用法(projects/ 根目录):
   python3 scripts/Test_3_arms.py generate --arm b
   python3 scripts/Test_3_arms.py encode   --arm b --parallel 3
-  python3 scripts/Test_3_arms.py enqueue  --arm b
-  python3 scripts/Test_3_arms.py drain    --gpu 1 --workers 2
   python3 scripts/Test_3_arms.py summarize
   python3 scripts/Test_3_arms.py status   --arm b
+  # enqueue / drain 走统一入口(旧姿势等价;本文件同名子命令只指路,不再执行):
+  bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant b
+  bash scripts/exp_queue.sh drain   --arm test_3_arms
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import os
 import subprocess
 import sys
 import time
@@ -134,27 +135,20 @@ def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
 
 
 def cmd_enqueue(arm: str, datasets: list[str]) -> None:
-    from manual_pipeline.cindex import enqueue_cindex_jobs
-
-    created = existing = missing = 0
-    for dataset, scheme, _work in scheme_pairs(arm, datasets):
-        jobs = _cindex_jobs(dataset, scheme)
-        if not jobs:
-            missing += 1
-            print(f"[test_3][arms] 无 job（缺 embeddings?）: {dataset}/{scheme} -> {embeddings_dir(dataset, scheme)}")
-            continue
-        queued = enqueue_cindex_jobs(jobs, queue_root=QUEUE_ROOT)
-        created += len(queued["created"])
-        existing += len(queued["existing"])
-    print(f"[test_3][arms] enqueue created={created} existing={existing} missing={missing}")
+    """已收敛：实现在 `scripts/exp_queue.py` 的 cindex backend（--arm test_3_arms）。"""
+    raise SystemExit(
+        "[test_3][arms] enqueue 已收敛到统一入口（逐字等价，勿再走本文件）:\n"
+        f"  bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant {arm}"
+        + (f" --datasets {','.join(datasets)}" if datasets else "")
+    )
 
 
 def cmd_drain(gpu: str, workers: int, poll: float) -> None:
-    from manual_pipeline.cindex import drain_queue
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    print(f"[test_3][arms] drain queue={QUEUE_ROOT} gpu={gpu} workers={workers}", flush=True)
-    drain_queue(Path(QUEUE_ROOT), reuse=True, poll_seconds=poll, workers=workers)
+    """已收敛：实现在 `scripts/exp_queue.py` 的 cindex backend（--arm test_3_arms）。"""
+    raise SystemExit(
+        "[test_3][arms] drain 已收敛到统一入口（逐字等价，勿再走本文件）:\n"
+        f"  bash scripts/exp_queue.sh drain --arm test_3_arms --gpu {gpu} --workers {workers}"
+    )
 
 
 def cmd_summarize(datasets: list[str], arm: str) -> None:

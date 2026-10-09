@@ -43,7 +43,6 @@ from manual_pipeline.config import SCHEME_CONFIG, scheme_source  # noqa: E402
 from manual_pipeline.datasets import dataset_jobs, expand_source_jobs, load_dataset_configs, load_source_dataset_configs, resolve_dataset_names  # noqa: E402
 from manual_pipeline.extract import extract_values  # noqa: E402
 from manual_pipeline.hgcn_clinic import field_type_name, load_hgcn_scheme_fields, resolve_hgcn_schemes  # noqa: E402
-from manual_pipeline.json2prompt import run_json2prompt  # noqa: E402
 from manual_pipeline.paths import (  # noqa: E402
     DEFAULT_GDC_DATASETS_CONFIG,
     DEFAULT_TEMPLATE_DIR,
@@ -214,21 +213,6 @@ def test_global_mapping_dir_lives_in_manual_templates():
     assert mapping_dir.parent == TEMPLATES_ROOT
     assert "outputs" not in mapping_dir.parts[-3:]
     assert global_mapping_dir() == mapping_dir
-
-
-def test_json2prompt_retired_fails_fast(tmp_path):
-    """句式模板已退役:json2prompt 必须快速失败,不再产出 scheme prompts。"""
-    _load_scheme_fields()
-    with pytest.raises(SystemExit) as exc:
-        run_json2prompt(
-            json_path=str(tmp_path / "cases.json"),
-            scheme="MULTISURV",
-            template_dir=DEFAULT_TEMPLATE_DIR,
-            prompt_dir=str(tmp_path / "out"),
-            dataset_name="TCGA-READ",
-        )
-    assert "bank" in str(exc.value)
-
 
 
 def _tiny_case():
