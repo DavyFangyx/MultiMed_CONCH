@@ -24,8 +24,6 @@ from common.paths import landmark_tag as _projects_landmark_tag
 from discovery.landmark import patient_landmark, slot_passes_landmark
 
 
-LANDMARK_NONE_TAG = "landmark_none"
-
 TIMED_FAMILIES = (
     "diagnoses",
     "diagnoses_treatments",
@@ -44,7 +42,8 @@ class LandmarkSetting:
     `provided` is False when the flag was not passed at all: every command then
     keeps the legacy behaviour (legacy output dirs, legacy cindex table).
     `use_landmark` is True only for a numeric day count; `none` is the explicit
-    landmark_none arm.
+    landmark-off arm (legacy dirs/tags, same as flag absent; 旧名 landmark_none
+    已随 2026-10-09 清理删除).
     """
 
     __slots__ = ("raw", "provided", "use_landmark", "landmark_time")
@@ -64,11 +63,11 @@ class LandmarkSetting:
 
     @property
     def arm_tag(self) -> str:
-        """cindex marker/run_name suffix: "" legacy, else landmark_none/_0/_365."""
+        """cindex marker/run_name suffix: "" landmark off, else landmark_{T}."""
         if not self.provided:
             return ""
         if not self.use_landmark:
-            return LANDMARK_NONE_TAG
+            return ""
         return landmark_tag(landmark_time=self.landmark_time)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
@@ -102,7 +101,7 @@ def parse_landmark_setting(raw) -> LandmarkSetting:
 
 
 def landmark_tag(*, no_landmark: bool = False, landmark_time=None) -> str:
-    """landmark_none / landmark_{T}. Same spelling as projects/src."""
+    """no_mask / landmark_{T}. Same spelling as projects/src."""
     return _projects_landmark_tag(no_landmark=no_landmark, landmark_time=landmark_time)
 
 

@@ -55,7 +55,6 @@ from manual_pipeline.config import SCHEME_FIELDS, load_custom_schemes, reset_sch
 from manual_pipeline.extract import extract_values  # noqa: E402
 from manual_pipeline.hgcn_clinic import load_hgcn_scheme_fields  # noqa: E402
 from manual_pipeline.landmark import (  # noqa: E402
-    LANDMARK_NONE_TAG,
     LandmarkSetting,
     landmark_dir,
     mask_case,
@@ -85,9 +84,9 @@ def test_parse_landmark_setting_modes():
 
     none_arm = parse_landmark_setting("none")
     assert (none_arm.provided, none_arm.use_landmark, none_arm.landmark_time) == (True, False, None)
-    # landmark_none keeps the existing output dirs (only the cindex table moves).
+    # landmark off keeps the existing output dirs (only the cindex table moves).
     assert none_arm.encode_subdir == ""
-    assert none_arm.arm_tag == LANDMARK_NONE_TAG == "landmark_none"
+    assert none_arm.arm_tag == ""
 
     for token, days in (("0", 0), ("365", 365), ("730", 730)):
         setting = parse_landmark_setting(token)
@@ -275,18 +274,19 @@ def test_baseline_scheme_output_dir_landmark_subdir(tmp_path):
 def test_landmark_paths_never_touch_legacy_a_manual(tmp_path):
     results_root = tmp_path / "results"
     assert result_table_dir("TCGA-READ", results_root) == results_root / ARM_A / "TCGA-READ"
+    # landmark off(旧名 landmark_none,已清理)= 无 landmark_tag,表仍落 arm_A
     assert (
-        result_table_dir("TCGA-READ", results_root, landmark_tag="landmark_0")
-        == results_root / ARM_B / "TCGA-READ"
+        result_table_dir("TCGA-READ", results_root, landmark_tag="")
+        == results_root / ARM_A / "TCGA-READ"
     )
     assert (
-        result_table_dir("TCGA-READ", results_root, landmark_tag=LANDMARK_NONE_TAG)
+        result_table_dir("TCGA-READ", results_root, landmark_tag="landmark_0")
         == results_root / ARM_B / "TCGA-READ"
     )
     assert analyzer_exp_group() == f"{ARM_A}/runs"
     assert analyzer_exp_group("landmark_0") == f"{ARM_B}/runs"
 
-    # landmark_none = the reported-value arm: same embedding dir as today.
+    # landmark off = the reported-value arm: same embedding dir as today.
     assert str(scheme_output_dir("TCGA-READ", "MULTISURV", str(tmp_path), landmark_subdir="")).endswith(
         "/outputs/TCGA-READ/A_manual/MULTISURV/embeddings/pt"
     )
@@ -421,7 +421,7 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
     assert job["conf_name"] == "tcga_read__baseline__MULTISURV__landmark_0__clinic_cox.conf"
     assert f"{ARM_B}/runs/tcga_read__baseline__MULTISURV__landmark_0/clinic_cox" in str(job["out_dir"])
 
-    # landmark_none: legacy embedding dir, but the cindex table is the landmark one
+    # landmark off: legacy embedding dir, but the cindex table is the landmark one
     none_jobs = iter_cindex_jobs(
         dataset_name="TCGA-READ",
         schemes=["MULTISURV"],
@@ -430,7 +430,7 @@ def test_iter_cindex_jobs_landmark_arm(tmp_path, monkeypatch):
         encoding="baseline",
         modalities="clinic_cox",
         results_root=tmp_path / "results",
-        landmark_tag=LANDMARK_NONE_TAG,
+        landmark_tag="",
     )
     assert none_jobs[0]["clinic_dir"] == legacy_dir
     assert none_jobs[0]["label_file"] is None

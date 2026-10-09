@@ -24,7 +24,7 @@ from greedy.data import DEFAULT_ANALYZER_SPLIT_ROOT, display_to_study
 
 from .baseline import resolve_baseline_schemes
 from .config import PAPER_SCHEMES, SCHEME_CONFIG, resolve_scheme_names, schemes_for_dataset
-from .landmark import LANDMARK_NONE_TAG, landmark_dir
+from .landmark import landmark_dir
 from .landmark_labels import build_landmark_label_file, format_risk_set_summary
 from .paths import PROJECT_ROOT, dataset_baseline_embedding_dir, dataset_embedding_dir
 
@@ -410,7 +410,7 @@ def iter_cindex_jobs(
     split_dir = _split_dir_for(dataset_name)
     results_base = analyzer_results_base(results_root)
     exp_group = analyzer_exp_group(landmark_tag)
-    clinic_subdir = "" if landmark_tag in ("", LANDMARK_NONE_TAG) else landmark_tag
+    clinic_subdir = landmark_tag
     # The time-origin shift is a fixed protocol step (requirement ③), so each
     # landmark arm has exactly one run/conf/row tag.
     run_tag = landmark_tag
@@ -478,8 +478,8 @@ def _landmark_label_file(
 ) -> tuple[Path | None, dict | None]:
     """Derived label CSV (risk set + time shift) for a numeric landmark arm.
 
-    landmark_time None (legacy / landmark_none arm) keeps the original label
-    file: arm A must be bit-for-bit the reported-value control.
+    landmark_time None (landmark-off arm) keeps the original label file: the
+    reported-value arm must be bit-for-bit the control.
     """
     if landmark_time is None:
         return None, None
