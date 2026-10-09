@@ -38,6 +38,7 @@ from common.paths import (
     landmark_tag_from_args,
     require_landmark_tag,
     resolve_cli_out_dir,
+    shared_onehot_global_mapping_path,
     validate_encoding,
 )
 
@@ -379,22 +380,10 @@ def _lazy_import_conch():
     return torch, create_model_from_pretrained, get_tokenizer
 
 
-def load_onehot_encoder():
-    """CODEX_3 fills discovery.onehot.encode_onehot. This step only wires the import."""
-    try:
-        from .onehot import encode_onehot  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "onehot encoding is not implemented yet; finish CODEX_3"
-        ) from exc
-    return encode_onehot
-
-
 def run_field_bank(args):
     encoding = validate_encoding(getattr(args, "encoding", "prompt"))
     if encoding == "onehot" and getattr(args, "prompts_only", False):
         raise ValueError("--prompts_only is only valid with --encoding prompt")
-    onehot_encoder = load_onehot_encoder() if encoding == "onehot" else None
 
     datasets = load_dataset_configs(args.datasets_config)
     names = resolve_dataset_names(args.dataset, datasets)
@@ -420,26 +409,25 @@ def run_field_bank(args):
             )
         jobs.extend(dataset_jobs)
     args._multi_dataset = len(jobs) > 1
+    if encoding == "onehot":
+        _run_onehot_batch(args, jobs, datasets)
+        return
     for name, landmark_args in jobs:
         landmark_args._multi_dataset = args._multi_dataset
-        _run_field_bank_one(landmark_args, name, datasets, encoding, onehot_encoder)
+        _run_field_bank_one(landmark_args, name, datasets, encoding)
 
 
-def _run_field_bank_one(args, name, datasets, encoding, onehot_encoder) -> None:
+def _resolve_bank_context(args, name, datasets, encoding) -> dict:
+    """kept_fields/模板/病例加载(onehot 与 prompt 分支共用)。"""
     use_landmark, landmark_time = parse_landmark_options(args)
     tag = landmark_tag_from_args(args)
     args.landmark_tag = tag
     static_only = bool(getattr(args, "static_only", False))
-    # static_only 的字段基座 = --landmark_time 对应 tag 的 kept_fields/模板,再剔除 timed 路径族;
-    # 产物目录 tag 用 static_only(与 landmark_{T} / no_mask 平级)。
     base_tag = (
         build_landmark_tag(no_landmark=not use_landmark, landmark_time=landmark_time)
         if static_only
         else tag
     )
-    print(f"\n######## Dataset: {name}  {tag} ########")
-    if static_only:
-        print(f"  static_only: 字段基座 = {base_tag} 的 kept_fields/模板，剔除 diagnoses[]/follow_ups[] 路径族")
     kept = load_kept_fields(
         dataset_name=name,
         path=Path(args.kept_fields) if args.kept_fields else None,
@@ -460,22 +448,104 @@ def _run_field_bank_one(args, name, datasets, encoding, onehot_encoder) -> None:
         print(f"  static_only: 剔除 timed 字段 {n_before - len(expected)} 个，保留稳定字段 {len(expected)} 个")
     if cfg["fields"] != expected:
         print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
-
     cases = load_clinical_cases(
         get_dataset_clinic_files(name, datasets),
         project_ids=get_dataset_project_ids(name, datasets),
     )
-    if encoding == "onehot":
-        onehot_encoder(
-            dataset_name=name,
-            cfg=cfg,
-            cases=cases,
-            out_dir=resolve_cli_out_dir(args, dataset_field_bank_dir(name, encoding, tag), name, tag),
-            rare_threshold=int(getattr(args, "rare_freq_threshold", 5)),
-            landmark=use_landmark,
-            landmark_time=landmark_time,
-        )
-        return
+    return {
+        "args": args,
+        "name": name,
+        "cfg": cfg,
+        "cases": cases,
+        "tag": tag,
+        "use_landmark": use_landmark,
+        "landmark_time": landmark_time,
+    }
+
+
+def _run_onehot_batch(args, jobs, datasets) -> None:
+    """onehot 全局共享词表口径(2026-10-09 用户拍板)。
+
+    按 tag 分组:同 tag 多数据集(如 --dataset all)时合并全部患者拟合一张
+    全局名义词表并落盘;单数据集时消费已落盘的共享词表(缺失即报错)。
+    与 baseline/HGCN 共享词表口径对标——index k 跨数据集语义一致。
+    """
+    from .onehot import (
+        collect_patient_field_values,
+        encode_onehot,
+        fit_global_nominal_mappings,
+        load_global_nominal_mapping,
+        save_global_nominal_mapping,
+    )
+
+    rare_threshold = int(getattr(args, "rare_freq_threshold", 5))
+    contexts = [_resolve_bank_context(landmark_args, name, datasets, "onehot") for name, landmark_args in jobs]
+    by_tag: dict[str, list[dict]] = {}
+    for ctx in contexts:
+        by_tag.setdefault(ctx["tag"], []).append(ctx)
+
+    for tag, group in by_tag.items():
+        mapping_path = shared_onehot_global_mapping_path(tag)
+        if len(group) == 1:
+            if not mapping_path.exists():
+                raise ValueError(
+                    f"共享 onehot 词表不存在: {mapping_path}。"
+                    f"请先跑 run_field_bank --encoding onehot --dataset all 重建全局词表(2026-10-09 口径)。"
+                )
+            global_mapping = load_global_nominal_mapping(mapping_path, fields=group[0]["cfg"]["fields"])
+            try:
+                payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+                built_scope = int((payload.get("n_datasets") or 0))
+                tcga_total = sum(1 for key in datasets if str(key).startswith(("TCGA-", "TCGA_")))
+                if built_scope < tcga_total:
+                    print(f"  ⚠️  共享词表仅由 {built_scope} 个数据集拟合(全量应为 {tcga_total})，建议 --dataset all 重建后再消费")
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+            print(f"[onehot] {tag}: 消费共享词表 {mapping_path}")
+        else:
+            patients_by_ds = [
+                collect_patient_field_values(
+                    ctx["cases"],
+                    ctx["cfg"]["fields"],
+                    ctx["cfg"].get("converts") or {},
+                    landmark=ctx["use_landmark"],
+                    landmark_time=ctx["landmark_time"],
+                )
+                for ctx in group
+            ]
+            all_fields = sorted({field for ctx in group for field in ctx["cfg"]["fields"]})
+            global_mapping = fit_global_nominal_mappings(patients_by_ds, all_fields, rare_threshold=rare_threshold)
+            save_global_nominal_mapping(
+                mapping_path,
+                global_mapping,
+                landmark_tag=tag,
+                n_patients=sum(len(patients) for patients in patients_by_ds),
+                n_datasets=len(group),
+                rare_threshold=rare_threshold,
+            )
+            print(f"[onehot] {tag}: 拟合全局共享词表 {mapping_path} ({len(all_fields)} 字段, {len(group)} 数据集)")
+
+        for ctx in group:
+            encode_onehot(
+                dataset_name=ctx["name"],
+                cfg=ctx["cfg"],
+                cases=ctx["cases"],
+                out_dir=resolve_cli_out_dir(ctx["args"], dataset_field_bank_dir(ctx["name"], "onehot", tag), ctx["name"], tag),
+                rare_threshold=rare_threshold,
+                landmark=ctx["use_landmark"],
+                landmark_time=ctx["landmark_time"],
+                global_mapping=global_mapping,
+            )
+
+
+def _run_field_bank_one(args, name, datasets, encoding) -> None:
+    ctx = _resolve_bank_context(args, name, datasets, encoding)
+    cfg = ctx["cfg"]
+    cases = ctx["cases"]
+    tag = ctx["tag"]
+    use_landmark = ctx["use_landmark"]
+    landmark_time = ctx["landmark_time"]
+    print(f"\n######## Dataset: {name}  {tag} ########")
 
     records = [
         generate_field_bank_prompt_row(
@@ -485,6 +555,11 @@ def _run_field_bank_one(args, name, datasets, encoding, onehot_encoder) -> None:
         if "submitter_id" in case
     ]
     out_dir = resolve_cli_out_dir(args, dataset_field_bank_dir(name, encoding, tag), name, tag)
+    # skip 守卫（2026-10-08 补，与 s5b_build_raw_field_bank / s5c_merge_t0_bank 同款）：
+    # bank 已落盘且未显式 --overwrite 时直接跳过，防每次运行重复 CONCH 编码。
+    if (out_dir / "field_index.json").exists() and not getattr(args, "overwrite", False):
+        print(f"  [skip] bank 已存在且未加 --overwrite: {out_dir}")
+        return
     out_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = out_dir / "prompts.csv"
     prompt_rows = []

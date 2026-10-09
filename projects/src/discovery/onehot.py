@@ -253,6 +253,55 @@ def fit_nominal_mapping(field: str, patients: list[dict], rare_threshold: int = 
     return {cat: idx for idx, cat in enumerate(categories)}
 
 
+def fit_global_nominal_mappings(
+    dataset_patients: list[list[dict]],
+    fields: list[str],
+    rare_threshold: int = RARE_FREQ_THRESHOLD,
+) -> dict[str, dict[str, int]]:
+    """全局共享名义词表(2026-10-09 用户拍板):全部数据集患者合并后逐字段拟合。
+
+    dataset_patients = 每个数据集一份 collect_patient_field_values 产物;
+    同一字段在所有数据集的取值上统一计频(仅出现于单个数据集、频次不足
+    rare_threshold 的类别进入 __OTHER__),保证 index k 跨数据集语义一致,
+    与 baseline/HGCN 的共享词表口径对标。
+    """
+    merged: dict[str, list[dict]] = {}
+    for patients in dataset_patients:
+        for patient in patients:
+            for field in patient["values"]:
+                merged.setdefault(field, []).append(patient)
+    mappings: dict[str, dict[str, int]] = {}
+    for field in fields:
+        mappings[field] = fit_nominal_mapping(field, merged.get(field, []), rare_threshold=rare_threshold)
+    return mappings
+
+
+def save_global_nominal_mapping(path: Path, mappings: dict[str, dict[str, int]], *, landmark_tag: str | None, n_patients: int, n_datasets: int, rare_threshold: int) -> None:
+    payload = {
+        "vocab_scope": "global_shared",
+        "landmark_tag": landmark_tag,
+        "rare_freq_threshold": int(rare_threshold),
+        "n_patients": int(n_patients),
+        "n_datasets": int(n_datasets),
+        "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "fields": {field: {str(cat): int(idx) for cat, idx in mapping.items()} for field, mapping in sorted(mappings.items())},
+    }
+    _write_json(path, payload)
+
+
+def load_global_nominal_mapping(path: Path, *, fields: list[str]) -> dict[str, dict[str, int]]:
+    """读共享词表并校验字段齐备(缺字段 = 词表口径不一致,直接报错)。"""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    stored = payload.get("fields") or {}
+    missing = [field for field in fields if field not in stored]
+    if missing:
+        raise ValueError(
+            f"全局词表 {path} 缺字段 {missing};请先跑 --encoding onehot --dataset all 重建共享词表"
+        )
+    return {field: stored[field] for field in fields}
+
+
+
 def encode_patient_matrix(
     patient_values: dict[str, list[str]],
     field_types: list[dict],
@@ -329,7 +378,14 @@ def encode_onehot(
     rare_threshold: int = RARE_FREQ_THRESHOLD,
     landmark=True,
     landmark_time=None,
+    global_mapping: dict[str, dict[str, int]] | None = None,
 ) -> dict:
+    """Field Bank onehot 编码。
+
+    global_mapping 提供时:名义字段消费全局共享词表(逐数据集词表已废止,
+    2026-10-09 用户拍板——与 baseline/HGCN 共享词表口径对标);连续字段的
+    min/max/median 归一化统计仍逐数据集拟合(与 baseline 线同口径)。
+    """
     torch = _lazy_torch()
     fields = list(cfg["fields"])
     converts = cfg.get("converts") or {}
@@ -352,6 +408,9 @@ def encode_onehot(
         if spec["final_type"] == "continuous":
             normalization_stats[field] = fit_continuous_stats(field, patients)
             field_widths.append(1)
+        elif global_mapping is not None:
+            category_mapping[field] = global_mapping[field]
+            field_widths.append(len(global_mapping[field]))
         else:
             mapping = fit_nominal_mapping(field, patients, rare_threshold=rare_threshold)
             category_mapping[field] = mapping
@@ -377,6 +436,7 @@ def encode_onehot(
         "feat_dim": max_width,
         "n_patients": len(patients),
         "rare_freq_threshold": int(rare_threshold),
+        "vocab_scope": "global_shared" if global_mapping is not None else "per_dataset",
         "landmark_policy": landmark_policy(bool(landmark)),
         "landmark_time": None if landmark in (False, None) else landmark_time,
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

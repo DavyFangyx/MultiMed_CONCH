@@ -637,6 +637,13 @@ def shared_field_stats_path(landmark_tag: str | None = None) -> Path:
     return RAWDATA_STATS_SHARED_DIR / require_landmark_tag(landmark_tag) / "field_stats.csv"
 
 
+def shared_onehot_global_mapping_path(landmark_tag: str | None = None) -> Path:
+    """Field Bank onehot 的全局共享名义词表(33 数据集同拟合,与 baseline/HGCN 词表口径对标)。"""
+    if landmark_tag is None:
+        return RAWDATA_STATS_SHARED_DIR / "onehot_global_mapping.json"
+    return RAWDATA_STATS_SHARED_DIR / require_landmark_tag(landmark_tag) / "onehot_global_mapping.json"
+
+
 def dataset_filter_log_dir(dataset_name: str, landmark_tag: str | None = None, *, out_suffix=None) -> Path:
     return RAWDATA_STATS_ROOT / dataset_name / _tag_with_suffix(landmark_tag, out_suffix) / "fliter_log"
 
