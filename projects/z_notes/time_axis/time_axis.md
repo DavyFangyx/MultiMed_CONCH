@@ -76,9 +76,9 @@ landmark 的 T 是**同一根轴上的点**（天），外部传入的全局 lan
 
 | 要件 | 含义 | 实现位置 |
 | --- | --- | --- |
-| ① 协变量只用 T 前信息 | timed 家族槽位只保留状态不是 `unlocated`/`non_informative` 且有限 `t_hi <= T` 的取值；无时间实体（case/demographic/exposures/family_histories）不 mask；缺 T 直接报错，该槽缺有限 `t_hi` 按缺失处理；被 mask 的值走现有 missing placeholder，不删列 | `src/discovery/landmark.py`（Field Bank 侧）与 `A_pipeline/src/landmark.py`（A_pipeline 侧，`mask_case()`） |
-| ② 风险集 = 只保留 `gt > T` 的患者 | 以**派生 label 文件**实现：被排除患者不在 label 文件中，`SurvivalDatasetFactory` 的 label ∩ split 交集自然把该患者从每折移除；split 文件不改动 | `A_pipeline/src/landmark_labels.py:110-111`（`excluded_mask = gt_days <= T`） |
-| ③ 时间原点平移到 T（`gt − T`） | label 时间列减去 `shift_months = T/30.4375`；平移 = 固定协议动作，恒定开启（c-index 对平移不变，不变性已由历史自检证实，`--landmark_shift` 开关已移除） | `A_pipeline/src/landmark_labels.py:114-116` |
+| ① 协变量只用 T 前信息 | timed 家族槽位只保留状态不是 `unlocated`/`non_informative` 且有限 `t_hi <= T` 的取值；无时间实体（case/demographic/exposures/family_histories）不 mask；缺 T 直接报错，该槽缺有限 `t_hi` 按缺失处理；被 mask 的值走现有 missing placeholder，不删列 | `src/discovery/landmark.py`（Field Bank 侧）与 `src/manual_pipeline/landmark.py`（apipe 线吸收自原 A_pipeline，`mask_case()`；2026-10-09 路径订正） |
+| ② 风险集 = 只保留 `gt > T` 的患者 | 以**派生 label 文件**实现：被排除患者不在 label 文件中，`SurvivalDatasetFactory` 的 label ∩ split 交集自然把该患者从每折移除；split 文件不改动 | `src/manual_pipeline/landmark_labels.py:108`（`excluded_mask = gt_days <= T`） |
+| ③ 时间原点平移到 T（`gt − T`） | label 时间列减去 `shift_months = T/30.4375`；平移 = 固定协议动作，恒定开启（c-index 对平移不变，不变性已由历史自检证实，`--landmark_shift` 开关已移除） | `src/manual_pipeline/landmark_labels.py:113-114` |
 
 要件①的值级判据是 `t_record`（§4）：T 时刻一条记录可用，当且仅当有限 `t_hi <= T` 且状态不是 `unlocated` / `non_informative`。
 
