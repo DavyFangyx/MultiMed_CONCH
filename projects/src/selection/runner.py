@@ -124,7 +124,9 @@ def main(argv=None):
     parser.add_argument("--field_bank_dir", default=None)
     parser.add_argument("--splits", default=None)
     parser.add_argument("--out", default=None)
-    parser.add_argument("--max_epochs", type=int, default=None)
+    # 统一口径(2026-10-09 用户拍板):全链 max_epochs=12,与 cindex 链 defaults.conf MAX_EPOCHS=12 对齐;
+    # 显式传参而非依赖 evaluate.py 默认(20),防止两链训练配置漂移。
+    parser.add_argument("--max_epochs", type=int, default=12)
     parser.add_argument("--inner_analyzer", default=MODALITY,
                         help="E2 内层 Clinic Analyzer，逗号分隔；每个 analyzer 独立成结果目录。例如 mlp_clinic_flatten 或 clinic_cox")
     parser.add_argument("--workers", type=int, default=1)

@@ -43,6 +43,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 - Test_2b 两臂的**字段集、模板、编码、模型、划分完全一致**，唯一差异 = 是否施加 t0 landmark mask。禁止任何删字段、换模板、换编码、换划分的操作。
 - Test_3 对比两臂全部走 bank 切片同一条链路（同编码器/模型/划分），差异只允许在字段集。
 - 一切评估沿用现有口径：5 折 val c-index（`cv_c_mean`，5 折均值），不伪造独立测试集，`prefer_val=True`。
+- **max_epochs 全链统一 12（2026-10-09 用户拍板）**：搜索/单变量链（`selection/runner.py`、`greedy/cli.py`、`greedy/univariate_cli.py`、`run_e2_selection_queue.py` 默认 12，`evaluate_clinic_dir` 恒显式传参）与 cindex 链（`Clinic_Analyzer/configs/defaults.conf` MAX_EPOCHS=12）同一训练配置；旧 20 轮默认已废止，§7.2 "reach 的 c-index 即搜索 best_cv_c_mean" 由此按构造成立。历史 20 轮口径产物已随 2026-10-09 全链清洗一并删除。
 
 ### 2.3 三档定义
 

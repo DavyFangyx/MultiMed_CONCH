@@ -545,7 +545,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--exclude_post_baseline", action="store_true")
-    parser.add_argument("--max_epochs", type=int, default=None)
+    # 统一口径(2026-10-09 用户拍板):全链 max_epochs=12(见 selection/runner.py 同款注释)。
+    parser.add_argument("--max_epochs", type=int, default=12)
     parser.add_argument("--conch_python", default="/data/fangyuxuan/miniconda3/envs/conch/bin/python")
     parser.add_argument("--analyzer_python", default="/data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python")
     parser.add_argument(

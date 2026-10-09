@@ -34,7 +34,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--field_bank_dir")
     p.add_argument("--splits")
     p.add_argument("--out")
-    p.add_argument("--max_epochs", type=int)
+    # 统一口径(2026-10-09 用户拍板):全链 max_epochs=12(见 selection/runner.py 同款注释)。
+    p.add_argument("--max_epochs", type=int, default=12)
     p.add_argument("--inner_analyzer", default="mlp_clinic_flatten",
                    help="E2 内层 Clinic Analyzer，逗号分隔；每个 analyzer 独立成 conf 与结果目录")
     p.add_argument("--workers", type=int, default=16)

@@ -27,7 +27,8 @@ class ClinicSubsetEvaluator:
         modality: str = "mlp_clinic_flatten",
         seed: int = 0,
         for_test: bool = False,
-        max_epochs: int | None = None,
+        # 统一口径(2026-10-09):全链 max_epochs=12。
+        max_epochs: int | None = 12,
         conch_python: Path | str | None = None,
         analyzer_python: Path | str | None = None,
         analyzer_dir: Path | str | None = None,
@@ -167,7 +168,8 @@ def make_clinic_evaluator_factory(
     field_bank_dir: Path | str,
     work_dir: Path | str,
     modality: str = "mlp_clinic_flatten",
-    max_epochs: int | None = None,
+    # 统一口径(2026-10-09):全链 max_epochs=12。
+    max_epochs: int | None = 12,
     conch_python: Path | str | None = None,
     analyzer_python: Path | str | None = None,
     extra_args: list[str] | None = None,

@@ -312,7 +312,8 @@ def evaluate_clinic_dir(
     k: int = 5,
     k_start: int = 0,
     k_end: int | None = None,
-    max_epochs: int | None = None,
+    # 统一口径(2026-10-09 用户拍板):全链 max_epochs=12,恒显式传入,不依赖 evaluate.py 默认(20)。
+    max_epochs: int | None = 12,
     seed: int = 0,
     extra_args: list[str] | None = None,
     prefer_val: bool = True,

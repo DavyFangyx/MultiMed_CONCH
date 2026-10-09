@@ -334,7 +334,8 @@ def make_parser() -> argparse.ArgumentParser:
         help="并行评字段，不是并行 fold。默认 8。",
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--max_epochs", type=int, default=None)
+    # 统一口径(2026-10-09 用户拍板):全链 max_epochs=12(见 selection/runner.py 同款注释)。
+    parser.add_argument("--max_epochs", type=int, default=12)
     parser.add_argument("--conch_python", default=str(DEFAULT_CONCH_PYTHON))
     parser.add_argument("--analyzer_python", default=str(DEFAULT_SURVPGC_PYTHON))
     parser.add_argument(
