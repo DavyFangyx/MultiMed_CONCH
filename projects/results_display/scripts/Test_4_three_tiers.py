@@ -3,13 +3,14 @@
 
 口径(bank-only,2026-10-07;臂语义见 z_notes/experiment_list/arm_registry.md):
   - 档 1 报告值   = results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv 的 {work} 行
-                    (论文报告原值 = work × raw × apipe;apipe 编码已退役删除,本行为冻结历史口径,
-                     待 report 臂 bank 重建(work × raw-bank 切片 + 训练)后替换)
-  - 档 2 去泄露值 = deleak 臂(Test_3_{work}_{ds}__landmark_0 行,work × lm0 × bank 切片)
+                    (论文报告原值 = work × raw,apipe 全量编码历史口径,已冻结;apipe 编码
+                     非 field bank 基座,路径已删除;待 report 臂重建(work × raw,
+                     field bank raw 切片 + 训练)后替换)
+  - 档 2 去泄露值 = deleak 臂(Test_3_{work}_{ds}__landmark_0 行,work × lm0,field bank 切片)
   - 档 3 可达值   = two_arm.csv 的 C_c;缺失回退搜索 result.json 的 best_cv_c_mean
                     (bank-only 口径下与 reach 臂同嵌入同模型同折同 seed,零训练)
-  - 档间 Δ:Δ1 = 报告 − 去泄露(泄露高估幅度;现混 apipe→bank 路径差,干净口径 =
-    Test_2b_delta 的 A−B 同路径对照);Δ2 = 去泄露 − 可达(字段选择差距,同 bank 路径)
+  - 档间 Δ:Δ1 = 报告 − 去泄露(泄露高估幅度;现混 apipe 历史基座差,干净口径 =
+    Test_2b_delta 的 A−B 同基座对照);Δ2 = 去泄露 − 可达(字段选择差距,同 field bank 基座)
   - 主口径 analyzer = mlp_clinic_flatten;clinic_cox 仅作报告值交叉列(论文历史数字)
   - 缺臂哲学(与 Test_3_compare.py 一致):缺可达值(无搜索 result.json / 未 drain)的行
     **整行保留**,C 相关列记 "pending",不中断;arm_A 无该 (dataset, work) 行时报告列记 "n/a"
@@ -207,7 +208,7 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
     """(dataset, work) × 三档;缺臂不中断(C -> pending,报告值缺 -> n/a)。
 
     口径(bank-only,2026-10-07;臂语义 arm_registry.md):去泄露值 = deleak 臂
-    (Test_3_{work}_{ds},work × lm0 × bank 切片);可达值 = two_arm.csv 的 C,缺失时回退
+    (Test_3_{work}_{ds},work × lm0,field bank 切片);可达值 = two_arm.csv 的 C,缺失时回退
     搜索 result.json 的 best_cv_c_mean(与 reach 臂同嵌入同模型同折同 seed)。
     """
     if two_arm is None:
@@ -219,7 +220,7 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
         n_ev = n_event[dataset]
         report = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, MLP)
         report_cox = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
-        # 去泄露值:deleak 臂(work × lm0 × bank 切片;apipe scheme 分支已删 T31)
+        # 去泄露值:deleak 臂(work × lm0,field bank 切片;apipe scheme 分支已删 T31)
         b_key = f"{C3.b_scheme_name(work, dataset)}__landmark_0"
         deleak = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv", b_key, MLP)
         arm3 = two_arm.get((dataset, work))

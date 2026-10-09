@@ -7,11 +7,12 @@
   5M_2b  M→snn_clinic_flatten（15 主集）+ M→survgc_f/survpgc_f（多模态 4 数据集）复现 Test_2b 臂对
   5M_3   M→clinic_cox 复现 Test_3 臂对
 
-臂语义（arm_registry.md，F=字段组合 / T=时间口径 / P=编码路径）：
-  report = work × raw(mask off) × bank 切片    —— 报告值（Test_2b 臂 A 的 bank 版）
-  deleak = work × lm0 × bank 切片              —— 去泄露值（Test_3 臂 B，原"臂 B′"）
-  reach  = greedy × lm0 × bank 切片            —— 可达值（Test_3 臂 C）
-  （Test_2b 历史 apipe 臂 A/B 已退役：编码产物删除，结果表冻结为历史口径。）
+臂语义（arm_registry.md；臂 = {F 字段组合, T 时间口径} 二元组，编码 = field bank 统一基座，
+切片装配而非条件因子）：
+  report = work × raw(mask off)   —— 报告值（Test_2b 臂 A 的 field bank 版）
+  deleak = work × lm0             —— 去泄露值（Test_3 臂 B，原"臂 B′"）
+  reach  = greedy × lm0           —— 可达值（Test_3 臂 C）
+  （Test_2b 历史 apipe 臂 A/B 已退役：非 field bank 基座，编码产物删除，结果表冻结为历史口径。）
 
 纪律（spec §2.4 / §8bis.5）：
   * 数据集名单一律读 results/Test_0_dataset_availability/manifest.csv（n_event >= 100 的 15 主集）；

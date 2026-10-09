@@ -4,6 +4,18 @@
 > Test_N 管"要证明什么",臂管"在什么条件下做"。任何文档/代码里的臂名必须能回溯到本表;
 > 字母代号(A/B/Bp/C)已退役,只允许出现在历史条目与遗留对照表中。
 
+## 核心模型:先编码,后实验
+
+**编码是一次性的统一基座,不是实验条件。** 全部实验共用同一个 **field bank**——
+33 数据集逐字段的 CONCH 文本嵌入矩阵(landmark_0 口径;raw 变体同字段集、mask 关)。
+任何方案级嵌入(论文组合、贪婪最优、单字段)都是**从 field bank 按字段索引切片**装配
+出来的(零重编码)。因此:
+
+- 臂(实验条件)= **{F 字段组合, T 时间口径} 二元组 + 语义名**;
+- "bank 切片"是装配操作,不是条件因子——所有臂天然在同一个编码基座上;
+- 历史的 apipe 全量编码之所以是"另一条路径",正因为它**不在** field bank 基座上;
+  该路径已整体删除(T31 + 2026-10-09 收尾),遗留产物退役冻结。
+
 ## 定义格式
 
 ```
@@ -11,30 +23,28 @@
 短标签: deleak
 F 字段组合: work(论文方案组合)
 T 时间口径: lm0(landmark_0 三要件)
-P 编码路径: bank 切片(零重编码)
+编码基座: field bank 切片(统一基座,所有臂相同,非条件因子)
 服务对象: Test_3 臂 B(原 B′)、Test_4 档 2、Test_5 {5E_3,5M_3} 的 deleak 臂
 ────────────────────────────────────────
 ```
 
-一个臂 = **{F, T, P} 条件元组 + 语义名**。三个因子:
+两个条件因子:
 
 | 因子 | 取值 | 含义 |
 |---|---|---|
 | F 字段组合 | `work` / `greedy` / `single` | 论文方案组合 / 贪婪搜索最优 / 单字段 |
 | T 时间口径 | `raw` / `lm0` | mask 关(含泄露)/ landmark_0 三要件(去泄露) |
-| P 编码路径 | `bank 切片` / `field bank` | 现行唯一编码 = field bank 嵌入矩阵切片,零重编码 |
 
-**编码统一(2026-10-07 T31 + 2026-10-09 收尾)**:apipe 全量 CONCH 编码路径已整体删除
-(`json2prompt.py`/`encode.py` 及 cli 三子命令);bank 切片是唯一存活的文本编码方式。
-Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不变。
+Test_5 换 E 轴时,编码器被 E 轴值覆盖(如 baseline D-向量)——那是 Test_5 的不变性轴,
+不是臂的条件因子;M/Q 轴同理。
 
-## 现行臂表(bank-only)
+## 现行臂表(field bank 基座,唯一编码)
 
 **报告值**
 - 短标签: `report`
 - F: work
 - T: raw(mask 关)
-- P: bank 切片(raw bank 源,`variant="raw"`)
+- 编码基座: field bank(raw 变体)切片
 - 服务对象: Test_2b 臂对的 raw 侧、Test_4 档 1、Test_5 {5E_2b,5M_2b} 的 report 臂
 - 状态: **待重建**——raw 切片零成本(raw bank 33/33 已齐),训练批次待排期;
   现 Test_4 档 1 仍读冻结历史 apipe 行(见退役臂表),重建后替换
@@ -44,7 +54,7 @@ Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不�
 - 短标签: `deleak`
 - F: work
 - T: lm0
-- P: bank 切片(landmark_0 bank 源)
+- 编码基座: field bank(landmark_0 变体)切片
 - 服务对象: Test_3 臂 B(原 B′,scheme = `Test_3_{work}_{dataset}`)、Test_4 档 2、
   Test_5 {5E_3,5M_3} 的 deleak 臂
 - 状态: 现行(60 个切片方案登记齐,编码产物 T31 清理后按需 `Test_3_arms.py encode` 重切)
@@ -54,7 +64,7 @@ Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不�
 - 短标签: `reach`
 - F: greedy
 - T: lm0
-- P: bank 切片
+- 编码基座: field bank(landmark_0 变体)切片
 - 服务对象: Test_3 臂 C(scheme = `Test_3_greedy_{dataset}`)、Test_4 档 3、
   Test_5 {5E_3,5M_3} 的 reach 臂
 - 状态: 现行
@@ -64,7 +74,7 @@ Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不�
 - 短标签: `field_raw`
 - F: single
 - T: raw
-- P: field bank 逐字段(raw bank,`outputs/_raw/`)
+- 编码基座: field bank(raw 变体,`outputs/_raw/`)逐字段
 - 服务对象: Test_1a off 臂
 - 状态: 现行
 ────────────────────────────────────────
@@ -73,18 +83,18 @@ Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不�
 - 短标签: `field_lm0`
 - F: single
 - T: lm0
-- P: field bank 逐字段(landmark_0 bank)
+- 编码基座: field bank(landmark_0 变体)逐字段
 - 服务对象: Test_1a t0 臂、Test_1b 数据源
 - 状态: 现行
 ────────────────────────────────────────
 
-## 退役臂表(冻结历史,只读)
+## 退役臂表(非 field bank 基座的历史产物,冻结只读)
 
 **去泄露值·apipe**
 - 短标签: `deleak_apipe`(历史文档中亦作"Test_2b 臂 B")
 - F: work
 - T: lm0
-- P: apipe 全量 CONCH 编码(**已删除**)
+- 编码: apipe 全量 CONCH 编码(**非 field bank 基座;路径已删除**)
 - 服务对象: Test_2b 臂 B(历史 552 confs)、Test_2b_delta 的 A−B 对照
 - 状态: 退役——底层编码产物已删除,结果表(`results/Test_2b/arm_B` 非 Test_3_* 行)冻结为
   历史口径,仅供历史对照,不再参与现行链路
@@ -94,7 +104,7 @@ Test_5 换 E 轴时 P 被 E 轴值覆盖(如 baseline D-向量),其余因子不�
 - 短标签: `report_apipe`(历史文档中亦作"Test_2b 臂 A"、"旧 A_manual")
 - F: work
 - T: raw
-- P: apipe 全量 CONCH 编码(**已删除**)
+- 编码: apipe 全量 CONCH 编码(**非 field bank 基座;路径已删除**)
 - 服务对象: Test_2b 臂 A(历史)、Test_4 档 1(现行读这里,**待 report 臂重建后替换**)
 - 状态: 退役——结果表(`results/Test_2b/arm_A`)冻结为历史口径
 ────────────────────────────────────────

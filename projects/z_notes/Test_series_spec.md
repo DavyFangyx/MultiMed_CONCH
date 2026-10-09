@@ -282,9 +282,12 @@ BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCG
 > 臂语义唯一来源 = `z_notes/experiment_list/arm_registry.md`；本节的 `deleak` / `reach` 即注册表短标签。
 
 ```text
-deleak : 工作完整组合 × bank 切片 × landmark_0   (去泄露值;原"臂 B′"更名而来)
-reach  : 贪婪最优组合 × bank 切片 × landmark_0   (可达值;fields 由搜索结果生成)
+deleak : 工作完整组合 × landmark_0   (去泄露值;原"臂 B′"更名而来;切片自 field bank)
+reach  : 贪婪最优组合 × landmark_0   (可达值;fields 由搜索结果生成;切片自 field bank)
 ```
+
+> 先编码,后实验:field bank 是一次性统一编码基座,臂条件 = {F 字段组合, T 时间口径} 二元组,
+> "bank 切片"是装配操作而非条件因子(见 arm_registry.md 核心模型)。
 
 - **T31 修订（2026-10-07，用户拍板）**：编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；原"臂 B（scheme 模板）"随之退役，原"臂 B′（bank 模板）"更名为**臂 B**（现名 `deleak`）。三臂变两臂。
 - **编码路径**：任何字段组合（论文的、贪婪的）一律按字段索引**切片 bank 嵌入矩阵**（零 CONCH 重编码，与 E2 搜索评估器同路径，切片与 bank 行逐位一致）。`--landmark_time` 值域：`0|365|730`（mask 开）、`none`/`no_mask`（landmark off，mask 关 + 与 landmark_0 同字段集，时间轴对照用；Test_3 侧 bank 变体名 `raw`）、`static_only`（稳定字段子集，剔除 `diagnoses[]`/`follow_ups[]` 字段，字段集不同；2026-10-08 新语义，`run_field_bank.py --static_only` 生成）。三者不可混用。

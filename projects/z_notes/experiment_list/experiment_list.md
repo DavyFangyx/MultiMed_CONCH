@@ -88,7 +88,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 
 - **数据集**:manifest 主集(协议 A ≥100 档,15 个);低事件档仅定性。
 - **搜索**:池 = landmark_0 field bank(模板 33/33 已填齐);算法 = 前向贪婪(A2_greedy),早停 sig_stop = gain < 0.005 且 paired Wilcoxon p ≥ 0.05 连续 3 步(D4 已确认)。
-- **两臂**(全走 bank 切片链路,同编码器/模型/划分/seed;臂语义见 arm_registry):`deleak` = work × bank 切片 × lm0(去泄露值,原"臂 B′"更名而来);`reach` = greedy × bank 切片 × lm0(可达值)。头条 Δc = reach − deleak。scheme 模板分支已删除(T31),论文方案仅保留 fields.json 字段登记。
+- **两臂**(同 field bank 基座切片,同编码器/模型/划分/seed;臂 = {F,T} 二元组,见 arm_registry):`deleak` = work × lm0(去泄露值,原"臂 B′"更名而来);`reach` = greedy × lm0(可达值)。头条 Δc = reach − deleak。scheme 模板分支已删除(T31),论文方案仅保留 fields.json 字段登记。
 - **评估器**:`mlp_clinic_flatten`(E2 唯一搜索目标模型)。
 - **轮数 / 协议**:5 折 val c-index × seed 0(默认;E2 规格支持逗号列表多 seed,跨 seed 报均值 ± std)。产物 `results/Test_3_greedy_vs_works/`。
 
