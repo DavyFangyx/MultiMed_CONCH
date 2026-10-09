@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S5b / Test_1a 两臂一致性抽查：off 臂(raw) 与 t0 臂 的 (dataset, field) 逐折患者集必须逐位相同。
+"""Test_1a 两臂一致性抽查（原名 s5b_audit_arms.py，2026-10-09 收尾改名）：off 臂(raw) 与 t0 臂 的 (dataset, field) 逐折患者集必须逐位相同。
 
 对每个 (dataset, field_idx)：
   ① 两侧 bank 的 field_index.json 在该 idx 上的字段名必须一致（raw 变体 = lm0 字段集同序）；
@@ -8,8 +8,8 @@
   ④ 打印两臂该字段的 c-index（5 折均值）与 Δc = c(off) − c(t0)（若有）。
 
 用法（base python 3.13.12，不训练）：
-    python scripts/s5b_audit_arms.py --pair TCGA-BLCA:0 TCGA-BLCA:1 TCGA-BRCA:0
-    python scripts/s5b_audit_arms.py --pair-file pairs.txt   # 每行 dataset:field_idx
+    python scripts/Test_1a_audit_arms.py --pair TCGA-BLCA:0 TCGA-BLCA:1 TCGA-BRCA:0
+    python scripts/Test_1a_audit_arms.py --pair-file pairs.txt   # 每行 dataset:field_idx
 产物：results/Test_1a/arm_off/_audit_pairs.json（追加更新）
 """
 
@@ -86,7 +86,7 @@ def cindex_from_csv(dataset: str, field: str, root: Path) -> float | None:
 
 
 def value_diff_summary(dataset: str) -> dict:
-    """raw 变体与 lm0 的取值差异摘要（构建期由 s5b_build_raw_field_bank.py 落盘）。"""
+    """raw 变体与 lm0 的取值差异摘要（构建期由 build_raw_field_bank.py 落盘）。"""
     path = RAW_BANK_ROOT / dataset / "field_bank" / "prompt" / "no_mask" / "raw_value_diff.json"
     if not path.exists():
         return {}

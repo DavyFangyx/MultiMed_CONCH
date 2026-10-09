@@ -21,7 +21,7 @@ run_one() {
   local ds="$1" algo="$2" slot="$3"
   local gpu; gpu=$(gpu_for_slot "$slot")
   echo "[t6] $(date +%F_%T) slot=$slot(gpu$gpu) start $ds/$algo" >> "$LOG"
-  env CUDA_VISIBLE_DEVICES="$gpu" python3 scripts/run_e2_selection_queue.py \
+  env CUDA_VISIBLE_DEVICES="$gpu" python3 scripts/run_selection_queue.py \
     --dataset "$ds" --landmark_time 0 --algo "$algo" \
     --stop_mode gain_only --seed 0 --budget_cap 500 \
     --queue_root Clinic_Analyzer/configs/Test_6_search \

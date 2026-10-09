@@ -12,7 +12,7 @@ for item in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
-import run_e2_selection_queue
+import run_selection_queue
 from selection.config import budget_cap_for
 from selection.queue import enqueue
 
@@ -56,7 +56,7 @@ def test_queue_command_roundtrip_keeps_underscore_budget_cap_flag(tmp_path):
     assert '"budget_cap": 500' in job
 
     import json
-    command = run_e2_selection_queue._command(json.loads(job))
+    command = run_selection_queue._command(json.loads(job))
     assert "--budget_cap" in command
     assert command[command.index("--budget_cap") + 1] == "500"
     assert "--budget-cap" not in command
@@ -68,7 +68,7 @@ def test_queue_skips_none_budget_cap(tmp_path):
     queued = enqueue(args, ["TCGA-GBM"], ["0"])
     import json
     job = json.loads((tmp_path / "queue" / queued["created"][0].name).read_text(encoding="utf-8"))
-    command = run_e2_selection_queue._command(job)
+    command = run_selection_queue._command(job)
     assert "--budget_cap" not in command
 
 

@@ -66,7 +66,7 @@ LEGACY_ARG_KEYS = {"inner_modality": "inner_analyzer"}
 
 def _command(job: dict) -> list[str]:
     args = job["args"]
-    command = [sys.executable, str(ROOT / "scripts/run_e2_selection.py")]
+    command = [sys.executable, str(ROOT / "scripts/run_selection.py")]
     for key, value in args.items():
         if value is None:
             continue
@@ -117,7 +117,7 @@ def main(argv=None) -> int:
                 # ≈ 500 评估 × 3 分钟)合法需 24h+,故上限取 48h。
                 completed = subprocess.run(_command(job), cwd=ROOT, check=False, timeout=48 * 3600)
                 if completed.returncode:
-                    raise RuntimeError(f"run_e2_selection.py exited with {completed.returncode}")
+                    raise RuntimeError(f"run_selection.py exited with {completed.returncode}")
             except Exception as exc:
                 move(path, "failed")
                 (root / "failed" / f"{path.stem}.err").write_text(traceback.format_exc(), encoding="utf-8")

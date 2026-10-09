@@ -7,7 +7,7 @@
 队列机制复用 E2（`src/selection/queue.py`）；停止标准经 `--stop-mode` 注入 job_key
 （Test_3_common.STOP_MODE = "gain_only"）。
   * 每个数据集一个 conf（`--out` 含数据集名，故 job_key 逐数据集独立）；
-  * drainer = `scripts/run_e2_selection_queue.py`（enqueue 幂等 + claim + 训练 + move）；
+  * drainer = `scripts/run_selection_queue.py`（enqueue 幂等 + claim + 训练 + move）；
   * watch 自愈：running 悬挂回收 / failed 限次重试 / drainer 死了拉起 / 全 done 汇总退出。
 
 用法（projects/ 根目录，base python 3.13.12，不训练）：
@@ -48,7 +48,7 @@ BUCKETS = ("queue", "running", "done", "failed")
 def _runner_argv(dataset: str, workers: int | None = None) -> list[str]:
     """drainer 命令行（脚本之后的 argv 亦直接送进 drainer 自己的 parser 求 job args）。"""
     argv = [
-        sys.executable, str(ROOT / "scripts" / "run_e2_selection_queue.py"),
+        sys.executable, str(ROOT / "scripts" / "run_selection_queue.py"),
         "--dataset", dataset,
         "--landmark_time", str(C.LANDMARK_TIME),
         "--algo", C.ALGO,
@@ -84,8 +84,8 @@ def _runner_module():
     手抄默认值极易漂移，故直接复用同一 parser 保证逐位一致。"""
     global _RUNNER_MODULE
     if _RUNNER_MODULE is None:
-        path = ROOT / "scripts" / "run_e2_selection_queue.py"
-        spec = importlib.util.spec_from_file_location("run_e2_selection_queue", path)
+        path = ROOT / "scripts" / "run_selection_queue.py"
+        spec = importlib.util.spec_from_file_location("run_selection_queue", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _RUNNER_MODULE = module

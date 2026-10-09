@@ -1,6 +1,6 @@
 """Test_3 搜索队列助手测试：job_key 同源性 / conf 命名 / recover / retry / 占用恢复。
 
-job_key 由 drainer（scripts/run_e2_selection_queue.py）的 parser 全字段哈希决定——
+job_key 由 drainer（scripts/run_selection_queue.py）的 parser 全字段哈希决定——
 本测试锁定「助手与 drainer 逐字段同源」，防止手抄默认值漂移导致 conf 孤儿。
 """
 from __future__ import annotations
@@ -17,13 +17,13 @@ for item in (ROOT, ROOT / "src", ROOT / "scripts"):
 
 import Test_3_common as C  # noqa: E402
 import Test_3_search_queue as Q  # noqa: E402
-import run_e2_selection_queue  # noqa: E402
+import run_selection_queue  # noqa: E402
 from selection.queue import enqueue, move  # noqa: E402
 
 
 def test_job_args_parity_with_drainer_parser():
     args = Q._job_args("TCGA-LAML")
-    ref = run_e2_selection_queue.parser().parse_args(Q._runner_argv("TCGA-LAML")[2:])
+    ref = run_selection_queue.parser().parse_args(Q._runner_argv("TCGA-LAML")[2:])
     assert vars(args) == vars(ref)          # 同源 parser：逐字段（含 workers 等默认值）一致
     assert args.dataset == "TCGA-LAML"
     assert args.landmark_time == "0" and args.algo == C.ALGO and args.seed == "0"

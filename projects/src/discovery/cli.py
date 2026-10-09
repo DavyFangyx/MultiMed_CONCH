@@ -141,6 +141,11 @@ def build_field_bank_parser() -> argparse.ArgumentParser:
         help="只生成 outputs/{dataset}/field_bank/prompt/{landmark_tag}/prompts.csv，不调用 CONCH 编码",
     )
     parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="覆盖已有 bank（默认：产物 field_index.json 存在即跳过，防重复编码；与 s5b/s5c 的 skip 守卫一致）",
+    )
+    parser.add_argument(
         "--rare_freq_threshold",
         type=int,
         default=5,

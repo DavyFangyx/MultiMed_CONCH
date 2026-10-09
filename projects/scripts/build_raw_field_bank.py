@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""S5b / Test_1a off 臂：构建 `raw` 变体 Field Bank（字段表 = landmark_0 kept，取值 mask 关闭）。
+"""构建 `raw` 变体 Field Bank（字段表 = landmark_0 kept，取值 mask 关闭）。
+
+原名 s5b_build_raw_field_bank.py（S5b 步骤编号，2026-10-09 收尾改名）。
+服务对象：Test_1a off 臂（field_raw）与 Test_2b report 臂的切片基座。
 
 定义（z_notes/Test_series_spec.md §5bis）：
     raw 变体 = 字段列表来自 landmark_0 field bank（同一顺序、同一模板），
@@ -24,7 +27,7 @@
 
 运行环境：conda env conch（编码）。用法：
     conda activate conch
-    python scripts/s5b_build_raw_field_bank.py --dataset all
+    python scripts/build_raw_field_bank.py --dataset all
 """
 
 from __future__ import annotations

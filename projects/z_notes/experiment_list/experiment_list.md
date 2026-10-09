@@ -119,7 +119,7 @@ Test_2  之前的工作没做时间处理 → 高估       Test_3 之前的工�
 ```bash
 for ds in TCGA-GBM TCGA-LGG TCGA-PAAD; do
   for algo in A1_random A3_beam A4_anneal A5_genetic A6_aco SEAS A0_full A0b_topk; do
-    python scripts/run_e2_selection_queue.py --dataset $ds --landmark_time 0 --algo $algo \
+    python scripts/run_selection_queue.py --dataset $ds --landmark_time 0 --algo $algo \
       --stop_mode gain_only --seed 0 --budget_cap 500 \
       --queue_root Clinic_Analyzer/configs/Test_6_search \
       --out results/Test_6_search/prompt/landmark_0/$ds/$algo

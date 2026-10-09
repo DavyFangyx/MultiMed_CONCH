@@ -441,7 +441,7 @@ H2：先在全部实例上按平均 rank 选出 A1 至 A6 中唯一的全局最�
 
 ## 12. 模块与实现顺序
 
-新增代码放在 `src/selection/`，入口脚本为 `scripts/run_e2_selection.py`。不得创建第二套数据预处理或 Clinic Analyzer。
+新增代码放在 `src/selection/`，入口脚本为 `scripts/run_selection.py`。不得创建第二套数据预处理或 Clinic Analyzer。
 
 ```text
 src/selection/
@@ -480,7 +480,7 @@ src/selection/
 示例：
 
 ```bash
-python scripts/run_e2_selection.py \
+python scripts/run_selection.py \
   --dataset TCGA-BRCA \
   --landmark_time 365 \
   --algo A2_greedy \

@@ -48,7 +48,7 @@ bash scripts/exp_queue.sh enqueue --arm test_1a_off
 # off 臂:每 GPU 起一个后台 drainer(换卡/换并发改行首 S5B_GPUS / S5B_WORKERS)
 S5B_GPUS=7 S5B_WORKERS=8 bash scripts/exp_queue.sh drain --arm test_1a_off
 # merged t0 臂(噪声本底归零变体):切片合并(outputs/_merged,零 CONCH 重编码)→ 未改动字段 Δc 精确 0
-python scripts/s5c_merge_t0_bank.py --dataset all   # BRCA/GBM 待 raw bank 新字段表重建后补跑
+python scripts/merge_t0_field_bank.py --dataset all   # BRCA/GBM 待 raw bank 新字段表重建后补跑
 bash scripts/exp_queue.sh enqueue --arm test_1a_merged
 S5C_GPUS=1 S5C_WORKERS=8 bash scripts/exp_queue.sh watch --arm test_1a_merged
 # 判据:两家族 queue 空 && running 空 && done ≥ 13(off 臂 watch 自愈见 runbook.md 阶段 3)

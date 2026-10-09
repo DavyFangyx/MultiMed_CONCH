@@ -186,7 +186,7 @@ bash scripts/exp_queue.sh watch --arm test_1a_off
 # 可选:人守着看进度 / 事后核验
 # bash scripts/exp_queue.sh status --arm test_1a_t0       # 队列桶 + 每数据集 field_cindex.csv 行数
 # bash scripts/exp_queue.sh status --arm test_1a_off      # 同上(off 臂)
-# python scripts/s5b_audit_arms.py                       # 两臂患者集一致性审计
+# python scripts/Test_1a_audit_arms.py                       # 两臂患者集一致性审计
 ```
 
 - **判据**:`Test_1a_t0` 与 `Test_1a_off` 两家族均 **queue 空 && running 空 && done ≥ 13**。
@@ -354,7 +354,7 @@ python results_display/scripts/Test_4_three_tiers.py
 
 1. **(已修,留档;脚本已退休)** `s5_univariate_queue.sh`(现 `bash scripts/exp_queue.sh … --arm test_1a_t0`)早期 `DS_LIST`/`EXPECTED` 是全 33 队列遗留、`QUEUE_ROOT` 是旧名 `configs/univariate`;
    现已按 `manifest.csv` 的 n_event ≥ 100 派生 13 主集、`QUEUE_ROOT=configs/Test_1a_t0`(同 `s5b` 写法)。
-2. **flag 必须下划线拼写**:`run_e2_selection_queue.py` / `run_e2_selection.py` 用 `--stop_mode`、`--budget_cap`、`--landmark_time`;
+2. **flag 必须下划线拼写**:`run_selection_queue.py` / `run_selection.py` 用 `--stop_mode`、`--budget_cap`、`--landmark_time`;
    连字符会被 queue 的 `_command()` 重建链路拒收(单测抓不到,投递后才发现)。
 3. **评估缓存**:`results/Test_3_search/cache.sqlite` 的 key 含 label 哈希 + schema `e2-v2`;
    任何 label 改动旧行自动 miss 重训(不报错,无需手清),`scripts/cache_status.py` 盘点。

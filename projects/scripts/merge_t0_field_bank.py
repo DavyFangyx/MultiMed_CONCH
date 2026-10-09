@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S5c / Test_1a 噪声本底归零：构建 merged t0 臂 Field Bank（未改动单元格复用 off 臂行）。
+"""Test_1a merged t0 臂：噪声本底归零（原名 s5c_merge_t0_bank.py，2026-10-09 收尾改名）：构建 merged t0 臂 Field Bank（未改动单元格复用 off 臂行）。
 
 背景（2026-10-08 探针结论）：
     两臂同句子的编码差异 = batch_size 不同（t0=64 / off=256）的 GEMM 浮点舍入（~7e-7）。
@@ -20,7 +20,7 @@
     ③ 文本改动的字段必须全是 timed family 字段（非 timed family 出现差异 = 提取逻辑异常）。
 
 运行环境：conda env conch（仅 torch 读写，纯 CPU）。用法：
-    python scripts/s5c_merge_t0_bank.py --dataset TCGA-BLCA,TCGA-COAD,TCGA-STAD
+    python scripts/merge_t0_field_bank.py --dataset TCGA-BLCA,TCGA-COAD,TCGA-STAD
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def merge_one(args, dataset: str) -> dict:
     if not (t0_dir / "field_index.json").exists():
         raise FileNotFoundError(f"{dataset}: 缺 t0 臂 bank（{t0_dir}）")
     if not (off_dir / "field_index.json").exists():
-        raise FileNotFoundError(f"{dataset}: 缺 off 臂 bank（{off_dir}），先跑 scripts/s5b_build_raw_field_bank.py")
+        raise FileNotFoundError(f"{dataset}: 缺 off 臂 bank（{off_dir}），先跑 scripts/build_raw_field_bank.py")
 
     if out_dir.exists() and not args.overwrite:
         index_path = out_dir / "field_index.json"

@@ -261,14 +261,14 @@ _ARM_OFF = Arm(
         "--seed", "0",
         "--workers", str(workers),
     ],
-    pid_dir_default="/tmp/s5b_univariate",
-    drain_log_default="/tmp/s5b_drain.log",
+    pid_dir_default="/tmp/test_1a_off",
+    drain_log_default="/tmp/test_1a_off_drain.log",
     watch_log_default="/tmp/s5b_watch.log",
     report_json=test_results_dir("Test_1a/arm_off") / "_s5b_report.json",
     workers_default=8, workers_env="WORKERS", gpus_default="7",
-    extras={"bank_script": "s5b_build_raw_field_bank.py",
+    extras={"bank_script": "build_raw_field_bank.py",
             "bank_root": OUTPUTS / "_raw", "bank_tag": LANDMARK_OFF_TAG,
-            "enc_gpu_default": "7", "build_log_default": "/tmp/s5b_build.log"},
+            "enc_gpu_default": "7", "build_log_default": "/tmp/raw_bank_build.log"},
     note="off（原 s5b）：extraction_mask off + outputs/_raw bank",
 )
 
@@ -294,7 +294,7 @@ _ARM_MERGED = Arm(
         "--workers", str(workers),
     ],
     pid_dir_default="/tmp/s5c_univariate",
-    drain_log_default="/tmp/s5c_drain.log",
+    drain_log_default="/tmp/test_1a_merged_drain.log",
     watch_log_default="/tmp/s5c_watch.log",
     report_json=test_results_dir("Test_1a/arm_t0_merged") / "_s5c_report.json",
     workers_default=8, workers_env="WORKERS", gpus_default="1",
@@ -378,7 +378,7 @@ _ARM_5M_3 = _t5_arm("5M_3", "M→clinic_cox 复现 Test_3 臂对 {deleak/reach}"
 
 
 def search_cli() -> Path:
-    return SCRIPTS / "run_e2_selection_queue.py"
+    return SCRIPTS / "run_selection_queue.py"
 
 
 def t3_search_argv(dataset: str, workers: int | None = None) -> list[str]:
@@ -1187,7 +1187,7 @@ def cmd_2b_validate(arm: Arm, opts) -> int:
     results_display/scripts/Test_2b_delta_report.py / scripts/Test_3_compare.py。
     """
     print("[test_2b][validate] 退役引导:两臂对照走 Test_2b_delta_report / Test_3_compare"
-          "(s4_validate_firstwave.py 的 apipe 历史目录已随 T35 全清)")
+          "s4_validate_firstwave.py 的 apipe 历史目录已随 T35 全清(该脚本已删除)")
     return 0
 
 
@@ -1615,7 +1615,7 @@ def runner_module():
     global _RUNNER_MODULE
     if _RUNNER_MODULE is None:
         path = search_cli()
-        spec = importlib.util.spec_from_file_location("run_e2_selection_queue", path)
+        spec = importlib.util.spec_from_file_location("run_selection_queue", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _RUNNER_MODULE = module
@@ -2103,7 +2103,7 @@ def main(argv=None) -> int:
             rc |= cmd_2b_encode(arm, opts)
         elif opts.command == "validate":
             if arm.dataset_source != "slice_grid":
-                raise SystemExit("validate 只适用于 --arm test_2b（s4_validate_firstwave.py）")
+                raise SystemExit("validate 只适用于 --arm test_2b(已退役为对照引导)")
             rc |= cmd_2b_validate(arm, opts)
         elif opts.command == "bank":
             if not arm.extras.get("bank_script"):

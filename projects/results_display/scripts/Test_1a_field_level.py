@@ -12,7 +12,8 @@
   - Δc_field = c(off) − c(t0)
 
 数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event 派生
-（R13：n_event >= 100），veriyfier 与 scripts/s5b_univariate_enqueue.py 同口径。
+（R13：n_event >= 100），veriyfier 与 off 臂队列口径同源（统一入口
+`python3 scripts/exp_queue.py status --arm test_1a_off`；原 s5b_univariate_enqueue.py 已退休）。
 
 leak_rate 列（Test_2a 审计）：
   - 来源 results/Test_2a_leak_audit/{dataset}/{scheme}.json（scheme = G1_{md5(field_idx)}，逐字段条目）；
@@ -173,7 +174,7 @@ def load_value_diff(dataset: str, off_root: Path) -> dict[str, dict]:
     用途：标出"取值确实被 mask 改动"的字段（mask_affected）——未改动的字段构成
     编码/训练抖动对照组（噪声本底），Δc 的可解释性以它为准。
     """
-    # raw bank 目录与 off 臂结果目录同源于 outputs/_raw（见 scripts/s5b_build_raw_field_bank.py）
+    # raw bank 目录与 off 臂结果目录同源于 outputs/_raw（见 scripts/build_raw_field_bank.py）
     # tag 用现行常量 LANDMARK_OFF_TAG(no_mask)
     base = REPO_ROOT / "outputs" / "_raw" / dataset / "field_bank" / "prompt"
     path = base / LANDMARK_OFF_TAG / "raw_value_diff.json"

@@ -8,7 +8,7 @@ for item in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
-import run_e2_selection_queue
+import run_selection_queue
 from selection.queue import enqueue, move
 
 
@@ -52,7 +52,7 @@ def test_command_maps_legacy_inner_modality_key():
             "inner_modality": "clinic_cox",
         }
     }
-    command = run_e2_selection_queue._command(job)
+    command = run_selection_queue._command(job)
     assert "--inner_modality" not in command
     assert "--anchor_p" in command
     idx = command.index("--inner_analyzer")
