@@ -11,6 +11,7 @@ from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
 from common.fields import collapse_patient_values, extract_path_values, is_array_field
 from common.missingness import classify_raw_value
+from common.patient_universe import label_universe_ids
 from common.paths import RAWDATA_STATS_SHARED_DIR, dataset_field_stats_path, shared_field_stats_path
 from common.tables import upsert_csv_by_key
 from common.types import infer_type, to_numeric
@@ -70,6 +71,7 @@ def analyze_json_all_fields(
     json_field_dict: str,
     project_ids: list | None = None,
     landmark_time=None,
+    label_universe: set[str] | None = None,
 ) -> pd.DataFrame:
     print(f"\n{'='*60}")
     print("【JSON 全字段统计】")
@@ -80,6 +82,10 @@ def analyze_json_all_fields(
     print(f"{'='*60}")
 
     cases = load_clinical_cases(json_path, project_ids=project_ids)
+    if label_universe is not None:
+        n_before = len(cases)
+        cases = [case for case in cases if str(case.get("submitter_id", "")).strip() in label_universe]
+        print(f"  [patient filter] {n_before} 病例 → {len(cases)} 保留(label 宇宙 = {len(label_universe)})")
     patient_total = len(cases)
     print(f"  纳入病例数      : {patient_total}")
     if patient_total == 0:
@@ -246,8 +252,12 @@ def run_field_stats(args):
             print(f"  ⚠️  未找到字段字典: {dict_path}")
             print("     请先运行: python projects/scripts/run_scan_fields.py --dataset {name}")
             continue
+        # 患者级前置过滤(2026-10-09 用户拍板):字段统计的分母 = label 宇宙
+        # (gt≤0 等不可靠患者在字段级统计之前即被剔除)。
+        universe = None if name == "custom" else label_universe_ids(name)
         df = analyze_json_all_fields(
-            job["json_paths"], str(dict_path), project_ids=job["project_ids"], landmark_time=landmark_time
+            job["json_paths"], str(dict_path), project_ids=job["project_ids"],
+            landmark_time=landmark_time, label_universe=universe,
         )
         if df.empty:
             continue

@@ -27,6 +27,7 @@ from .baseline import (
 )
 from .landmark import landmark_dir
 from common.clinical_io import load_clinical_cases, normalize_json_paths
+from common.patient_universe import restrict_cases_to_label_universe
 from common.fields import (
     HUMAN_SCHEME_FIELDS,
     L5_FIELD_PATH_BY_PLACEHOLDER,
@@ -238,6 +239,9 @@ def prepare_hgcn_nominal_mappings(
             print(f"  -> 收集 {job['name']} 患者用于共享 nominal 词表")
             dataset_names.append(job["name"])
         cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
+        # 患者级前置过滤(2026-10-09 用户拍板):共享词表拟合只在 label 宇宙上。
+        if job["name"]:
+            cases, _ = restrict_cases_to_label_universe(cases, job["name"])
         merged_rows.extend(build_patient_rows(cases))
     mappings = fit_nominal_mappings(
         merged_rows,

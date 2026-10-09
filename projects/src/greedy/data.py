@@ -7,56 +7,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.patient_universe import STUDY_BY_DISPLAY, display_to_study  # noqa: F401 (re-export)
 from common.paths import dataset_field_bank_dir, dataset_kept_fields_path, encoding_and_landmark_tag_from_path, require_landmark_tag, validate_encoding
 
 
-STUDY_BY_DISPLAY = {
-    "TCGA-ACC": "tcga_acc",
-    "TCGA-BLCA": "tcga_blca",
-    "TCGA-BRCA": "tcga_brca",
-    "TCGA-CESC": "tcga_cesc",
-    "TCGA-CHOL": "tcga_chol",
-    "TCGA-COAD": "tcga_coad",
-    "TCGA-DLBC": "tcga_dlbc",
-    "TCGA-ESCA": "tcga_esca",
-    "TCGA-GBM": "tcga_gbm",
-    "TCGA-HNSC": "tcga_hnsc",
-    "TCGA-KICH": "tcga_kich",
-    "TCGA-KIRC": "tcga_kirc",
-    "TCGA-KIRP": "tcga_kirp",
-    "TCGA-LAML": "tcga_laml",
-    "TCGA-LGG": "tcga_lgg",
-    "TCGA-LIHC": "tcga_lihc",
-    "TCGA_LIHC": "tcga_lihc",
-    "TCGA-LUAD": "tcga_luad",
-    "TCGA-LUSC": "tcga_lusc",
-    "TCGA-MESO": "tcga_meso",
-    "TCGA-OV": "tcga_ov",
-    "TCGA-PAAD": "tcga_paad",
-    "TCGA-PCPG": "tcga_pcpg",
-    "TCGA-PRAD": "tcga_prad",
-    "TCGA-READ": "tcga_read",
-    "TCGA-SARC": "tcga_sarc",
-    "TCGA-SKCM": "tcga_skcm",
-    "TCGA-STAD": "tcga_stad",
-    "TCGA-TGCT": "tcga_tgct",
-    "TCGA-THCA": "tcga_thca",
-    "TCGA-THYM": "tcga_thym",
-    "TCGA-UCEC": "tcga_ucec",
-    "TCGA-UCS": "tcga_ucs",
-    "TCGA-UVM": "tcga_uvm",
-    "CPTAC": "cptac",
-    "MMRF": "mmrf",
-}
-
 DEFAULT_ANALYZER_SPLIT_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "splits" / "5foldcv"
 DEFAULT_ANALYZER_LABEL_ROOT = Path(__file__).resolve().parents[2] / "Clinic_Analyzer" / "data" / "datasets_csv" / "metadata"
-
-
-def display_to_study(dataset: str) -> str:
-    if dataset in STUDY_BY_DISPLAY:
-        return STUDY_BY_DISPLAY[dataset]
-    return str(dataset).strip().lower().replace("-", "_")
 
 
 def default_label_file_for(dataset: str, label_file: Path | str | None = None) -> Path | None:

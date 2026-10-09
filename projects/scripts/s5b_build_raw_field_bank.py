@@ -57,6 +57,7 @@ from common.paths import (
     LANDMARK_OFF_TAG,
     PROJECT_ROOT as PATHS_PROJECT_ROOT,
 )
+from common.patient_universe import restrict_cases_to_label_universe
 from discovery.field_bank import generate_field_bank_prompt_row, load_field_bank_template
 from discovery.landmark import timed_family_for_field
 
@@ -91,6 +92,8 @@ def build_prompt_rows(dataset: str, datasets: dict) -> tuple[list[dict], dict, l
         get_dataset_clinic_files(dataset, datasets),
         project_ids=get_dataset_project_ids(dataset, datasets),
     )
+    # 患者级前置过滤(2026-10-09 用户拍板):raw 变体与 lm0 bank 同 label 宇宙。
+    cases, _ = restrict_cases_to_label_universe(cases, dataset)
     records = [
         generate_field_bank_prompt_row(case, cfg, landmark=False, landmark_time=None)
         for case in cases

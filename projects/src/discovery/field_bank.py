@@ -15,6 +15,7 @@ from common.clinical_io import load_clinical_cases
 from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, load_dataset_configs, resolve_dataset_names
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
 from common.missingness import classify_raw_value, clean_value
+from common.patient_universe import restrict_cases_to_label_universe
 from .converters import convert_value, known_converters
 from .landmark import (
     extract_from_objects,
@@ -452,6 +453,9 @@ def _resolve_bank_context(args, name, datasets, encoding) -> dict:
         get_dataset_clinic_files(name, datasets),
         project_ids=get_dataset_project_ids(name, datasets),
     )
+    # 患者级前置过滤(2026-10-09 用户拍板):字段级编码只在 label 宇宙上做,
+    # gt≤0 等不可靠患者在统计/筛选/编码之前即被剔除(不再靠评估期静默丢弃)。
+    cases, _ = restrict_cases_to_label_universe(cases, name)
     return {
         "args": args,
         "name": name,

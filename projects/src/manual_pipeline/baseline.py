@@ -15,6 +15,7 @@ import numpy as np
 
 from common.constants import DAYS_PER_YEAR
 from common.clinical_io import load_clinical_cases, normalize_json_paths
+from common.patient_universe import restrict_cases_to_label_universe
 from common.fields import DERIVED_FIELD_TYPES, HUMAN_SCHEME_FIELDS, field_gdc_path
 from common.missingness import is_missing_token
 from discovery.onehot import (
@@ -581,6 +582,9 @@ def run_baseline_encode(
 
     print("\n[1/3] 读取 JSON ...")
     cases = load_clinical_cases(json_paths, project_ids=project_ids)
+    if dataset_name:
+        # 患者级前置过滤(2026-10-09 用户拍板):baseline 编码与词表拟合只在 label 宇宙上。
+        cases, _ = restrict_cases_to_label_universe(cases, dataset_name)
     patient_rows = build_patient_rows(cases, landmark_time=landmark_time, dataset_name=dataset_name)
     print(f"      患者数: {len(patient_rows)}")
 
