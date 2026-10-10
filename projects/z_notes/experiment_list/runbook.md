@@ -18,6 +18,7 @@
 | # | 阶段 | 入口(projects/ 根目录执行) | 判据 | 产物落点 |
 |---|---|---|---|---|
 | 0 | 前置闸门 | `python scripts/check_search_labels.py`;`python scripts/cache_status.py` | 退出码 0 | 只读报告,无产物 |
+| 0.5 | split 重建(可选) | `Clinic_Analyzer/dataset_deployment/scripts/generate_5fold_splits.py --all --seed 1` | split 并集 == label 患者集(差集 0) | `Clinic_Analyzer/data/splits/5foldcv/{study}/splits_*.csv` |
 | 1 | 原始文件审查(扫描/统计/筛选) | `scripts/run_scan_fields.py` → `run_field_presence.py` → `run_field_stats.py --landmark_time 0` → `run_field_filter.py --landmark_time 0` | 退出码 0;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(36 数据集) | `rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
 | 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | 退出码 0;13 主集 Field Bank 基座齐备;off 臂 raw bank 13/13(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
 
@@ -83,6 +84,27 @@ python scripts/cache_status.py
 - **产物**:无(只读报告)。`check_search_labels` 打印每数据集 `n_gt_le_0` 明细与总线;
   `cache_status` 打印 `cache: …/results/Test_3_search/cache.sqlite` 与按 schema 版本的行数。
 - 闸门脚本缺失时先补脚本再投任何队列(不阻塞下游的话可记入已知坑);脚本存在但失败 = 阶段失败。
+
+---
+
+## 阶段 0.5(可选):5 折 split 重建
+
+**语义**:splits 是全部实验共享的固定 5 折划分(协议默认"landmark 不动 splits")。全链干净重跑时
+建议重生成一次,消除历史漂移——旧 splits 是 label 重派生(gt≤0 剔除)之前生成的,
+split 并集比 label 多出一批 gt≤0 患者(COAD 20 例等),运行时靠 label ∩ split 静默丢弃,
+语义正确但折内事件数与文件不一致。
+
+```bash
+# 从现行 label metadata 重生成(seed 1 确定性分层轮转;多模态 5 集自动做
+# W∩C∩G∩RNA 完备过滤)。SurvPGC env(registry 依赖)。
+cd Clinic_Analyzer/dataset_deployment/scripts && python3 generate_5fold_splits.py --all --seed 1 && cd ../../..
+```
+
+- **何时跑**:全链干净重跑时跑一次;**不跑也能重跑全链**(交集剔除语义已正确)。
+- **判据**:重生成后每数据集 split 并集 == label 患者集(差集 0):
+  `python3 -c "…"` 或人工核对 `Clinic_Analyzer/data/splits/5foldcv/{study}/splits_*.csv` 并集。
+- **注意**:重生成会改变折划分 → 与历史结果不可比(历史结果已全清,无损失);生成用 seed=1,
+  训练 seed=0 是两个概念,勿混。
 
 ---
 
