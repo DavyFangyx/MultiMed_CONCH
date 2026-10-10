@@ -18,8 +18,7 @@
 | # | 阶段 | 入口(projects/ 根目录执行) | 判据 | 产物落点 |
 |---|---|---|---|---|
 | 0 | 前置闸门 | `python scripts/check_search_labels.py`;`python scripts/cache_status.py` | 退出码 0 | 只读报告,无产物 |
-| 0.5 | split 重建(可选) | `Clinic_Analyzer/dataset_deployment/scripts/generate_5fold_splits.py --all --seed 1` | split 并集 == label 患者集(差集 0) | `Clinic_Analyzer/data/splits/5foldcv/{study}/splits_*.csv` |
-| 1 | 原始文件审查(扫描/统计/筛选) | `scripts/run_scan_fields.py` → `run_field_presence.py` → `run_field_stats.py --landmark_time 0` → `run_field_filter.py --landmark_time 0` | 退出码 0;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(36 数据集) | `rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
+| 1 | 数据准备与原始文件审查(split 重建/扫描/统计/筛选) | `generate_5fold_splits.py --all --seed 1`(⓪,可选) → `run_scan_fields.py` → `run_field_presence.py` → `run_field_stats.py --landmark_time 0` → `run_field_filter.py --landmark_time 0` | 退出码 0;split 并集 == label 患者集;`rawdata_stats/{ds}/landmark_0/kept_fields.json` 齐备(36 数据集) | `Clinic_Analyzer/data/splits/5foldcv/`、`rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
 | 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | 退出码 0;13 主集 Field Bank 基座齐备;off 臂 raw bank 13/13(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
 
 | 3 | Test_1a 单字段泄露对照 | `bash scripts/exp_queue.sh enqueue/watch --arm test_1a_t0`(t0 臂)+ `… --arm test_1a_off`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 13 | `results/Test_1a/{arm_t0,arm_off}/` |
@@ -87,37 +86,27 @@ python scripts/cache_status.py
 
 ---
 
-## 阶段 0.5(可选):5 折 split 重建
+## 阶段 1:数据准备与原始文件审查(split 重建 → 扫描 → 统计 → 筛选)
 
-**语义**:splits 是全部实验共享的固定 5 折划分(协议默认"landmark 不动 splits")。全链干净重跑时
-建议重生成一次,消除历史漂移——旧 splits 是 label 重派生(gt≤0 剔除)之前生成的,
-split 并集比 label 多出一批 gt≤0 患者(COAD 20 例等),运行时靠 label ∩ split 静默丢弃,
-语义正确但折内事件数与文件不一致。
+输入是**原始文件**(`ClinicDatasets/gdc_clinical/raw_json/{ds}.json`)与现行 label metadata;
+不训练、不用 GPU;产物落 `Clinic_Analyzer/data/splits/` 与 `rawdata_stats/`。
 
 ```bash
-# 从现行 label metadata 重生成(seed 1 确定性分层轮转;多模态 5 集自动做
-# W∩C∩G∩RNA 完备过滤)。SurvPGC env(registry 依赖)。
+# ⓪ split 重建(可选):从现行 label metadata 重生成 5 折(seed 1 确定性分层轮转;
+#    多模态 5 集自动做 W∩C∩G∩RNA 完备过滤 → 多模态功能不受影响)。
+#    全链干净重跑时跑一次:旧 splits 是 label 重派生(gt≤0 剔除)之前生成的,
+#    split 并集比 label 多出一批 gt≤0 患者(COAD 20 例等),重生成后差集归零。
+#    协议默认"landmark 不动 splits";不跑也能重跑全链(运行时 label ∩ split 交集剔除语义已正确)。
+#    注意:重生成改变折划分 → 与历史结果不可比(历史结果已全清,无损失);seed=1 是 split 种子,训练 seed=0 勿混。
 cd Clinic_Analyzer/dataset_deployment/scripts && python3 generate_5fold_splits.py --all --seed 1 && cd ../../..
-```
+# 判据:每数据集 split 并集 == label 患者集(差集 0),抽查 2-3 个数据集核对。
 
-- **何时跑**:全链干净重跑时跑一次;**不跑也能重跑全链**(交集剔除语义已正确)。
-- **判据**:重生成后每数据集 split 并集 == label 患者集(差集 0):
-  `python3 -c "…"` 或人工核对 `Clinic_Analyzer/data/splits/5foldcv/{study}/splits_*.csv` 并集。
-- **注意**:重生成会改变折划分 → 与历史结果不可比(历史结果已全清,无损失);生成用 seed=1,
-  训练 seed=0 是两个概念,勿混。
-
----
-
-## 阶段 1:原始文件审查(扫描 → 统计 → 筛选)
-
-输入是**原始文件**(`ClinicDatasets/gdc_clinical/raw_json/{ds}.json`),不训练、不用 GPU;产物全部落 `rawdata_stats/`。
-
-```bash
 # ① 字段字典扫描:字段路径 + GDC 字典释义(失败 → 检查 ClinicDatasets/gdc_clinical/raw_json/ 原始文件是否齐)
 python scripts/run_scan_fields.py --dataset all
 # ①b 与官方 mapping 对照(字段存在性审计;只读)
 python scripts/run_field_presence.py --dataset all
-# ② 现行 landmark-first 统计:t0 mask 口径,写 _shared/landmark_0/(失败 → 看 rawdata_stats/_shared/ 产物)
+# ② 现行 landmark-first 统计:患者分母 = label 宇宙(gt≤0 等"杂质"在字段级统计之前即被剔除),
+#    t0 mask 口径,写 _shared/landmark_0/(失败 → 看 rawdata_stats/_shared/ 产物)
 python scripts/run_field_stats.py --dataset all --landmark_time 0
 # ③ R0-R6 筛选:自动消费 ② 的 landmark 统计,R3/R4 阈值可命令行改(失败 → 看排除日志 fliter_log/)
 python scripts/run_field_filter.py --dataset all --landmark_time 0 \
