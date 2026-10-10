@@ -1,7 +1,7 @@
 # TCGA 数据集处理 pipeline(当前状态)
 
 状态日期:2026-10-05。**权威口径**以 `z_notes/Test_series_spec.md` 为准;时间/槽位口径以
-`z_notes/time_axis/time_axis.md` 为准;执行历史见 `z_notes/Test_series_execution_log.md`。
+`z_notes/protocol/1_landmark/time_axis.md` 为准;执行历史见 `z_notes/Test_series_execution_log.md`。
 本文只是一页地图,冲突时以上述文档为准。
 
 ## 一图流
@@ -48,7 +48,7 @@ ClinicDatasets/gdc_clinical/raw_json/{ds}.json        ← 33 个 TCGA 原始 GDC
 |---|---|---|---|---|
 | ① | 字段扫描[字段级] | `scripts/run_scan_fields.py` | raw JSON → `scanned_fields.json` | 字段路径 + GDC 字典释义 |
 | ② | 字段统计[字段级] | `scripts/run_field_stats.py`(stats 在 `src/discovery/stats.py`) | JSON + 字段字典 → `field_stats.csv`(coverage / unique_count / mode_share / 三态缺失等) | `--landmark_time 0` 时在 Field Bank 同款 mask 上统计,写 `landmark_0/field_stats.csv`;默认 none = raw 口径 |
-| ③ | 字段筛选[字段级] | `scripts/run_field_filter.py`(`src/discovery/filter.py`) | stats CSV → `{tag}/kept_fields.json` + `fliter_log/{exclusion_log,field_registry}.csv` | R0 标签泄露、R1 行政字段、R3 coverage<0.30、R4 退化(n_unique<2 或 mode_share>0.95)、R5 可派生;landmark 开启且对应 landmark 统计存在时**默认消费 landmark-first 统计**(已扶正,显式 `--stats_csv` 可覆盖)。完整口径见 [`field_filter.md`](field_filter.md)。 |
+| ③ | 字段筛选[字段级] | `scripts/run_field_filter.py`(`src/discovery/filter.py`) | stats CSV → `{tag}/kept_fields.json` + `fliter_log/{exclusion_log,field_registry}.csv` | R0 标签泄露、R1 行政字段、R3 coverage<0.30、R4 退化(n_unique<2 或 mode_share>0.95)、R5 可派生;landmark 开启且对应 landmark 统计存在时**默认消费 landmark-first 统计**(已扶正,显式 `--stats_csv` 可覆盖)。完整口径见 [`field_filter.md`](../protocol/2_field_processing/field_filter.md)。 |
 | ④ | Field Bank[字段级] | `scripts/run_field_bank.py`(`src/discovery/field_bank.py`) | kept_fields + 模板 → prompts.csv → CONCH 编码 → `embeddings/pt/*.pt` | 提取时逐患者逐字段记 mask bool;mask 判据 = 槽位 status 非 unlocated/non_informative 且有限 `t_hi ≤ T` |
 | ⑤ | 方案组合[字段级] | `scripts/run_schemes.py` / `A_pipeline/templates/{scheme}/` | field bank → L2/L3/L5 与 10 个论文方案(MULTISURV/SURVPGC/MMSURV/INTEGRATIVE_DNN + HGCN×6 按癌种绑定) | 方案 × 数据集绑定见 spec §2.4 |
 | ⑥ | 标签(患者线)[患者级] | `A_pipeline/src/landmark_labels.py` + `Clinic_Analyzer/datasets/dataset_survival.py` | 生存元数据 → 派生 label CSV(`results/Test_2b/arm_B/labels/{study}__landmark_0.csv`) | 与字段线**正交**:输入只有患者级元数据,不消费字段链产物;评估时经 `--label_file` 汇合。landmark 三要件②③:风险集只留 gt>T、终点平移 gt−T;gt≤0 患者全局剔除(2026-10-05 拍板,所有臂含 off 臂) |
@@ -57,10 +57,10 @@ ClinicDatasets/gdc_clinical/raw_json/{ds}.json        ← 33 个 TCGA 原始 GDC
 
 ## 核心概念:两条筛选链(landmark 与 R3/R4 的先后)
 
-字段筛选(第③步)的完整口径展开见 [`field_filter.md`](field_filter.md)。
+字段筛选(第③步)的完整口径展开见 [`field_filter.md`](../protocol/2_field_processing/field_filter.md)。
 
 **已扶正(2026-10-05 用户拍板,选项 C):现行链 = landmark-first。** raw-first 为旧口径,
-其产物已清理(见 `z_notes/cleaned_runs_landmark_first_20261005.md`)。
+其产物已清理(见 `z_notes/Test_series_execution_log.md` D13 登记行)。
 
 | | ~~现行链(旧口径,已废弃)~~ | **现行链(landmark-first,已扶正)** |
 |---|---|---|

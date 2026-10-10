@@ -198,7 +198,7 @@ python projects/scripts/run_time_stats.py --dataset all
 ## 5. 生存时间与 t_write / t_record
 
 实现：`src/time_stats.py`。和字段筛选并行，读的是同一批去重后的 JSON。
-权威实现表与时间口径：[`../z_notes/time_axis/time_axis.md`](../z_notes/time_axis/time_axis.md)（唯一时间轴、t_record 判据表、landmark 三要件；推导附录与 index_date 审计同目录）；t_write 入库时间审计另册 [`../z_notes/time_axis/t_write.md`](../z_notes/time_axis/t_write.md)。
+权威实现表与时间口径：[`../z_notes/protocol/1_landmark/time_axis.md`](../z_notes/protocol/1_landmark/time_axis.md)（唯一时间轴、t_record 判据表、landmark 三要件；推导附录与 index_date 审计同目录）；t_write 入库时间审计另册 [`../z_notes/protocol/1_landmark/t_write.md`](../z_notes/protocol/1_landmark/t_write.md)。
 
 每个患者的 ground-truth 时间（两套目录各放一份）：
 

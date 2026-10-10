@@ -3,7 +3,7 @@
 - 编号系列：**D** = TCGA 数据相关，**T** = 实验相关，**P** = 管线与工程，**G** = 文档与治理；各系列从 1 递增，一行一号；（决策点）= 用户拍板/口径确认。
 - 每行 = 一次改动（一个 git 提交，或同一件事合并的多次提交）；**只有明确的决策点才成为提交**（spec §9），脚本小改 / 改名 / 单步实现随所属决策点提交。git 提交名保持原样，本表编号为准。
 - 旧长篇执行日志（2026-09-29–10-05，含旧编号 D0-D9 / R1-R13 / S 系列的结论明细）已归档：`backup/execution_log_legacy_20261005.md`；历史细节以 git 为准。
-- 口径规格：`Test_series_spec.md`；时间轴协议：`time_axis/time_axis.md`；实验速查：`experiment_list/experiment_list.md`。
+- 口径规格：`Test_series_spec.md`；时间轴协议：`protocol/1_landmark/time_axis.md`；数据规则总纲：`protocol/README.md`；实验速查：`experiment_list/experiment_list.md`。
 
 ## 待决事项
 

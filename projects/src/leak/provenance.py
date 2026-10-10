@@ -122,7 +122,7 @@ class SourceSlot:
         """该来源槽位在 t0 门控下不放行（值来自「未来」或无法证其 t0 已存在）。
 
         口径：``t_hi > 0`` 判泄露（spec §2.1）；``lo_only``（``t_hi = +∞``）按
-        ``z_notes/time_axis/time_axis.md`` §4.1「任何有限 T 都不放行」同样判泄露；
+        ``z_notes/protocol/1_landmark/time_axis.md`` §4.1「任何有限 T 都不放行」同样判泄露；
         ``unlocated`` / ``non_informative`` 无 t_hi，不判泄露（另计 ``n_unlocated_source``）。
         """
         if not self.slotted:

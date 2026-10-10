@@ -1,7 +1,7 @@
 """gt<=0 全局患者过滤(dataset_survival)的单元与构造级测试。
 
 背景:用户决定(2026-10-05)将 ground_truth_time <= 0 的占位坑患者
-(days_to_death=0 字面占位 / 负末次随访,见 z_notes/time_axis/time_axis.md §2.3)
+(days_to_death=0 字面占位 / 负末次随访,见 z_notes/protocol/1_landmark/time_axis.md §2.3)
 从所有实验臂中全局剔除。落点:
 SurvivalDatasetFactory._drop_nonpositive_time_labels,读 label 后即过滤,
 NaN 时间保留(镜像 src/manual_pipeline/landmark_labels.py 的 NaN 保留约定)。

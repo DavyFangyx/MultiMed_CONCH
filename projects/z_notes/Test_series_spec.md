@@ -2,7 +2,7 @@
 
 本文档是 Test_ 系列实验的**唯一口径来源与步骤注册表**。所有执行 agent 必须先读本文档，再读 `z_notes/Test_series_execution_log.md`（执行日志）。若本文档与仓库现状冲突，以本文档明确写出的规则为准，并在执行日志记录冲突与处理方式。
 
-相关文档：项目口径见 `README.md`；三处目录命名公约（configs/results/results_display 以 Test 编号为主键）见 `z_notes/experiment_list/naming_convention.md`；可复用机制见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`（E2 的评估器/缓存/搜索规格仍有效，但 E2 的算法竞赛目标作废）。
+相关文档：项目口径见 `README.md`；三处目录命名公约（configs/results/results_display 以 Test 编号为主键）见 `z_notes/experiment_list/naming_convention.md`；可复用机制见 `z_notes/search_algorithm/Test_6_search_algorithms.md`（搜索算法选型；实现以 `src/selection/` 代码为准，原 E2 设计文档已删除）。
 
 ---
 
@@ -66,7 +66,7 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   1. **风险集**：只保留 T 时刻仍在风险集内的患者（排除 `ground_truth_time ≤ T` 者——T 前死亡者不在 T 风险集，T 前删失者无 T 后随访）；
   2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
-- **三要件已全部落地（P1，2026-09-30）**：① mask 在 `src/manual_pipeline/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位；原 A_pipeline 已吸收，2026-10-09 订正）；② 风险集与 ③ 平移在 `src/manual_pipeline/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；平移为固定协议动作，无开关——不变性已由历史自检证实，`--landmark_shift` 自检开关已移除）。口径总表见 `z_notes/time_axis/time_axis.md` §3。
+- **三要件已全部落地（P1，2026-09-30）**：① mask 在 `src/manual_pipeline/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位；原 A_pipeline 已吸收，2026-10-09 订正）；② 风险集与 ③ 平移在 `src/manual_pipeline/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；平移为固定协议动作，无开关——不变性已由历史自检证实，`--landmark_shift` 自检开关已移除）。口径总表见 `z_notes/protocol/1_landmark/time_axis.md` §3。
 - **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与两臂）默认 t0。
 - **患者资格（2026-10-05 用户拍板）**：`ground_truth_time ≤ 0` 的患者（`days_to_death=0` 占位坑 + 负末次随访，见 `time_axis.md` §2.3）从**所有实验的所有臂**（含报告值对照臂 `landmark_none`）中全局剔除；split 文件不动。实现落点 `Clinic_Analyzer/datasets/dataset_survival.py`（读 label 后即过滤，NaN 保留）；与 landmark 要件②的区别：要件②只作用于 landmark 臂（按 T），本条是跨臂全局数据质量过滤。
 - **主诊断判定（2026-10-06 修正）**：`get_primary_diagnosis` 按 `days_to_diagnosis` 最小锚定主诊断（flag 仅同 days 时 tie-break）——GDC `diagnosis_is_primary_disease` 是"研究重点疾病"归属标记而非时间锚点（SKCM 75% 错位，见 `time_axis.md` §2.3）。所有臂（含报告值对照臂）与泄露审计共用该判定。
@@ -159,7 +159,7 @@ results/Test_0_dataset_availability/
    （`extract_patient_time_record(case)["_slots"]`，按对象身份 id 索引），取该槽位的
    `record_hi` = `t_hi` 与 `record_status`。判据与 §2.5 的槽位口径、与
    `discovery.landmark.slot_passes_landmark`（`t_hi ≤ T` 才保留）同源；状态按
-   `z_notes/time_axis/time_axis.md` §4.1 逐条处理：
+   `z_notes/protocol/1_landmark/time_axis.md` §4.1 逐条处理：
    `point`/`bounded` 有限 `t_hi > 0` → 泄露；`lo_only`（`t_hi = +∞`，"任何有限 T 都不放行"）→ 泄露；
    `unlocated`/`non_informative`（无 `t_hi`，无法断言属于未来）**不判泄露**，单列
    `n_unlocated_source`，并给出 `n_t0_blocked` = 泄露 ∪ 未定位（该值在 t0 门控下会被丢弃的患者数，

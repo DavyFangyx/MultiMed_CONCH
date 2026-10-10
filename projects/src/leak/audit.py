@@ -13,7 +13,7 @@
   （不一致即报错）。**不再**用旧的 ``1 − n_valid_t0/n_valid_none``（S2b 旧数已作废）。
 - **判据 = 来源槽位时点**：来源实体映射到 ``src/time_stats.py`` 的时间槽（``t_hi`` = t_record 上界）。
   任一来历槽位 ``t_hi > 0`` → 该患者泄露；无时点家族（demographic / exposures / family_histories …）
-  恒不泄露。槽位状态按 ``z_notes/time_axis/time_axis.md`` §4.1 逐条处理：
+  恒不泄露。槽位状态按 ``z_notes/protocol/1_landmark/time_axis.md`` §4.1 逐条处理：
   ``point``/``bounded`` 有限 ``t_hi > 0`` → 泄露；``lo_only``（``t_hi = +∞``，「任何有限 T 都不放行」）
   → 泄露；``unlocated``/``non_informative``（无 t_hi，无法断言未来）**不判泄露**，
   单列 ``n_unlocated_source`` 并给出 ``n_t0_blocked`` = 泄露 ∪ 未定位

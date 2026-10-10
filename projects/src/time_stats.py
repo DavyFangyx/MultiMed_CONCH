@@ -11,7 +11,7 @@ case / demographic / exposures / family_histories are ignored.
 t_write  uses each object's updated_datetime (created_datetime ignored).
 t_record is an interval (t_lo, t_hi). CSV cells store finite t_hi. Landmark keeps
 a slot iff status is not unlocated/non_informative and t_hi <= T. Event days are
-lower bounds, not proof the record already existed. See z_notes/time_axis/time_axis.md.
+lower bounds, not proof the record already existed. See z_notes/protocol/1_landmark/time_axis.md.
 
 Outputs in projects/rawdata_stats/{dataset}/time_write and time_record:
   patient_time_stats.csv / patient_time_stats.png
@@ -19,7 +19,7 @@ Outputs in projects/rawdata_stats/{dataset}/time_write and time_record:
   sequences/{family}.csv / sequences/{family}.png
   missing/{family}.csv / missing/{family}.png
 
-Dataset-level axis-anchor audit (z_notes/time_axis/time_axis.md §2.1, one per dataset):
+Dataset-level axis-anchor audit (z_notes/protocol/1_landmark/time_axis.md §2.1, one per dataset):
   index_date_stats.csv - index_date value distribution (the 7 GDC enums), missing-key
     split (empty shell vs clinical content) and primary-disease day-0 consistency
   index_date_flagged.csv - cases needing attention (missing key with clinical content,
@@ -556,7 +556,7 @@ def _t_hi_from_sources(*values):
 
 def _t_hi_for_record(t_lo, ctx, th1=None):
     # t_hi fallback chain TH1 -> TH1b -> TH2, first non-None wins
-    # (z_notes/time_axis/time_axis.md §4.3).
+    # (z_notes/protocol/1_landmark/time_axis.md §4.3).
     return _t_hi_from_sources(th1, _th1b(t_lo, ctx.get("follow_days") or []), ctx.get("th2"))
 
 

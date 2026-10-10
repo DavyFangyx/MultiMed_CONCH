@@ -1,6 +1,6 @@
 """协议数值常量的唯一出处。
 
-与权威文档 z_notes/time_axis/time_axis.md 保持一致:改协议时先改文档,再改这里。
+与权威文档 z_notes/protocol/1_landmark/time_axis.md 保持一致:改协议时先改文档,再改这里。
 """
 
 from __future__ import annotations

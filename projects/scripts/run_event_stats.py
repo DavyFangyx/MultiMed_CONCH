@@ -69,7 +69,7 @@ def write_dataset_event_stats(df: pd.DataFrame, output_dir: Path) -> Path:
     统一归一成 1(死亡事件)/ 0(删失)/ 空(vital_status 未知)。
 
     另有 {output_dir}/gt_le_0_patients.csv(仅当存在 gt<=0 患者时):
-    gt<=0 占位坑患者的排除清单(见 z_notes/time_axis/time_axis.md §2.3)。
+    gt<=0 占位坑患者的排除清单(见 z_notes/protocol/1_landmark/time_axis.md §2.3)。
     """
     cols = [c for c in EVENT_COLUMNS if c in df.columns]
     out = df[cols].copy()

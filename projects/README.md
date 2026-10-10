@@ -9,9 +9,10 @@
 | `z_notes/experiment_list/experiment_list.md` | 实验清单与协议速查 |
 | `z_notes/Test_series_spec.md` | Test_ 系列唯一口径来源与步骤注册表 |
 | `z_notes/Test_series_execution_log.md` | 执行日志与单步登记（2026-10-05 起新格式，见文件末尾） |
-| `z_notes/time_axis/time_axis.md` | 时间轴协议（landmark 三要件、t_record 判据） |
+| `z_notes/protocol/1_landmark/time_axis.md` | 时间轴协议（landmark 三要件、t_record 判据） |
 | `z_notes/experiment_list/naming_convention.md` | configs/results/results_display 目录命名公约 |
-| `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md` | E2 评估器/缓存/搜索机制 |
+| `z_notes/protocol/README.md` | 数据规则总纲(规则0/1/2 索引) |
+| `z_notes/search_algorithm/Test_6_search_algorithms.md` | 搜索算法速查(实现以 `src/selection/` 代码为准) |
 | `scripts/run_a_manual.py`（`--help`）+ `src/manual_pipeline/` 包 docstring | 特征提取与 landmark 编码管线（原 `A_pipeline/`，已吸收进主项目） |
 | `Clinic_Analyzer/README.md` | 训练/评估器 |
 | `rawdata_stats/README.md` | rawdata_stats 统计阶段 |

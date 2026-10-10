@@ -4,7 +4,7 @@
 > **本文件是实验执行的权威手册**:阶段划分、命令、判据、产物以这里为准。
 > **分步手动执行**:长序列运行、部分节点需人工核查审计,不提供一键串行脚本(已撤销,见执行日志 P19);按下方阶段顺序逐阶段执行并核对判据。
 > 口径权威:`z_notes/experiment_list/experiment_list.md`(实验清单)、`z_notes/Test_series_spec.md`(规格)、
-> `z_notes/time_axis/time_axis.md`(时间轴协议);目录命名见 `z_notes/experiment_list/naming_convention.md`。
+> `z_notes/protocol/1_landmark/time_axis.md`(时间轴协议);目录命名见 `z_notes/experiment_list/naming_convention.md`。
 > 所有命令都在 `projects/` 根目录执行。环境:训练 = conda env **SurvPGC**,编码 = conda env **conch**,
 > 投递/监控 = **base python 3.13**。队列纪律:**上一步判据满足再走下一步**(不要并行 stage,除非明确说可并行)。
 > **队列入口已收敛**:投递/监控一律 `bash scripts/exp_queue.sh <verb> --arm <臂>`
@@ -107,7 +107,7 @@ python scripts/run_field_stats.py --dataset all --landmark_time 0
 # ③ R0-R6 筛选:自动消费 ② 的 landmark 统计,R3/R4 阈值可命令行改(失败 → 看排除日志 fliter_log/)
 python scripts/run_field_filter.py --dataset all --landmark_time 0 \
     --R3_coverage 0.30 --R4_n_unique 2 --R4_mode_share 0.95
-# ①c 时间字段统计(描述性,不阻塞下游;口径见 z_notes/time_axis/)
+# ①c 时间字段统计(描述性,不阻塞下游;口径见 z_notes/protocol/1_landmark/)
 python scripts/run_time_stats.py --dataset all
 
 # 需要重生成/填充 Field Bank 长表模板时(run_field_bank 的前置):
@@ -121,7 +121,7 @@ python scripts/run_time_stats.py --dataset all
   `rawdata_stats/{ds}/landmark_0/{field_stats.csv,kept_fields.json,fliter_log/{exclusion_log.csv,field_registry.csv}}`、
   `rawdata_stats/_shared/{landmark_0/,field_presence*.csv,event_summary.csv}`。
 - **口径(已扶正 2026-10-05)**:现行链 = landmark-first(统计在 Field Bank 同款 t_hi≤T mask 上算);
-  raw-first 旧产物已废弃清理(见 `z_notes/cleaned_runs_landmark_first_20261005.md`)。完整 R0-R6 口径见 `z_notes/tcga_pipeline/field_filter.md`。
+  raw-first 旧产物已废弃清理(见 `z_notes/Test_series_execution_log.md` D13 登记行)。完整 R0-R6 口径见 `z_notes/protocol/2_field_processing/field_filter.md`。
 
 ---
 
@@ -371,7 +371,7 @@ python results_display/scripts/Test_4_three_tiers.py
    **不要直接 kill 无关进程**;`s5`/`s5b`/`s5c` 的 watch 退出后不会再拉起(重跑 `bash scripts/exp_queue.sh watch --arm <臂>` 即续)。
 5. **搜索链路患者口径 = 字段库 ∩ label**:label 文件若带 gt≤0 患者会被计入训练风险集 → 阶段 0 闸门 `check_search_labels.py` 不过就先修 label。
 6. **冻结线 PGC**:`A_pipeline_pgc/run.py`(L0-L5 / D0-D5)**默认拒绝任何编码运行,必须显式 `--force`**;
-   重生成前先核对契约 §3"什么会破坏冻结"并按 §4 SOP 走(`z_notes/time_axis/frozen_schemes_contract.md`)。日常只读。
+   重生成前先核对契约 §3"什么会破坏冻结"并按 §4 SOP 走(`z_notes/protocol/2_field_processing/frozen_schemes_contract.md`)。日常只读。
 7. **landmark-first 已扶正(2026-10-05)**:`run_field_stats.py` / `run_field_filter.py` 的 `--landmark_time` 为必填;
    筛选默认消费 `_shared/landmark_0/field_stats.csv`(landmark-first),raw-first 产物已废弃;
    两条链的区别只在"筛选统计用不用 mask 过的值"(取值 mask 一直在 Field Bank 提取期生效)。

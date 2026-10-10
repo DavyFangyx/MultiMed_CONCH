@@ -1,7 +1,7 @@
 # 字段筛选(field filter)—— pipeline 字段线第③步[字段级]
 
-主文件:见 [`README.md`](README.md)。本文展开第③步的口径与实现;规则冲突时以
-`z_notes/Test_series_spec.md` 为准,时间/槽位口径见 `z_notes/time_axis/time_axis.md`。
+主文件:见 [`../tcga_pipeline/README.md`](../tcga_pipeline/README.md)。本文展开第③步的口径与实现;规则冲突时以
+`z_notes/Test_series_spec.md` 为准,时间/槽位口径见 `z_notes/protocol/1_landmark/time_axis.md`。
 
 ## 一句话
 
@@ -44,7 +44,7 @@
   存在时**默认消费 landmark-first 统计**(`filter.py::resolve_filter_stats_path`);
   显式 `--stats_csv` 仍可覆盖 raw 口径(旧机制保留为显式能力)。
 - 旧 raw-first 产物已移走 `z_notes/backup/landmark_first_promotion_20261005/`;
-  清理清单见 [`../cleaned_runs_landmark_first_20261005.md`](../cleaned_runs_landmark_first_20261005.md)。
+  清理登记见 `z_notes/Test_series_execution_log.md` D13 行。
 - **未决**:365/730 的 landmark 统计尚未生成,当前跑 `--landmark_time 365` 会回退 raw
   统计(静默 raw-first);建议改为"统计缺失直接报错"——待用户拍板。
 

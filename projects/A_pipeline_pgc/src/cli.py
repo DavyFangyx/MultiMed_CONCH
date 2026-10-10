@@ -88,7 +88,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
         help=(
             "冻结线重生成确认。本线方案冻结（L0-L5/D0-D5 被 SurvPGC_Workspace 软链消费），"
             "默认拒绝任何编码运行；显式 --force 才执行。契约见 "
-            "z_notes/time_axis/frozen_schemes_contract.md。"
+            "z_notes/protocol/2_field_processing/frozen_schemes_contract.md。"
         ),
     )
 
@@ -121,7 +121,7 @@ def main(argv=None):
         print(
             "[冻结] PGC 线方案冻结(L0-L5/D0-D5,被 SurvPGC_Workspace 软链消费),"
             "默认拒绝编码运行。确认重生成请加 --force;契约与 SOP 见 "
-            "z_notes/time_axis/frozen_schemes_contract.md。"
+            "z_notes/protocol/2_field_processing/frozen_schemes_contract.md。"
         )
         return
 

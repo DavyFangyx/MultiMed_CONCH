@@ -1,6 +1,6 @@
 # Test_6 搜索算法说明(字段轴链选型)
 
-一句话:**Test_6 在相同逻辑预算下对比 7 个搜索算法(A1–A6 + SEAS)找最优字段组合,判定贪心能否守住生产席位**。口径来源:`experiment_list.md` §Test_6;实现规格(更长、以兼容规则为准)见 `z_notes/E2_Selection_Gain_Algorithm/E2_selection_algorithm_design.md`。代码:`src/selection/`。
+一句话:**Test_6 在相同逻辑预算下对比 7 个搜索算法(A1–A6 + SEAS)找最优字段组合,判定贪心能否守住生产席位**。口径来源:`experiment_list.md` §Test_6;实现以代码 `src/selection/` 为准。
 
 ## 1. 共同口径(所有算法一致)
 
