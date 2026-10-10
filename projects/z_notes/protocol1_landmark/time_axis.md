@@ -82,7 +82,7 @@ landmark 的 T 是**同一根轴上的点**（天），外部传入的全局 lan
 
 要件①的值级判据是 `t_record`（§4）：T 时刻一条记录可用，当且仅当有限 `t_hi <= T` 且状态不是 `unlocated` / `non_informative`。
 
-### 3.1 Test_ 系列实验口径（详见 `z_notes/Test_series_spec.md` §2.1/§2.5）
+### 3.1 执行层口径速查（本协议是唯一权威；实验执行定义见 `z_notes/Test_series_spec.md` §2.1/§2.5——执行层引用本协议，冲突以本协议为准）
 
 - **Test_2b 两臂**：report = 取值 mask off（raw 变体切片，报告值对照）；deleak = `landmark_0` 三要件全开（去泄露值）。两臂字段集、模板、编码、模型、划分完全一致，唯一差异 = mask。产物：`results/Test_2b/arm_A`（历史 apipe，已全清）/ `results/Test_2b/arm_B`（含 Test_3_{work}_{ds} bank 行）。
 - **leak_rate（新口径，2026-09-30 纠错）**：`#{患者: 实际进入模型的值来自 t_hi > 0 的槽位} / #{管线产出有效值的患者}`，直接跑论文管线（A_pipeline，不做泄露处理）并追溯每个值的来源槽位。旧口径 `1 − n_valid_t0/n_valid_none` 已作废。

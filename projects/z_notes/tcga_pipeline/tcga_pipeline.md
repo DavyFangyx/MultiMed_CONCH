@@ -1,7 +1,7 @@
 # TCGA 数据集处理 pipeline(当前状态)
 
 状态日期:2026-10-05。**权威口径**以 `z_notes/Test_series_spec.md` 为准;时间/槽位口径以
-`z_notes/protocol/1_landmark/time_axis.md` 为准;执行历史见 `z_notes/Test_series_execution_log.md`。
+`z_notes/protocol1_landmark/time_axis.md` 为准;执行历史见 `z_notes/Test_series_execution_log.md`。
 本文只是一页地图,冲突时以上述文档为准。
 
 ## 一图流

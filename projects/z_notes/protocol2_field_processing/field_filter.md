@@ -1,7 +1,9 @@
-# 字段筛选(field filter)—— pipeline 字段线第③步[字段级]
+# 字段筛选(field filter)—— 规则2 权威(R0–R6 准入)
 
-主文件:见 [`../tcga_pipeline/README.md`](../tcga_pipeline/README.md)。本文展开第③步的口径与实现;规则冲突时以
-`z_notes/Test_series_spec.md` 为准,时间/槽位口径见 `z_notes/protocol/1_landmark/time_axis.md`。
+规则2 总览见同目录 [`README.md`](README.md);时间/槽位口径引用规则1
+[`../1_landmark/time_axis.md`](../1_landmark/time_axis.md) §4。
+执行层流程(本规则在字段线第③步如何运行)见 `z_notes/tcga_pipeline/tcga_pipeline.md`——**冲突时以协议层
+(本目录 + `protocol_sum.md` 总纲)为准,不以执行层文档为准**。
 
 ## 一句话
 
@@ -28,8 +30,8 @@
 | R1 | 行政 / 标识字段(leaves 名单 + leaf_endswith 后缀;container_leaves) | R1_admin |
 | R2 | ~~timepoint 结构标记(follow_up/baseline)~~ **已移除 2026-10-05**:无下游消费者,且"按字段所在层判时点"与 time_axis 的槽位 t_hi 语义不一致;该语义由 landmark-first R3(t0 coverage)承载。编号保留不复用,以免与历史产物规则名冲突 | — |
 | R3 | **coverage < 0.30 删除**。landmark-first 下 coverage = t0 口径(masked 值上的有效占比) | `--R3_coverage`,默认 0.30 |
-| R4 | **退化删除**:n_unique < 2 或 mode_share > 0.95。同样作用在 t0 值上 | `--R4_n_unique` 2 / `--R4_mode_share` 0.95 |
-| R5 | 可派生字段策略:drop 组删除,keep 组保留(组内 drop 名单按 leaf) | R5_derivable |
+| R4 | **退化删除**:n_unique < 2 或 mode_share > 0.95。同样作用在 t0 值上;`R4_exempt` 清单内的论文方案字段豁免(登记"同一字段组合在不同数据集有效性不同"的实证) | `--R4_n_unique` 2 / `--R4_mode_share` 0.95 |
+| R5 | **别名映射**(2026-10-08 由 R5_derivable 修订):同语义字段保留 canonical,别名剔除并记 `alias_of`;查找分两级——带点别名按完整路径、单段名按叶子(避免跨层撞名) | R5_alias |
 | R6 | **仅标记不删**:portability = universal / common / local(按字段在多少数据集被保留:≥0.8 / ≥0.5)。用途:量化"通吃字段 vs 局部字段"(癌种特有字段合法),供方案组合参考 | `filter.py::_portability` |
 
 ## 口径顺序(核心)
