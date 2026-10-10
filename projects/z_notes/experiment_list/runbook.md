@@ -22,7 +22,7 @@
 | 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_schemes.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | 退出码 0;13 主集 Field Bank 基座齐备;off 臂 raw bank 13/13(label 派生随 cindex 自动落盘) | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
 
 | 3 | Test_1a 单字段泄露对照 | `bash scripts/exp_queue.sh enqueue/watch --arm test_1a_t0`(t0 臂)+ `… --arm test_1a_off`(off 臂) | `Test_1a_t0` 与 `Test_1a_off` 两家族 queue+running 空 且 done ≥ 13 | `results/Test_1a/{arm_t0,arm_off}/` |
-| 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/exp_queue.sh encode/enqueue/drain/watch/validate --arm test_2b` | `Test_2b_arms` queue+running 空 且 done ≥ 256 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/`(apipe 历史口径冻结;bank 重建 = report 臂 raw 切片,见 arm_registry) |
+| 4 | Test_2 时间轴链(2a 审计 → 2b 训练) | `python scripts/run_leak_audit.py`;`bash scripts/exp_queue.sh encode/enqueue/drain/watch --arm test_2b`(bank 口径;依赖阶段 5 的 Test_3 generate/encode 先行) | `Test_2b_arms` queue+running 空 且 done ≥ 220 | `results/Test_2a_leak_audit/`、`results/Test_2b/{arm_A,arm_B}/`(bank 切片口径;apipe 历史冻结已清) |
 | 5 | Test_3 字段轴链(+ Test_4 三档收口) | 搜索 `bash scripts/exp_queue.sh enqueue --arm test_3_search`(watch 留 `Test_3_search_queue.py`);两臂 `python scripts/Test_3_arms.py generate/encode` + `bash scripts/exp_queue.sh enqueue/drain --arm test_3_arms`;`python scripts/Test_3_compare.py --all` | `Test_3_search` done ≥ 13;`Test_3_arms` done ≥ 55;`two_arm.csv` 落盘 | `results/Test_3_greedy_vs_works/`、`results_display/Test_4_three_tiers/` |
 | 6 | Test_5 不变性 | `bash scripts/exp_queue.sh enqueue/scheduler/summarize/q_recompute` | 四子检查(5E_2b/5E_3/5M_2b/5M_3)queue+running 空 且 done ≥ 110/65/146(110+36 parked)/65;q_recompute diff=0 | `results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/` |
 | 7 | Test_6 搜索算法选型 | `bash scripts/t6_scheduler.sh`;`python scripts/run_bakeoff_report.py` | `Test_6_search` queue+running 空 且 done ≥ 24;`decision.json` 落盘(人工确认) | `results/Test_6_search/`、`results_display/Test_6_search/` |
@@ -94,12 +94,8 @@ python scripts/cache_status.py
 ```bash
 # ⓪ split 重建(可选):从现行 label metadata 重生成 5 折(seed 1 确定性分层轮转;
 #    多模态 5 集自动做 W∩C∩G∩RNA 完备过滤 → 多模态功能不受影响)。
-#    全链干净重跑时跑一次:旧 splits 是 label 重派生(gt≤0 剔除)之前生成的,
-#    split 并集比 label 多出一批 gt≤0 患者(COAD 20 例等),重生成后差集归零。
-#    协议默认"landmark 不动 splits";不跑也能重跑全链(运行时 label ∩ split 交集剔除语义已正确)。
-#    注意:重生成改变折划分 → 与历史结果不可比(历史结果已全清,无损失);seed=1 是 split 种子,训练 seed=0 勿混。
-cd Clinic_Analyzer/dataset_deployment/scripts && python3 generate_5fold_splits.py --all --seed 1 && cd ../../..
-# 判据:每数据集 split 并集 == label 患者集(差集 0),抽查 2-3 个数据集核对。
+cd Clinic_Analyzer/dataset_deployment/scripts && python3 generate_5fold_splits.py --all --seed 1
+# 判据:每数据集 split 并集 == label 患者集。
 
 # ① 字段字典扫描:字段路径 + GDC 字典释义(失败 → 检查 ClinicDatasets/gdc_clinical/raw_json/ 原始文件是否齐)
 python scripts/run_scan_fields.py --dataset all
