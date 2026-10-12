@@ -67,5 +67,5 @@
 | 常量与预算公式 | `src/selection/config.py`(DELTA=0.005, PATIENCE=3, budget_cap_for) |
 | 参考线 | `src/selection/references.py`(A0_full / A0b_topk) |
 | GT 与判定 | `src/selection/bakeoff.py` |
-| 投递队列 | `scripts/run_selection_queue.py`;投递前闸门 `scripts/check_search_labels.py` + `scripts/cache_status.py` |
+| 投递队列 | `scripts/run_selection_queue.py`;投递前闸门 `scripts/check_search_labels.py` |
 | 产物目录 | `Clinic_Analyzer/configs/Test_6_search`、`results/Test_6_search/`、`results_display/Test_6_search/` |
