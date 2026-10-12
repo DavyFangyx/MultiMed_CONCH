@@ -16,11 +16,10 @@ from common.datasets import get_dataset_clinic_files, get_dataset_project_ids, l
 from common.fields import extract_path_values, get_primary_diagnosis, unique_join
 from common.fingerprint import file_sha256
 from common.missingness import classify_raw_value, clean_value
-from common.patient_universe import restrict_cases_to_label_universe
+from common.patient_set import restrict_cases_to_label_patients
 from .converters import convert_value, known_converters
 from .landmark import (
     extract_from_objects,
-    is_timed_field_path,
     landmark_policy,
     parse_landmark_options,
     passing_family_objects,
@@ -31,12 +30,10 @@ from common.paths import (
     DEFAULT_CKPT,
     DEFAULT_GPU,
     REPO_ROOT,
-    STATIC_ONLY_TAG,
     dataset_field_bank_dir,
     dataset_field_bank_template_dir,
     dataset_kept_fields_path,
     dataset_stats_dir,
-    landmark_tag as build_landmark_tag,
     landmark_tag_from_args,
     require_landmark_tag,
     resolve_cli_out_dir,
@@ -199,21 +196,6 @@ def load_kept_fields(dataset_name: str | None = None, path: Path | None = None, 
 
 def _fill_template(template: str, value: str) -> str:
     return str(template).replace("{}", str(value), 1)
-
-
-def drop_timed_fields(cfg: dict) -> dict:
-    """static_only 模式:从模板 cfg 中剔除 timed 路径族(diagnoses[] / follow_ups[])字段。
-
-    判定与 kept_fields 侧同源(`discovery.landmark.is_timed_field_path`),filters 保序。
-    返回新 dict,不改入参。
-    """
-    keep = [idx for idx, field in enumerate(cfg["fields"]) if not is_timed_field_path(field)]
-    filtered = dict(cfg)
-    filtered["fields"] = [cfg["fields"][idx] for idx in keep]
-    filtered["output_cols"] = [cfg["output_cols"][idx] for idx in keep]
-    filtered["templates"] = {field: cfg["templates"][field] for field in filtered["fields"]}
-    filtered["converts"] = {field: cfg["converts"][field] for field in filtered["fields"]}
-    return filtered
 
 
 def load_field_bank_template(
@@ -394,7 +376,6 @@ def run_field_bank(args):
 
     from .landmark import iter_landmark_args
 
-    static_only = bool(getattr(args, "static_only", False))
     jobs = []
     for name in names:
         dataset_jobs = []
@@ -404,11 +385,6 @@ def run_field_bank(args):
             context=f"field bank {name}",
         ):
             dataset_jobs.append((name, landmark_args))
-        if static_only and len(dataset_jobs) > 1:
-            raise ValueError(
-                "--static_only 是单字段基座模式:一次只接受单个数值 --landmark_time"
-                "(字段基座口径),不支持多 token 或 all"
-            )
         jobs.extend(dataset_jobs)
     args._multi_dataset = len(jobs) > 1
     if encoding == "onehot":
@@ -424,39 +400,28 @@ def _resolve_bank_context(args, name, datasets, encoding) -> dict:
     use_landmark, landmark_time = parse_landmark_options(args)
     tag = landmark_tag_from_args(args)
     args.landmark_tag = tag
-    static_only = bool(getattr(args, "static_only", False))
-    base_tag = (
-        build_landmark_tag(no_landmark=not use_landmark, landmark_time=landmark_time)
-        if static_only
-        else tag
-    )
     kept = load_kept_fields(
         dataset_name=name,
         path=Path(args.kept_fields) if args.kept_fields else None,
-        landmark_tag=base_tag,
+        landmark_tag=tag,
     )
     if name not in kept:
-        raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name, base_tag)} 中。请先跑 run_field_filter.py")
+        raise ValueError(f"{name} 不在 {args.kept_fields or dataset_kept_fields_path(name, tag)} 中。请先跑 run_field_filter.py")
     cfg = load_field_bank_template(
         name,
         require_templates=(encoding != "onehot"),
-        landmark_tag=base_tag,
+        landmark_tag=tag,
     )
     expected = list(kept[name]["fields"])
-    if static_only:
-        n_before = len(expected)
-        expected = [field for field in expected if not is_timed_field_path(field)]
-        cfg = drop_timed_fields(cfg)
-        print(f"  static_only: 剔除 timed 字段 {n_before - len(expected)} 个，保留稳定字段 {len(expected)} 个")
     if cfg["fields"] != expected:
         print("  ⚠️  模板字段与 kept_fields.json 不完全一致，以模板当前行为准。")
     cases = load_clinical_cases(
         get_dataset_clinic_files(name, datasets),
         project_ids=get_dataset_project_ids(name, datasets),
     )
-    # 患者级前置过滤(2026-10-09 用户拍板):字段级编码只在 label 宇宙上做,
+    # 患者级前置过滤(2026-10-09 用户拍板):字段级编码只在 label 患者集上做,
     # gt≤0 等不可靠患者在统计/筛选/编码之前即被剔除(不再靠评估期静默丢弃)。
-    cases, _ = restrict_cases_to_label_universe(cases, name)
+    cases, _ = restrict_cases_to_label_patients(cases, name)
     return {
         "args": args,
         "name": name,
@@ -634,9 +599,6 @@ def _run_field_bank_one(args, name, datasets, encoding) -> None:
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "n_patients": len(patient_ids),
     }
-    if static_only:
-        index["variant"] = STATIC_ONLY_TAG
-        index["field_list_source"] = base_tag
     index_path = out_dir / "field_index.json"
     with open(index_path, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)

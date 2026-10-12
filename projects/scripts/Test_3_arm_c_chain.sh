@@ -53,7 +53,7 @@ while [ "${#pending[@]}" -gt 0 ]; do
     [ "${#pending[@]}" -gt 0 ] && sleep "$POLL"
 done
 
-echo "[chain] 13/13 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
+echo "[chain] 14/14 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
 "$PYTHON3" scripts/exp_queue.py drain --arm test_3_arms --gpu "$GPU" --workers "$WORKERS"
 echo "[chain] drain 结束 $(date '+%F %T')"
 

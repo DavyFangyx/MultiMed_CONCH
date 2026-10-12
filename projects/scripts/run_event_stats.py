@@ -117,9 +117,9 @@ def write_event_summary(dataset_frames: list[tuple[str, pd.DataFrame]], output_d
         n_censored_gt_0 = int(((event == 0) & gt_zero).sum())
         n_unknown_gt_0 = int((event.isna() & gt_zero).sum())
 
-        # label 宇宙列(2026-10-09 患者级前置口径):主集门槛 = n_event_label >= 100。
+        # label 患者集列(2026-10-09 患者级前置口径):主集门槛 = n_event_label >= 100。
         try:
-            from common.patient_universe import label_event_count
+            from common.patient_set import label_event_count
 
             label = label_event_count(name)
             label_cols = {

@@ -6,9 +6,9 @@
 
 | 编号 | 规则 | 主页 |
 |---|---|---|
-| **规则0** | 队列与患者筛选:gt≤0 全局剔除 → label 宇宙 → n_event 四档(13 主集) | [`0_cohort_selection/README.md`](0_cohort_selection/README.md) |
-| **规则1** | landmark 三要件(时间轴协议) | [`1_landmark/time_axis.md`](1_landmark/time_axis.md) §3/§4 |
-| **规则2** | 字段处理(筛选 R0–R6 + 编码基座 + 方案装配) | [`2_field_processing/README.md`](2_field_processing/README.md) |
+| **规则0** | 队列与患者筛选:gt≤0 全局剔除 → label 患者集 → n_event 四档(14 主集) | [`protocol0_cohort_selection/cohort_rules.md`](protocol0_cohort_selection/cohort_rules.md) |
+| **规则1** | landmark 三要件(时间轴协议) | [`protocol1_landmark/time_axis.md`](protocol1_landmark/time_axis.md) §3/§4 |
+| **规则2** | 字段处理(筛选 R0–R6 + 编码基座 + 方案装配) | [`protocol2_field_processing/field_filter.md`](protocol2_field_processing/field_filter.md) |
 
 - 字段规则 **R0–R6 是规则2 内部的实现编号**(代码与历史产物沿用),R0(标签泄露硬排除)**≠ 规则0**。
 - 规则1 目录 = 原 `z_notes/time_axis/` 整体迁入(2026-10-10,**内容未动**);规则2 的 `field_filter.md` /
@@ -19,17 +19,17 @@
 ## 目录结构
 
 ```text
-protocol/
-  README.md                     ← 本页(总纲)
-  0_cohort_selection/README.md  ← 规则0 权威(gt≤0 → label 宇宙 → 四档)
-  1_landmark/                   ← 原 z_notes/time_axis/
-    time_axis.md                  = 规则1 权威协议(landmark 三要件 + t_record 判据)
-    t_record_derivation.md        = t_record 推导附录
-    index_date_anchor_audit.md    = 轴锚点审计附录
-    t_write.md                    = 入库时间审计(另册,不参与泄露判定)
-  2_field_processing/
-    README.md                     = 规则2 权威(索引)
-    field_filter.md               = R0–R6 筛选规则权威(原 z_notes/tcga_pipeline/)
-    frozen_schemes_contract.md    = PGC 线冻结契约(原 z_notes/time_axis/)
-    probe_*_20261008.md           = R4 豁免 / R5 别名的决策依据探查(原 z_notes/tcga_pipeline/)
+z_notes 下平级(2026-10-10 扁平化):
+  protocol_sum.md                     ← 本页(总纲)
+  protocol0_cohort_selection/
+    cohort_rules.md                     = 规则0 权威(gt≤0 → label 患者集 → 四档)
+  protocol1_landmark/                   = 原 z_notes/time_axis/
+    time_axis.md                          = 规则1 权威协议(landmark 三要件 + t_record 判据)
+    t_record_derivation.md                = t_record 推导附录
+    index_date_anchor_audit.md            = 轴锚点审计附录
+    t_write.md                            = 入库时间审计(另册,不参与泄露判定)
+  protocol2_field_processing/
+    field_filter.md                       = 规则2 权威(R0–R6 准入 + 编码基座索引)
+    frozen_schemes_contract.md            = PGC 线冻结契约(原 z_notes/time_axis/)
+    probe_*_20261008.md                   = R4 豁免 / R5 别名的决策依据探查(原 z_notes/tcga_pipeline/)
 ```

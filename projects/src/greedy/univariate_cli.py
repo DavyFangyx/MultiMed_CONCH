@@ -183,35 +183,26 @@ def evaluate_all_fields(
     evaluator,
     fields: list[str],
     *,
-    workers: int = 8,
+    workers: int = 1,
     embeddings_root: Path | None = None,
     encoding: str = "prompt",
 ) -> list[dict]:
-    indexed = list(enumerate(fields))
-    rows: list[dict | None] = [None] * len(fields)
-    n_workers = max(int(workers or 1), 1)
+    """逐字段串行评估(2026-10-12 用户拍板:并发粒度 = conf 级,见 drain 循环;
 
-    def _run(item):
-        field_idx, field_name = item
-        return field_idx, evaluate_one_field(
+    一个 worker 执行一个 conf 文件,不再用多个 worker 并发执行同一个 conf 的字段)。
+    """
+    rows: list[dict] = []
+    for field_idx, field_name in enumerate(fields):
+        row = evaluate_one_field(
             evaluator,
             field_idx,
             field_name,
             embeddings_root=embeddings_root,
             encoding=encoding,
         )
-
-    if n_workers == 1 or len(fields) <= 1:
-        scored = [_run(item) for item in indexed]
-    else:
-        scored = []
-        with ThreadPoolExecutor(max_workers=min(n_workers, len(fields))) as pool:
-            futures = [pool.submit(_run, item) for item in indexed]
-            for fut in as_completed(futures):
-                scored.append(fut.result())
-    for field_idx, row in scored:
-        rows[field_idx] = row
-    return sort_field_rows([row for row in rows if row is not None])
+        if row is not None:
+            rows.append(row)
+    return sort_field_rows(rows)
 
 
 def write_univariate_outputs(
@@ -599,11 +590,7 @@ def run_claimed_jobs(args) -> None:
         f"[queue] root={root} job_key={job_key} "
         f"created={len(queued['created'])} existing={len(queued['existing'])}"
     )
-    while True:
-        claimed = claim_job(root, job_key)
-        if claimed is None:
-            print(f"[queue] idle job_key={job_key}")
-            return
+    def _run_claimed(claimed: Path) -> None:
         job = load_job(claimed)
         dataset = job["dataset"]
         gpu = job.get("cuda_visible_devices") or os.environ.get("CUDA_VISIBLE_DEVICES", "")
@@ -615,9 +602,25 @@ def run_claimed_jobs(args) -> None:
         except Exception as exc:
             dest = mark_failed(claimed, error=f"{type(exc).__name__}: {exc}")
             print(f"[queue] fail {dest.name} dataset={dataset} landmark={landmark}: {exc}")
-            continue
+            return
         dest = mark_done(claimed)
         print(f"[queue] done {dest.name} dataset={dataset} landmark={landmark}")
+
+    n_conf = max(1, int(args.workers or 1))
+    while True:
+        claimed = []
+        for _ in range(n_conf):
+            path = claim_job(root, job_key)
+            if path is None:
+                break
+            claimed.append(path)
+        if not claimed:
+            print(f"[queue] idle job_key={job_key}")
+            return
+        with ThreadPoolExecutor(max_workers=len(claimed)) as pool:
+            futures = [pool.submit(_run_claimed, path) for path in claimed]
+            for fut in as_completed(futures):
+                fut.result()
 
 
 def expand_analyzer_args(args):

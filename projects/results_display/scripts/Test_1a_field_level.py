@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test_1a 单字段泄露对照（时间轴链动机 + Test_2b 机制解释）。
 
-规格：z_notes/Test_series_spec.md §5bis；范围：执行日志 R13（仅 n_event >= 100 的 15 个主集）。
+规格：z_notes/Test_series_spec.md §5bis；范围：执行日志 R13（label 患者集有效事件 >= 100 的主集，n_event_label 口径）。
 本步纯分析，**不新增训练**。
 
 两臂（同患者集，唯一差异 = 取值 mask 状态）：
@@ -11,8 +11,8 @@
   - merged t0 臂（噪声本底归零变体）：results/Test_1a/arm_t0_merged/univariate/prompt/landmark_0/
   - Δc_field = c(off) − c(t0)
 
-数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event 派生
-（R13：n_event >= 100），veriyfier 与 off 臂队列口径同源（统一入口
+数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event_label 派生
+（R13：n_event_label >= 100，2026-10-09 口径），veriyfier 与 off 臂队列口径同源（统一入口
 `python3 scripts/exp_queue.py status --arm test_1a_off`；原 s5b_univariate_enqueue.py 已退休）。
 
 leak_rate 列（Test_2a 审计）：
@@ -226,15 +226,16 @@ def load_t0_filter_exclusions(path: Path) -> dict[str, dict]:
 
 
 def main_datasets(manifest: dict[str, dict], events: dict[str, dict]) -> list[str]:
-    """R13 主集：n_event >= 100 的 TCGA 数据集（来源 manifest，回退 event_summary）。"""
-    table = {}
-    for name, row in manifest.items():
-        if str(name).startswith(("TCGA-", "TCGA_")) and str(row.get("n_event") or "").strip():
-            table[name] = int(float(row["n_event"]))
-    if not table:
-        for name, row in events.items():
-            if str(name).startswith(("TCGA-", "TCGA_")) and str(row.get("n_event") or "").strip():
-                table[name] = int(float(row["n_event"]))
+    """R13 主集:label 患者集有效事件 >= 100 的 TCGA 数据集
+    (2026-10-09 口径:n_event_label 优先,旧产物无该列时回退 raw n_event)。"""
+    for key in ("n_event_label", "n_event"):
+        table = {}
+        for source in (manifest, events):
+            for name, row in source.items():
+                if str(name).startswith(("TCGA-", "TCGA_")) and str(row.get(key) or "").strip():
+                    table.setdefault(name, int(float(row[key])))
+        if table:
+            break
     if not table:
         raise FileNotFoundError("no n_event source (manifest / event_summary)")
     return sorted(name for name, n in table.items() if int(n) >= MIN_EVENT)

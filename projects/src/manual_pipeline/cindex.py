@@ -230,8 +230,9 @@ def _bash_quote(value: str) -> str:
     return "'" + str(value).replace("'", '\'"\'"\'') + "'"
 
 
-def conf_filename(study: str, scheme: str, modality: str, landmark_tag: str = "") -> str:
-    name = f"{study}__{scheme}"
+def conf_filename(study: str, scheme: str, modality: str, landmark_tag: str = "",
+                  family: str = "") -> str:
+    name = f"{family}{study}__{scheme}"
     if landmark_tag:
         name = f"{name}__{landmark_tag}"
     return f"{name}__{modality}.conf"
@@ -329,11 +330,15 @@ def _move_conf(path: Path, bucket: str) -> Path:
     return dest
 
 
+def _conf_prefix() -> str:
+    return os.environ.get("CINDEX_CONF_PREFIX", "")
+
+
 def claim_conf(root: Path) -> Path | None:
     root = ensure_queue_dirs(root)
     queue_dir = root / "queue"
     running_dir = root / "running"
-    for src in sorted(queue_dir.glob("*.conf")):
+    for src in sorted(queue_dir.glob(f"{_conf_prefix()}*.conf")):
         dest = running_dir / src.name
         if dest.exists():
             src.unlink(missing_ok=True)
@@ -385,6 +390,7 @@ def iter_cindex_jobs(
     baseline_out: str,
     encoding: str = "all",
     modalities: list[str] | tuple[str, ...] | str = DEFAULT_ANALYZER_MODALITY,
+    conf_prefix: str = "",
     results_root: Path | str | None = None,
     seed: int = 0,
     max_epochs: int | None = None,
@@ -455,7 +461,8 @@ def iter_cindex_jobs(
                     "label_file": label_file,
                     "label_stats": label_stats,
                     "run_name": run_name,
-                    "conf_name": conf_filename(study, job["scheme"], modality, run_tag),
+                    "conf_name": conf_filename(study, job["scheme"], modality, run_tag,
+                                                family=conf_prefix),
                     "seed": int(seed),
                     "max_epochs": max_epochs,
                     "out_dir": results_dir(
@@ -580,8 +587,8 @@ def run_claimed_conf(
 def wait_for_idle(root: Path, *, poll_seconds: float = 10.0) -> None:
     root = Path(root)
     while True:
-        queued = list((root / "queue").glob("*.conf"))
-        running = list((root / "running").glob("*.conf"))
+        queued = list((root / "queue").glob(f"{_conf_prefix()}*.conf"))
+        running = list((root / "running").glob(f"{_conf_prefix()}*.conf"))
         if not queued and not running:
             return
         if queued:
@@ -605,7 +612,7 @@ def drain_queue(
             claimed = claim_conf(root)
             if claimed is None:
                 wait_for_idle(root, poll_seconds=poll_seconds)
-                if not list((root / "queue").glob("*.conf")):
+                if not list((root / "queue").glob(f"{_conf_prefix()}*.conf")):
                     return
                 continue
             gpu = os.environ.get("CUDA_VISIBLE_DEVICES", "")

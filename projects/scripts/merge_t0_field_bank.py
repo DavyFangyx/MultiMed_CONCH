@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Test_1a merged t0 臂：噪声本底归零（原名 s5c_merge_t0_bank.py，2026-10-09 收尾改名）：构建 merged t0 臂 Field Bank（未改动单元格复用 off 臂行）。
+"""Test_1a merged t0 臂：噪声本底归零：构建 merged t0 臂 Field Bank（未改动单元格复用 off 臂行）。
 
 背景（2026-10-08 探针结论）：
     两臂同句子的编码差异 = batch_size 不同（t0=64 / off=256）的 GEMM 浮点舍入（~7e-7）。
     未改动单元格文本逐字相同 → 直接复制 off 臂矩阵行后两臂输入位同，下游 MLP 重训位确定
     （同 seed/k/输入两跑逐位相同）→ 未改动字段 Δc 精确 0，左组噪声本底归零。
-    padding 宽度分歧机制在当前 15 集未激活（两臂宽度相同；s5b 侧已有硬校验防再犯）。
+    padding 宽度分歧机制在当前 15 集未激活（两臂宽度相同；off 臂侧已有硬校验防再犯）。
 
 产物（每个数据集）：
     outputs/_merged/{dataset}/field_bank/prompt/landmark_0/
@@ -94,7 +94,7 @@ def merge_one(args, dataset: str) -> dict:
             if (int(old.get("n_patients") or -1) == int(t0_index.get("n_patients") or -1)
                     and old.get("t0_template_sha256") == t0_index.get("template_sha256")
                     and old.get("off_template_sha256") == off_index.get("template_sha256")):
-                print(f"[s5c] skip {dataset}: 已存在且指纹一致（{out_dir}）")
+                print(f"[merged] skip {dataset}: 已存在且指纹一致（{out_dir}）")
                 return {"dataset": dataset, "skipped": True}
         shutil.rmtree(out_dir)
     elif out_dir.exists():
@@ -242,7 +242,7 @@ def merge_one(args, dataset: str) -> dict:
     if stats["n_fields_only_off"]:
         warnings.append(f"{stats['n_fields_only_off']} 个 off-only 字段未参与")
     print(
-        f"[s5c] {dataset}: patients={len(pids)} fields={len(t0_cols)} "
+        f"[merged] {dataset}: patients={len(pids)} fields={len(t0_cols)} "
         f"copied={n_copied} kept_text_differ={n_kept_differ} kept_col_missing={n_kept_missing} "
         f"changed_fields={len(stats['changed_fields'])}"
         + (" | 警告: " + "; ".join(warnings) if warnings else "")
@@ -260,13 +260,13 @@ def main(argv=None) -> int:
     names = tcga_datasets(args)
     if not names:
         raise ValueError("--dataset 解析为空")
-    print(f"[s5c] datasets={len(names)}: {','.join(names)}")
+    print(f"[merged] datasets={len(names)}: {','.join(names)}")
     summaries = []
     for name in names:
         summaries.append(merge_one(args, name))
     if not any(not item.get("skipped") for item in summaries):
-        print("[s5c] 全部已存在（重跑用 --overwrite）")
-    print("[s5c] out root:", MERGED_ROOT)
+        print("[merged] 全部已存在（重跑用 --overwrite）")
+    print("[merged] out root:", MERGED_ROOT)
     return 0
 
 

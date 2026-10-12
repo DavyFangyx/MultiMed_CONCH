@@ -38,7 +38,7 @@
 两种取值模式（逐字段记录在 ``audit_mode``）：
 
 - ``a_pipeline``：字段在 ``src/manual_pipeline/extract.py`` 的取值表内 → 用管线实际取值（spec §2.1 要求）；
-- ``field_bank``：字段只在 Field Bank / univariate 宇宙（如 Test_1a 的 kept 字段、
+- ``field_bank``：字段只在 Field Bank / univariate 字段范围（如 Test_1a 的 kept 字段、
   ``diagnoses[].tumor_focality``）→ 用 Field Bank 的 raw 取值逻辑
   （``extract_field_bank_raw_values(landmark=False)``，与 Test_1a off 臂同源），判据不变。
 
@@ -570,7 +570,7 @@ def a_pipeline_provenance(field_path: str, ctx: CaseContext) -> FieldProvenance:
 
 
 # ---------------------------------------------------------------------------
-# Field Bank 取值模式的来源追溯（Test_1a kept 字段宇宙）
+# Field Bank 取值模式的来源追溯（Test_1a kept 字段范围）
 # ---------------------------------------------------------------------------
 def _iter_path_values(root: dict, field_path: str) -> list[tuple[dict, object]]:
     """(持有该键的实体, 叶子值) 列表——与 ``extract_path_values`` 同序遍历。"""

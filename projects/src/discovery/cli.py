@@ -10,7 +10,6 @@ from common.paths import (
     DEFAULT_JSON_FIELD_DICT,
     DEFAULT_JSON_PATH,
     VALID_ENCODINGS,
-    VALID_SCHEMES,
     shared_field_stats_path,
     resolve_reference_dict_path,
     validate_encoding,
@@ -18,7 +17,6 @@ from common.paths import (
 
 from .field_bank import run_field_bank
 from .filter import run_field_filter
-from .schemes import run_schemes
 from .landmark import add_landmark_cli_args
 from .longitudinal import run_longitudinal_field_bank
 from .presence import run_field_presence
@@ -143,22 +141,12 @@ def build_field_bank_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="覆盖已有 bank（默认：产物 field_index.json 存在即跳过，防重复编码；与 s5b/s5c 的 skip 守卫一致）",
+        help="覆盖已有 bank（默认：产物 field_index.json 存在即跳过，防重复编码；与 off/merged 臂的 skip 守卫一致）",
     )
     parser.add_argument(
         "--rare_freq_threshold",
         type=int,
         default=5,
-    )
-    parser.add_argument(
-        "--static_only",
-        action="store_true",
-        help=(
-            "稳定字段子集模式(2026-10-08):从 --landmark_time 对应 tag 的 kept_fields/模板中剔除"
-            " diagnoses[]/follow_ups[] 路径族(含嵌套),只编码稳定字段;产物 tag = static_only,"
-            "落 outputs/{dataset}/field_bank/{encoding}/static_only/(与 landmark_{T} / no_mask 平级)。"
-            "与 --landmark_time none(no_mask 全字段不裁剪)互斥"
-        ),
     )
     parser.add_argument(
         "--out",
@@ -174,37 +162,6 @@ def field_bank_main(argv=None):
     args = parser.parse_args(argv)
     args.encoding = validate_encoding(args.encoding)
     run_field_bank(args)
-
-
-def build_schemes_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="从已完成的 Field Bank prompt 基座组成 L2 / L3 / L5。--dataset 与 --landmark_time 指定基座。")
-    parser.add_argument("--dataset", default="all", help="已完成的 Field Bank prompt 基座数据集，或 all")
-    parser.add_argument("--datasets_config", default=DEFAULT_DATASETS_CONFIG)
-    parser.add_argument(
-        "--scheme",
-        default="all",
-        choices=["all", *VALID_SCHEMES],
-        help="L2、L3、L5，或 all",
-    )
-    parser.add_argument("--ckpt", default=DEFAULT_CKPT)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument(
-        "--prompts_only",
-        action="store_true",
-        help="只生成 outputs/{dataset}/schemes/{landmark_tag}_{L2|L3|L5}/prompts.csv，不调用 CONCH 编码",
-    )
-    add_landmark_cli_args(parser, extraction=True)
-    return parser
-
-
-def schemes_main(argv=None):
-    parser = build_schemes_parser()
-    args = parser.parse_args(argv)
-    scheme = str(args.scheme or "all").strip()
-    if scheme != "all":
-        from common.paths import validate_scheme
-        args.scheme = validate_scheme(scheme)
-    run_schemes(args)
 
 
 def presence_main(argv=None):

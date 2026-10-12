@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """构建 `raw` 变体 Field Bank（字段表 = landmark_0 kept，取值 mask 关闭）。
 
-原名 s5b_build_raw_field_bank.py（S5b 步骤编号，2026-10-09 收尾改名）。
+Test_1a off 臂 raw bank 构建（mask off + 患者集显式 landmark_0）。
 服务对象：Test_1a off 臂（field_raw）与 Test_2b report 臂的切片基座。
 
 定义（z_notes/Test_series_spec.md §5bis）：
@@ -61,7 +61,7 @@ from common.paths import (
     PROJECT_ROOT as PATHS_PROJECT_ROOT,
 )
 from common.fingerprint import file_sha256
-from common.patient_universe import restrict_cases_to_label_universe
+from common.patient_set import restrict_cases_to_label_patients
 from discovery.field_bank import generate_field_bank_prompt_row, load_field_bank_template
 from discovery.landmark import timed_family_for_field
 
@@ -96,8 +96,8 @@ def build_prompt_rows(dataset: str, datasets: dict) -> tuple[list[dict], dict, l
         get_dataset_clinic_files(dataset, datasets),
         project_ids=get_dataset_project_ids(dataset, datasets),
     )
-    # 患者级前置过滤(2026-10-09 用户拍板):raw 变体与 lm0 bank 同 label 宇宙。
-    cases, _ = restrict_cases_to_label_universe(cases, dataset)
+    # 患者级前置过滤(2026-10-09 用户拍板):raw 变体与 lm0 bank 同 label 患者集。
+    cases, _ = restrict_cases_to_label_patients(cases, dataset)
     records = [
         generate_field_bank_prompt_row(case, cfg, landmark=False, landmark_time=None)
         for case in cases
@@ -334,10 +334,10 @@ def build_one(args, dataset: str, datasets: dict) -> dict:
         if (int(old.get("n_patients") or -1) == len(records)
                 and old.get("template_sha256") == template_fp
                 and old.get("lm0_template_sha256") == lm0_fp):
-            print(f"[s5b] skip {dataset}: 已存在且指纹一致（{index_path}）")
+            print(f"[off] skip {dataset}: 已存在且指纹一致（{index_path}）")
             return {"dataset": dataset, "skipped": True, **summary}
         if old.get("template_sha256") != template_fp or old.get("lm0_template_sha256") != lm0_fp:
-            print(f"[s5b] stale {dataset}: 模板/lm0 指纹变化,重建 raw bank")
+            print(f"[off] stale {dataset}: 模板/lm0 指纹变化,重建 raw bank")
 
     embeddings = encode_records(
         dataset, records, cfg, batch_size=args.batch_size, ckpt=args.ckpt
@@ -347,7 +347,7 @@ def build_one(args, dataset: str, datasets: dict) -> dict:
         json.dump({"summary": summary, "fields": field_rows}, f, ensure_ascii=False, indent=2)
         f.write("\n")
     print(
-        f"[s5b] {dataset}: fields={summary['n_fields']} patients={summary['n_patients']} "
+        f"[off] {dataset}: fields={summary['n_fields']} patients={summary['n_patients']} "
         f"changed_cells={summary['changed_cells']} changed_patients={summary['changed_patients']} "
         f"changed_fields={len(summary['changed_fields'])}"
     )
@@ -371,7 +371,7 @@ def main(argv=None) -> int:
     names = tcga_datasets(args)
     if not names:
         raise ValueError("--dataset 解析为空")
-    print(f"[s5b] datasets={len(names)}: {','.join(names)}")
+    print(f"[off] datasets={len(names)}: {','.join(names)}")
     all_field_rows: list[dict] = []
     summaries = []
     for name in names:
@@ -379,13 +379,13 @@ def main(argv=None) -> int:
         summaries.append(result)
         all_field_rows.extend(result.get("field_rows") or [])
     append_diff_csv(all_field_rows)
-    print("[s5b] summary:")
+    print("[off] summary:")
     for item in summaries:
         print(
             f"  {item['dataset']}: fields={item['n_fields']} patients={item['n_patients']} "
             f"changed_cells={item['changed_cells']} changed_patients={item['changed_patients']}"
         )
-    print(f"[s5b] diff csv: {DIFF_CSV}")
+    print(f"[off] diff csv: {DIFF_CSV}")
     return 0
 
 

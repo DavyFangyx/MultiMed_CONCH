@@ -10,10 +10,6 @@ outputs/{dataset}/
     prompts.csv
     field_index.json
     embeddings/pt/{patient_id}.pt
-  schemes/{landmark_tag}_{L2|L3|L5}/
-    prompts.csv
-    field_index.json
-    embeddings/pt/{patient_id}.pt
   greedy/{prompt|onehot}/{landmark_tag}/
     jobs/
     subsets/{scheme}/embeddings/pt/{patient_id}.pt

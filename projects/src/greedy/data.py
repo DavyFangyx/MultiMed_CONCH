@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.patient_universe import STUDY_BY_DISPLAY, display_to_study  # noqa: F401 (re-export)
+from common.patient_set import STUDY_BY_DISPLAY, display_to_study  # noqa: F401 (re-export)
 from common.paths import dataset_field_bank_dir, dataset_kept_fields_path, encoding_and_landmark_tag_from_path, require_landmark_tag, validate_encoding
 
 
@@ -189,7 +189,7 @@ def load_events(dataset: str, patient_ids: list[str], label_file: Path | str | N
     return {pid: int(events.get(pid, 0)) for pid in patient_ids}
 
 
-def resolve_patient_universe(
+def resolve_patient_set(
     dataset: str,
     field_bank_dir: Path | str | None = None,
     label_file: Path | str | None = None,

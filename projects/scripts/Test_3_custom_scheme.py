@@ -5,15 +5,12 @@
   臂 C   = 贪婪最优子集(result.json)→ 同登记
   编码   = 按字段索引切片 bank 嵌入矩阵,零 CONCH 重编码
 
-landmark/bank 变体(三个 tag,不可互相替换;对应 --landmark_time 值域):
+landmark/bank 变体(两个 tag,不可互相替换;对应 --landmark_time 值域):
   landmark_0   :outputs/{ds}/field_bank/prompt/landmark_0/(mask 开 t_hi≤0,去泄露口径,主)
   raw          :outputs/{ds}/field_bank/prompt/raw/(mask 关 + 与 landmark_0 完全相同的
                 kept_fields,时间轴对照专用;"论文组合 × 无 mask 对照"用这个;
-                旧 s5b 产物 outputs/_raw/{ds}/field_bank/prompt/no_mask 兼容读取,
+                旧产物线 outputs/_raw/{ds}/field_bank/prompt/no_mask 兼容读取,
                 no_mask 即"landmark off = 取值不裁剪"的规范 tag — 原 static_only 更名)
-  static_only  :outputs/{ds}/field_bank/prompt/static_only/(稳定字段子集:剔除字段路径
-                以 diagnoses[]/follow_ups[] 开头的全部字段,2026-10-08 新语义;由
-                `run_field_bank.py --static_only` 生成,与 no_mask 全字段口径不可混用)
 
 产物:
   templates/manual_schemes/{name}/fields.json + Test_3_meta.json(无 template.csv)
@@ -42,14 +39,14 @@ A_TEMPLATES = ROOT / "templates" / "manual_schemes"
 SCHEMES_JSON = A_TEMPLATES / "schemes.json"
 LANDMARK_TAG = f"landmark_{C.LANDMARK_TIME}"
 
-BANK_VARIANTS = ("landmark_0", "raw", "static_only")
+BANK_VARIANTS = ("landmark_0", "raw")
 
 
 def bank_variant_dir(dataset: str, variant: str) -> Path:
-    """bank 变体 → bank 根目录。三个 tag 互不替换(见模块 docstring)。
+    """bank 变体 → bank 根目录。两个 tag 互不替换(见模块 docstring)。
 
     raw 的 canonical 目录 = outputs/{ds}/field_bank/prompt/raw/(主线合并后的新位置);
-    旧 s5b 产物 outputs/_raw/.../no_mask(landmark off 规范 tag)尚未迁移,保守策略:
+    旧产物线 outputs/_raw/.../no_mask(landmark off 规范 tag)尚未迁移,保守策略:
     canonical 不存在时兼容读取旧位置(二者同为 mask 关 + landmark_0 kept_fields)。"""
     if variant == "landmark_0":
         return BANK_OUTPUTS / dataset / "field_bank" / "prompt" / "landmark_0"
@@ -61,11 +58,8 @@ def bank_variant_dir(dataset: str, variant: str) -> Path:
         if legacy.is_dir():
             return legacy
         raise SystemExit(
-            f"[test_3] 缺 raw bank(找过 {canonical} 与旧 s5b 线 {legacy});"
+            f"[test_3] 缺 raw bank(找过 {canonical} 与旧产物线 {legacy});"
             f"请先跑 run_field_bank --landmark_time raw 或迁移 outputs/_raw")
-    if variant == "static_only":
-        # 稳定字段口径(剔除 diagnoses[]/follow_ups[] 路径族字段;run_field_bank --static_only 生成)
-        return BANK_OUTPUTS / dataset / "field_bank" / "prompt" / "static_only"
     raise SystemExit(f"[test_3] 未知 bank 变体: {variant!r};可用: {BANK_VARIANTS}")
 
 
@@ -73,7 +67,7 @@ def load_bank_templates(dataset: str, landmark_tag: str = LANDMARK_TAG) -> dict[
     """bank 模板表(与 prompt bank 同源);缺表时报错而非静默回落。
 
     注意:这里的 landmark_tag 是模板表目录名(landmark_0 等),不用于区分
-    raw/no_mask/static_only 的字段口径(三者模板语义见模块 docstring)。"""
+    raw/no_mask 的字段口径(两者模板语义见模块 docstring)。"""
     path = BANK_TEMPLATES / dataset / landmark_tag / "FIELD_BANK.csv"
     if not path.exists():
         raise SystemExit(f"[test_3] 缺 {landmark_tag} bank 模板表: {path}")
@@ -89,7 +83,7 @@ def load_bank_templates(dataset: str, landmark_tag: str = LANDMARK_TAG) -> dict[
 def load_bank_field_list(dataset: str, variant: str = "landmark_0") -> list[str]:
     """bank 字段集(与嵌入矩阵行序一致);field_index.json 的 fields。
 
-    variant ∈ {"landmark_0", "raw", "static_only"}(三个 tag,不可互换)。"""
+    variant ∈ {"landmark_0", "raw"}(两个 tag,不可互换)。"""
     path = bank_variant_dir(dataset, variant) / "field_index.json"
     if not path.exists():
         raise SystemExit(f"[test_3] 缺 bank field_index.json: {path}")
@@ -183,10 +177,9 @@ def materialize_bank_subset(dataset: str, fields: list[str], out_pt_dir: Path | 
                             overwrite: bool = False, variant: str = "landmark_0") -> dict:
     """按字段索引切片 bank 嵌入矩阵 → {out_pt_dir}/{patient}.pt,零 CONCH 重编码。
 
-    variant ∈ {"landmark_0", "raw", "static_only"}(bank 变体 tag,见模块 docstring):
+    variant ∈ {"landmark_0", "raw"}(bank 变体 tag,见模块 docstring):
       landmark_0  = mask 开(去泄露口径,主)
       raw         = mask 关 + landmark_0 同字段集(时间轴 B_off 对照;规范 tag = no_mask)
-      static_only = 稳定字段子集(剔除 diagnoses[]/follow_ups[] 字段,字段集不同,勿与 raw 混用)
     """
     from greedy.clinic_evaluator import DEFAULT_CONCH_PYTHON
     from greedy.embeddings import materialize_subset_embeddings_with_python

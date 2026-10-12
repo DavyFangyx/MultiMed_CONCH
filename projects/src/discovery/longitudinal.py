@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from common.missingness import classify_raw_value
-from common.patient_universe import restrict_cases_to_label_universe
+from common.patient_set import restrict_cases_to_label_patients
 from common.paths import (
     DEFAULT_GPU,
     LONGITUDINAL_EXPERIMENT,
@@ -697,8 +697,8 @@ def run_longitudinal_field_bank(args):
                 get_dataset_clinic_files(name, datasets),
                 project_ids=get_dataset_project_ids(name, datasets),
             )
-            # 患者级前置过滤(2026-10-09 用户拍板):与 field bank 同 label 宇宙。
-            cases, _ = restrict_cases_to_label_universe(cases, name)
+            # 患者级前置过滤(2026-10-09 用户拍板):与 field bank 同 label 患者集。
+            cases, _ = restrict_cases_to_label_patients(cases, name)
             run_longitudinal_dataset(
                 dataset_name=name,
                 cfg=cfg,

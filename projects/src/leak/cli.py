@@ -20,7 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Test_2a 泄露审计（新口径，spec §2.1）：按 §2.4 绑定（HGCN_* 仅其对应癌种、"
-            "泛癌种 × 33 TCGA、剔除 CPTAC/MMRF，共 138 个组合）逐字段量化"
+            "泛癌种四方案；默认执行范围 = 数据集分档协议 14 主集、剔除 CPTAC/MMRF，"
+            "共 60 个组合）逐字段量化"
             "「实际进入模型的值来自 t_hi > 0 槽位」的患者比例（无训练，纯描述性统计）。"
             "取值直接走 A_pipeline 的 extract_values（无泄露处理），来源槽位时点用 "
             "src/time_stats.py 的 t_hi。"
@@ -30,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dataset",
         default="all",
-        help="数据集名（逗号分隔）或 all；默认 all = datasets.json 全部注册队列",
+        help="数据集名（逗号分隔）或 all；默认 all = 数据集分档协议 14 主集（与训练范围统一）；显式指定 = ad-hoc 审计该队列",
     )
     parser.add_argument(
         "--schemes",
@@ -58,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(BINDING_SPEC, BINDING_ALL),
         default=BINDING_SPEC,
         help=(
-            "spec = 按 spec §2.4 绑定（默认：HGCN_* 仅其癌种、泛癌种 × 33 TCGA）；"
+            "spec = 按 spec §2.4 绑定（默认：HGCN_* 仅其癌种、泛癌种四方案）；"
             "all = 放宽方案绑定（仅 ad-hoc 方案用）；两种模式都剔除 CPTAC/MMRF"
         ),
     )

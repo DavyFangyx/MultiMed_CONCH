@@ -84,8 +84,6 @@ python projects/scripts/run_field_filter.py --dataset all --write_templates --R3
 python projects/scripts/run_time_stats.py --dataset all
 ```
 
-`run_scan_json_field_dict.py` 和 `run_scan_fields.py` 等价。
-
 ---
 
 ## 1. 读入原始 JSON

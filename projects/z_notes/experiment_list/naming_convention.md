@@ -12,7 +12,7 @@
 
 | 处 | 旧名 | 新名 | 说明 |
 |---|---|---|---|
-| `Clinic_Analyzer/configs/` | `univariate` | `Test_1a_t0` | univariate t0 臂(Test_1a 的 t0 数据源;历史 33/33,全清后重跑范围 = 13 主集) |
+| `Clinic_Analyzer/configs/` | `univariate` | `Test_1a_t0` | univariate t0 臂(Test_1a 的 t0 数据源;历史 33/33,全清后重跑范围 = 主集) |
 | `Clinic_Analyzer/configs/` | `univariate_raw` | `Test_1a_off` | Test_1a off 臂 |
 | `Clinic_Analyzer/configs/` | `A_manual` | `Test_2b_arms` + `Test_3_arms` | 拆分:Test_2b 两臂 conf 归档到 `Test_2b_arms`;Test_3 臂 B/C conf 归 `Test_3_arms` |
 | `Clinic_Analyzer/configs/` | `E2_selection` | `Test_3_search` | Test_3 贪婪搜索队列 |
@@ -20,7 +20,7 @@
 | `results/` | `univariate` | `Test_1a/arm_t0` | |
 | `results/` | `univariate_raw` | `Test_1a/arm_off` | 内部 `univariate/prompt/...` 层由写入方构造,保留 |
 | `results/` | `leak_audit` | `Test_2a_leak_audit` | |
-| `results/` | `A_manual` | `Test_2b/arm_A` | 报告值(Test_4 三档来源;冻结 apipe 历史,待 report 臂 bank 重建替换,见 arm_registry) |
+| `results/` | `A_manual` | `Test_2b/arm_A` | 报告值(Test_4 三档来源;重跑期间 n/a——冻结历史不恢复,待 report 臂 bank 重建补齐,见 arm_registry) |
 | `results/` | `A_manual_landmark` | `Test_2b/arm_B` | 去泄露值(含 deleak 臂 Test_3_* 合并行;apipe 历史行冻结,见 arm_registry 磁盘落点映射) |
 | `results/` | `E2_selection` | `Test_3_search` | 搜索缓存 cache.sqlite |
 | `results/` | `greedy` `Test_2_selection` | `results/_archive/` | 遗留,空则删 |

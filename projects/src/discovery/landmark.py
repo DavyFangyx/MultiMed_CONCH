@@ -28,20 +28,6 @@ _FAMILY_PREFIXES = tuple(
     sorted(FAMILY_PATHS.items(), key=lambda item: len(item[1]), reverse=True)
 )
 
-# static_only 模式(2026-10-08)剔除的字段路径族:六个 timed family 全部挂在
-# diagnoses[] / follow_ups[] 两棵树下(FAMILY_PATHS),故按路径前缀判断即可,
-# 不需要逐字段清单。
-TIMED_FIELD_PATH_PREFIXES = ("diagnoses[]", "follow_ups[]")
-
-
-def is_timed_field_path(field_path: str) -> bool:
-    """字段路径是否属于 timed 家族(diagnoses[] / follow_ups[],含嵌套子层)。
-
-    static_only 字段集 = 从 kept_fields/模板字段中剔除本函数为真的字段。
-    """
-    return str(field_path or "").startswith(TIMED_FIELD_PATH_PREFIXES)
-
-
 def timed_family_for_field(field_path: str) -> tuple[str | None, str]:
     raw = str(field_path or "")
     for family, prefix in _FAMILY_PREFIXES:
@@ -100,7 +86,6 @@ def landmark_dir_tag(args) -> str:
     return build_landmark_tag(
         no_landmark=not use_landmark,
         landmark_time=landmark_time,
-        static_only=bool(getattr(args, "static_only", False)),
     )
 
 

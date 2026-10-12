@@ -350,7 +350,7 @@ def build_dataset_record(
         "n_event": n_event,
         "n_censored": _as_int((summary_row or {}).get("n_censored")),
         "n_unknown": _as_int((summary_row or {}).get("n_unknown")),
-        # 2026-10-09 口径: 协议 A 主集门槛 = n_event_label >= 100(label 宇宙有效事件)
+        # 2026-10-09 口径: 数据集分档协议主集门槛 = n_event_label >= 100(label 患者集有效事件)
         "n_label_patients": _as_int((summary_row or {}).get("n_label_patients")),
         "n_event_label": _as_int((summary_row or {}).get("n_event_label")),
         "n_censored_label": _as_int((summary_row or {}).get("n_censored_label")),

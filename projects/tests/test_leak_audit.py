@@ -593,6 +593,11 @@ def test_cli_writes_scheme_json_g1_json_and_summary(tmp_path, monkeypatch):
     monkeypatch.setattr(
         audit_module, "load_kept_fields_list", lambda name: [STAGE_FIELD]
     )
+    monkeypatch.setattr(
+        audit_module,
+        "main_datasets_by_label_events",
+        lambda threshold=100: ["TCGA-SYNTH"],
+    )
 
     out_dir = tmp_path / "leak_audit"
     code = main(
@@ -636,6 +641,11 @@ def test_cli_no_g1_skips_field_level_files(tmp_path, monkeypatch):
     from leak.cli import main
 
     monkeypatch.setattr(audit_module, "load_kept_fields_list", lambda name: [STAGE_FIELD])
+    monkeypatch.setattr(
+        audit_module,
+        "main_datasets_by_label_events",
+        lambda threshold=100: ["TCGA-SYNTH"],
+    )
     out_dir = tmp_path / "leak_audit"
     assert main(
         [
@@ -662,6 +672,11 @@ def test_outputs_are_byte_identical_on_rerun(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         audit_module, "load_kept_fields_list", lambda name: [STAGE_FIELD, AGE_FIELD]
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "main_datasets_by_label_events",
+        lambda threshold=100: ["TCGA-SYNTH"],
     )
     argv = [
         "--datasets_config", str(datasets_path),
@@ -716,6 +731,11 @@ def test_template_datasets_key_does_not_drive_the_binding(tmp_path, monkeypatch)
     from leak.cli import main
 
     monkeypatch.setattr(audit_module, "load_kept_fields_list", lambda name: None)
+    monkeypatch.setattr(
+        audit_module,
+        "main_datasets_by_label_events",
+        lambda threshold=100: ["TCGA-LUSC", "TCGA-KIRC"],
+    )
 
     out_dir = tmp_path / "leak_audit"
     code = main(

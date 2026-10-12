@@ -4,36 +4,30 @@
 收敛口径（实现层同构、结果层零变动）：
   * 队列原语早已统一（`src/greedy/queue.py` / `src/manual_pipeline/cindex.py` /
     `src/selection/queue.py`），本文件只合并三套"调用层"：同一组 verb
-    （enqueue / status / retry / recover / trim / drain / watch / report / summarize / list …），
+    （enqueue / status / retry / recover / trim / drain / report / summarize / list …），
     差异全部落在 ARM_REGISTRY 的每条臂记录里；
   * 每条臂的 drainer argv **逐字**保留旧脚本写法 —— argv 全字段进 job_key 哈希材料
     （greedy/queue.py 跳过 workers/device/conch_python/analyzer_python/queue_root +
     dataset/landmark_tag；selection/queue.py 跳过 queue_root/poll_seconds/max_jobs/workers
     + dataset/landmark_time），改一个字符就会造出新 conf / 孤儿；
-  * conf 名与内容由底层 primitives 决定，本文件不构造、不改写；
-  * 已退休脚本（s4_enqueue.py / s4_Test_2b_queue.sh / s5_univariate_enqueue.py /
-    s5_univariate_queue.sh / s5b_univariate_enqueue.py / s5b_univariate_queue.sh /
-    s5c_univariate_enqueue.py / Test_3_queue.sh / Test_5_queue.sh / Test_5_drain.py /
-    Test_5_scheduler.py）的每个 verb 在本文件都有等价姿势，见
-    `z_notes/experiment_list/usage.md` / `runbook.md`。
+  * conf 名与内容由底层 primitives 决定，本文件不构造、不改写。
 
 三个 backend（= 三套队列原语，臂记录里的 `backend` 字段选择）：
   univariate  greedy/queue.py         Test_1a t0 / off / merged 三臂
   cindex      manual_pipeline/cindex  Test_2b 波次切片 / Test_3 两臂 / Test_5 四个子检查
-  search      selection/queue.py      Test_3 搜索 / Test_6 试点（watch/drain 仍留在
+  search      selection/queue.py      Test_3 搜索 / Test_6 试点（动态槽位调度保留在
                                       Test_3_search_queue.py 与 t6_scheduler.sh，
-                                      动态槽位调度不并入本文件）
+                                      不并入本文件）
 
 用法（projects/ 根目录，base python3；训练由各 drainer 自行拉起）：
   python3 scripts/exp_queue.py list                              # 臂注册表
   python3 scripts/exp_queue.py status --arm all                  # 全家族一屏
   python3 scripts/exp_queue.py enqueue --arm test_1a_t0          # 投放（幂等）
   python3 scripts/exp_queue.py enqueue --arm test_2b --slice A1  # 波次切片
-  python3 scripts/exp_queue.py drain --arm test_1a_off --gpu 7   # 起 drainer
-  python3 scripts/exp_queue.py watch --arm test_1a_off --gpus 7  # 自愈循环（前台）
+  python3 scripts/exp_queue.py drain --arm test_1a_t0 --gpus 7 --workers 8   # 起 drainer 并守到完成
   python3 scripts/exp_queue.py scheduler                         # Test_5 多卡调度（GPU 0-3）
   python3 scripts/exp_queue.py recover --arm test_3_search       # running 悬挂回收
-外壳 `scripts/exp_queue.sh` 负责环境变量前缀透传与 nohup 包装（后台守候用）。
+外壳 `scripts/exp_queue.sh` 负责环境变量前缀透传与 scheduler/bank 后台包装。
 """
 from __future__ import annotations
 
@@ -63,7 +57,7 @@ SCRIPTS = ROOT / "scripts"
 OUTPUTS = ROOT / "outputs"
 RESULTS = ROOT / "results"
 MANIFEST_CSV = RESULTS / "Test_0_dataset_availability" / "manifest.csv"
-MAIN_N_EVENT_MIN = 100          # R13：训练范围 = label 宇宙有效事件 >= 100 的 TCGA 主集（2026-10-09 口径）
+MAIN_N_EVENT_MIN = 100          # R13：训练范围 = label 患者集有效事件 >= 100 的 TCGA 主集（2026-10-09 口径）
 MAX_RETRIES = 3
 BUCKETS = ("queue", "running", "done", "failed")
 UNI_BUCKETS = ("queue", "running", "done", "failed")
@@ -76,11 +70,11 @@ T6_WORKERS = 8
 
 
 # ===========================================================================
-# 数据集名单（R13：label 宇宙有效事件派生，不硬编码；2026-10-09 口径）
+# 数据集名单（R13：label 患者集有效事件派生，不硬编码；2026-10-09 口径）
 # ===========================================================================
 
 def main_datasets_from_manifest() -> list[str]:
-    from common.patient_universe import main_datasets_by_label_events
+    from common.patient_set import main_datasets_by_label_events
 
     return main_datasets_by_label_events(threshold=MAIN_N_EVENT_MIN)
 
@@ -94,7 +88,7 @@ def datasets_for(arm: "Arm", override: str | None = None) -> list[str]:
         if not names:
             raise SystemExit("[exp_queue] --datasets 为空")
         return names
-    if arm.dataset_source == "main13":
+    if arm.dataset_source == "main":
         return main_datasets_from_manifest()
     raise SystemExit(f"[exp_queue] 臂 {arm.name} 的 dataset_source 未实现: {arm.dataset_source}")
 
@@ -104,8 +98,8 @@ def datasets_for(arm: "Arm", override: str | None = None) -> list[str]:
 # ===========================================================================
 
 def env_path(arm: "Arm", key: str, default: str) -> Path:
-    """带臂前缀的环境变量覆盖（S5B_PID_DIR / S5C_DRAIN_LOG …），同旧脚本。"""
-    return Path(os.environ.get(f"{arm.env}{key}", default))
+    """路径类配置:只取默认值(统一简单化,不再按臂前缀做环境变量覆盖)。"""
+    return Path(default)
 
 
 def pid_alive(pid: int) -> bool:
@@ -118,21 +112,8 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def log_line(arm: "Arm", msg: str, *, watch_log: Path | None = None) -> None:
-    line = f"[{arm.tag}][{datetime.now().strftime('%F_%T')}] {msg}"
-    print(line, flush=True)
-    if watch_log is None:
-        return
-    try:
-        watch_log.parent.mkdir(parents=True, exist_ok=True)
-        with watch_log.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except OSError:
-        pass
-
-
-def bucket_counts(root: Path, buckets=BUCKETS) -> dict[str, int]:
-    return {b: (len(list((root / b).glob("*.conf"))) if (root / b).is_dir() else 0)
+def bucket_counts(root: Path, buckets=BUCKETS, prefix: str = "") -> dict[str, int]:
+    return {b: (len(list((root / b).glob(f"{prefix}*.conf"))) if (root / b).is_dir() else 0)
             for b in buckets}
 
 
@@ -178,10 +159,9 @@ def pid_from_file(path: Path) -> int:
 class Arm:
     name: str
     backend: str                    # univariate | cindex | search
-    tag: str                        # 日志前缀（沿用旧脚本，便于与历史 log 对照）
+    tag: str                        # 日志前缀
     queue_root: Path
-    env: str                        # 环境变量前缀（S5_/S5B_/S5C_/S4_/T3_/T5_/T6_）
-    dataset_source: str = "main13"
+    dataset_source: str = "main"
     results_root: Path | None = None
     field_csv_root: Path | None = None          # report/status 产物根（univariate）
     drainer_argv: Callable[..., list[str]] | None = None
@@ -189,12 +169,10 @@ class Arm:
     drain_mode: str = ""                        # spawn_legacy | inprocess
     pid_dir_default: str = ""
     drain_log_default: str = ""
-    watch_log_default: str = ""
     report_json: Path | None = None             # 最终 report 落盘（旧脚本口径）
     sub: str | None = None                      # Test_5 子检查
     variants: tuple[str, ...] = ()               # Test_3 两臂：b/ksig/best
     workers_default: int = 8
-    workers_env: str = "WORKERS"
     gpus_default: str = ""
     nice_level: int = 0                          # 旧 Test_5 壳整体 nice -n 10；其余家族为 0
     extras: dict = field(default_factory=dict)
@@ -209,20 +187,16 @@ class Arm:
     def drain_log(self) -> Path:
         return env_path(self, "DRAIN_LOG", self.drain_log_default)
 
-    @property
-    def watch_log(self) -> Path:
-        return env_path(self, "WATCH_LOG", self.watch_log_default)
-
 
 # --- univariate：Test_1a 三臂 -------------------------------------------------
 
-# t0：greedy/queue.py 默认队列根（argv 不带 --queue_root，逐字同 s5_univariate_enqueue.py）
+# t0：greedy/queue.py 默认队列根（argv 不带 --queue_root）
 _ARM_T0 = Arm(
-    name="test_1a_t0", backend="univariate", tag="s5", env="S5_",
+    name="test_1a_t0", backend="univariate", tag="t0",
     queue_root=config_family_dir("Test_1a_t0"),
     results_root=test_results_dir("Test_1a/arm_t0"),
     field_csv_root=test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0",
-    dataset_source="main13",
+    dataset_source="main",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -232,20 +206,19 @@ _ARM_T0 = Arm(
         "--seed", "0",
         "--workers", str(workers),
     ],
-    pid_dir_default="/tmp/s5_univariate",
-    drain_log_default="/tmp/s5_drain.log",
-    watch_log_default="/tmp/s5_watch.log",
-    workers_default=8, workers_env="WORKERS", gpus_default="2,3,4",
-    note="landmark_0 全字段（原 s5）：mask 开 + outputs/ 正式 bank",
+    pid_dir_default="/tmp/test_1a_t0_univariate",
+    drain_log_default="/tmp/test_1a_t0_drain.log",
+    workers_default=8, gpus_default="2,3,4",
+    note="landmark_0 全字段：mask 开 + outputs/ 正式 bank",
 )
 
-# off：raw 变体（mask off + 患者集显式 landmark_0 + 三根目录改道），逐字同 s5b
+# off：raw 变体（mask off + 患者集显式 landmark_0 + 三根目录改道）
 _ARM_OFF = Arm(
-    name="test_1a_off", backend="univariate", tag="s5b", env="S5B_",
+    name="test_1a_off", backend="univariate", tag="off",
     queue_root=config_family_dir("Test_1a_off"),
     results_root=test_results_dir("Test_1a/arm_off"),
     field_csv_root=test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / LANDMARK_OFF_TAG,
-    dataset_source="main13",
+    dataset_source="main",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -263,23 +236,22 @@ _ARM_OFF = Arm(
     ],
     pid_dir_default="/tmp/test_1a_off",
     drain_log_default="/tmp/test_1a_off_drain.log",
-    watch_log_default="/tmp/s5b_watch.log",
-    report_json=test_results_dir("Test_1a/arm_off") / "_s5b_report.json",
-    workers_default=8, workers_env="WORKERS", gpus_default="7",
+    report_json=test_results_dir("Test_1a/arm_off") / "_test_1a_off_report.json",
+    workers_default=8, gpus_default="7",
     extras={"bank_script": "build_raw_field_bank.py",
             "bank_root": OUTPUTS / "_raw", "bank_tag": LANDMARK_OFF_TAG,
             "enc_gpu_default": "7", "build_log_default": "/tmp/raw_bank_build.log"},
-    note="off（原 s5b）：extraction_mask off + outputs/_raw bank",
+    note="off：extraction_mask off + outputs/_raw bank",
 )
 
-# merged：t0 语义 + bank 改道 outputs/_merged，逐字同 s5c
+# merged：t0 语义 + bank 改道 outputs/_merged
 _ARM_MERGED = Arm(
-    name="test_1a_merged", backend="univariate", tag="s5c", env="S5C_",
+    name="test_1a_merged", backend="univariate", tag="merged",
     queue_root=config_family_dir("Test_1a_t0_merged"),
     results_root=test_results_dir("Test_1a/arm_t0_merged"),
     field_csv_root=(test_results_dir("Test_1a/arm_t0_merged") / "univariate" / "prompt"
                     / "landmark_0"),
-    dataset_source="main13",
+    dataset_source="main",
     drainer_script="run_univariate_cindex.py",
     drainer_argv=lambda datasets, *, workers: [
         "--dataset", ",".join(datasets),
@@ -293,19 +265,18 @@ _ARM_MERGED = Arm(
         "--seed", "0",
         "--workers", str(workers),
     ],
-    pid_dir_default="/tmp/s5c_univariate",
+    pid_dir_default="/tmp/test_1a_merged_univariate",
     drain_log_default="/tmp/test_1a_merged_drain.log",
-    watch_log_default="/tmp/s5c_watch.log",
-    report_json=test_results_dir("Test_1a/arm_t0_merged") / "_s5c_report.json",
-    workers_default=8, workers_env="WORKERS", gpus_default="1",
-    note="merged t0（原 s5c）：landmark_0 + outputs/_merged bank",
+    report_json=test_results_dir("Test_1a/arm_t0_merged") / "_test_1a_merged_report.json",
+    workers_default=8, gpus_default="1",
+    note="merged t0：landmark_0 + outputs/_merged bank",
 )
 
 # --- cindex：Test_2b 波次切片 ------------------------------------------------
 
-# drainer 逐字同 s4_Test_2b_queue.sh cmd_drain（run_a_manual.py cindex，BRCA conf 已在 done/）
+# drainer 逐字同旧 Test_2b 队列 cmd_drain（run_a_manual.py cindex，BRCA conf 已在 done/）
 _ARM_2B = Arm(
-    name="test_2b", backend="cindex", tag="S4", env="S4_",
+    name="test_2b", backend="cindex", tag="2b",
     queue_root=config_family_dir("Test_2b_arms"),
     results_root=test_results_dir("Test_2b"),
     dataset_source="slice_grid",
@@ -320,30 +291,30 @@ _ARM_2B = Arm(
         "--workers", str(workers),
         "--queue_root", str(config_family_dir("Test_2b_arms")),
     ],
-    workers_default=8, workers_env="WORKERS", gpus_default="5",
+    workers_default=8, gpus_default="5",
     extras={"slices": ("A1", "A1H", "B1", "B1H", "A2", "A2H", "B2", "B2H",
                        "A3", "A3H", "B3", "B3H"),
             "wave_order": ("A1", "A1H", "B1", "B1H", "A2", "B2", "A3", "B3"),
-            # 2026-10-09 bank 口径: 55 combos(13 主集 × 4 泛癌种 + 3 HGCN 绑定)
-            # × 2 臂(A report raw 变体切片 / B deleak Test_3 切片) × 2 分析器 = 220
-            "done_expected": 220,
-            "cindex_results_root": None,          # 逐字同 s4_enqueue.py（None = cindex 默认）
+            # 2026-10-09 bank 口径: 60 combos(14 主集 × 4 泛癌种 + 4 HGCN 绑定)
+            # × 2 臂(A report raw 变体切片 / B deleak Test_3 切片) × 2 分析器 = 240
+            "done_expected": 240,
+            "cindex_results_root": None,          # None = cindex 默认
             "log_dir": test_results_dir("Test_2b") / "logs",
             "conda_env_default": "conch", "encode_parallel_default": "2",
             "encode_list_default": "/tmp/s4_encode_queue.tsv"},
-    note="Test_2b 网格（label 宇宙有效事件四档；主集 = 13，bank 切片口径，改造不重跑 T39 补）",
+    note="Test_2b 网格（label 患者集有效事件四档；主集 = 14，bank 切片口径，改造不重跑 T39 补）",
 )
 
 # --- cindex：Test_3 两臂 ----------------------------------------------------
 
 _ARM_3ARMS = Arm(
-    name="test_3_arms", backend="cindex", tag="test_3", env="T3_",
+    name="test_3_arms", backend="cindex", tag="test_3",
     queue_root=config_family_dir("Test_3_arms"),
     results_root=RESULTS / "Test_3_greedy_vs_works",
-    dataset_source="main13",
+    dataset_source="main",
     drain_mode="inprocess",
     variants=("b", "ksig", "best"),
-    workers_default=2, workers_env="WORKERS", gpus_default="1",
+    workers_default=2, gpus_default="1",
     extras={"cindex_results_root": RESULTS,      # 逐字同 Test_3_arms._cindex_jobs
             "arm_b_results": test_results_dir("Test_2b/arm_B"),
             "log_root": RESULTS / "Test_3_greedy_vs_works" / "logs"},
@@ -355,13 +326,13 @@ _ARM_3ARMS = Arm(
 
 def _t5_arm(sub: str, note: str) -> Arm:
     return Arm(
-        name=f"test_5_{sub}", backend="cindex", tag="test_5", env="T5_",
+        name=f"test_5_{sub}", backend="cindex", tag="test_5",
         queue_root=config_family_dir(f"Test_5_{sub}"),
         results_root=RESULTS / "Test_5_invariance" / sub,
-        dataset_source="main13",
+        dataset_source="main",
         drain_mode="inprocess",
         sub=sub,
-        workers_default=1, workers_env="WORKERS", gpus_default="1",
+        workers_default=1, gpus_default="1",
         nice_level=10,                    # 逐字同旧 Test_5_queue.sh（所有子命令 nice -n 10）
         extras={"summarize_script": "Test_5_summarize.py",
                 "log_root": RESULTS / "Test_5_invariance" / "logs"},
@@ -371,7 +342,7 @@ def _t5_arm(sub: str, note: str) -> Arm:
 
 _ARM_5E_2B = _t5_arm("5E_2b", "E→baseline 复现 Test_2b 臂对 {report/deleak} × mlp_clinic_flatten")
 _ARM_5E_3 = _t5_arm("5E_3", "E→baseline 复现 Test_3 臂对 {deleak/reach}")
-_ARM_5M_2B = _t5_arm("5M_2b", "M→snn_clinic_flatten（多模态 4 集默认 parked）复现 Test_2b 臂对")
+_ARM_5M_2B = _t5_arm("5M_2b", "M→snn_clinic_flatten（多模态 3 集 BRCA/LIHC/KIRC 默认 parked）复现 Test_2b 臂对")
 _ARM_5M_3 = _t5_arm("5M_3", "M→clinic_cox 复现 Test_3 臂对 {deleak/reach}")
 
 # --- search：Test_3 搜索 / Test_6 试点 ---------------------------------------
@@ -417,11 +388,11 @@ def t6_search_argv(dataset: str, algo: str, workers: int | None = None) -> list[
 
 
 _ARM_T3_SEARCH = Arm(
-    name="test_3_search", backend="search", tag="test_3", env="T3_",
+    name="test_3_search", backend="search", tag="test_3",
     queue_root=config_family_dir("Test_3_search"),
     results_root=RESULTS / "Test_3_greedy_vs_works",
-    dataset_source="main13",
-    workers_default=16, workers_env="SEARCH_WORKERS", gpus_default="1,0,3,4,5,6,4,5,3",
+    dataset_source="main",
+    workers_default=16, gpus_default="1,0,3,4,5,6,4,5,3",
     extras={"landmark": "0", "argv": t3_search_argv,
             "report_out": RESULTS / "Test_3_greedy_vs_works" / "search_summary.csv",
             "watch_script": "Test_3_search_queue.py",
@@ -430,11 +401,11 @@ _ARM_T3_SEARCH = Arm(
 )
 
 _ARM_T6_SEARCH = Arm(
-    name="test_6_search", backend="search", tag="test_6", env="T6_",
+    name="test_6_search", backend="search", tag="test_6",
     queue_root=config_family_dir("Test_6_search"),
     results_root=RESULTS / "Test_6_search",
     dataset_source="t6_grid",
-    workers_default=T6_WORKERS, workers_env="WORKERS", gpus_default="0,1,2,3",
+    workers_default=T6_WORKERS, gpus_default="0,1,2,3",
     extras={"landmark": "0", "argv": t6_search_argv,
             "report_script": "run_bakeoff_report.py",
             "report_argv": ["--results-root", "results/Test_6_search/prompt",
@@ -495,22 +466,24 @@ def resolve_arms(names: list[str] | None) -> list[Arm]:
 def workers_for(arm: Arm, opts) -> int:
     if opts.workers is not None:
         return max(1, int(opts.workers))
-    env_value = os.environ.get(f"{arm.env}{arm.workers_env}")
+    env_value = os.environ.get("WORKERS")
     if env_value:
         try:
             return max(1, int(env_value))
         except ValueError:
             pass
-    return max(1, int(arm.workers_default))
+    return max(1, int(arm.workers_default or 1))
 
 
 def gpus_for(arm: Arm, opts) -> list[str]:
     if opts.gpus:
         return parse_csv_list(opts.gpus)
-    env_value = os.environ.get(f"{arm.env}GPUS") or os.environ.get(f"{arm.env}GPU")
+    env_value = os.environ.get("CUDA_VISIBLE_DEVICES")
     if env_value:
         return parse_csv_list(env_value)
-    default = arm.gpus_default or (opts.gpu or "")
+    if opts.gpu:
+        return [str(opts.gpu)]
+    default = arm.gpus_default or ""
     return parse_csv_list(default)
 
 
@@ -590,8 +563,9 @@ def cmd_uni_retry(arm: Arm, opts) -> None:
             state = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
             state = {}
+    key = uni_key(arm, datasets_for(arm, opts.datasets), workers_for(arm, opts))
     moved = skipped = 0
-    for path in sorted((root / "failed").glob("*.conf")):
+    for path in sorted((root / "failed").glob(f"{key}__*.conf")):
         name = path.name
         tries = int(state.get(name, 0))
         if tries >= max_retries:
@@ -617,8 +591,9 @@ def cmd_uni_recover(arm: Arm, opts) -> int:
 
     root = arm.queue_root
     ensure_queue_dirs(root)
+    key = uni_key(arm, datasets_for(arm, opts.datasets), workers_for(arm, opts))
     recovered = 0
-    for path in sorted((root / "running").glob("*.conf")):
+    for path in sorted((root / "running").glob(f"{key}__*.conf")):
         try:
             job = load_job(path)
         except Exception:
@@ -655,8 +630,9 @@ def cmd_uni_trim(arm: Arm, opts) -> None:
     current = set(datasets_for(arm, opts.datasets))
     parked.mkdir(parents=True, exist_ok=True)
     moved = 0
+    key = uni_key(arm, datasets_for(arm, opts.datasets), workers_for(arm, opts))
     for bucket in ("queue", "running", "failed"):
-        for path in sorted((root / bucket).glob("*.conf")):
+        for path in sorted((root / bucket).glob(f"{key}__*.conf")):
             if uni_dataset_from_conf(path) in current:
                 continue
             dest = parked / path.name
@@ -678,7 +654,7 @@ def uni_start_drainer(arm: Arm, datasets: list[str], gpu: str, workers: int) -> 
     env["OMP_NUM_THREADS"] = env.get("OMP_NUM_THREADS", "2")
     env["OPENBLAS_NUM_THREADS"] = env.get("OPENBLAS_NUM_THREADS", "1")
     env["MKL_NUM_THREADS"] = env.get("MKL_NUM_THREADS", "1")
-    python_exe = os.environ.get(f"{arm.env}PYTHON3", "python3")
+    python_exe = os.environ.get("PYTHON3", "python3")
     pid = spawn(python_exe,
                 [str(SCRIPTS / arm.drainer_script), *arm.drainer_argv(datasets, workers=workers)],
                 log_path=arm.drain_log, pid_path=pid_dir / f"gpu{gpu}.pid", env=env)
@@ -689,23 +665,24 @@ def uni_drainer_alive(arm: Arm, gpu: str) -> bool:
     return pid_alive(pid_from_file(arm.pid_dir / f"gpu{gpu}.pid"))
 
 
-def cmd_uni_drain(arm: Arm, opts) -> None:
+def cmd_uni_drain(arm: Arm, opts) -> int:
+    """起 drainer 并守到完成：recover + retry + 死进程补位 + 全 done 出 report 退出。
+
+    一条 drain 命令 = 完整跑完一批（原 watch 自愈循环并入；不再有独立 watch verb）。
+    """
     datasets = datasets_for(arm, opts.datasets)
     workers = workers_for(arm, opts)
-    for gpu in gpus_for(arm, opts):
+    gpus = gpus_for(arm, opts)
+    expected = len(datasets)
+    key = uni_key(arm, datasets, workers)
+    interval = max(1, int(opts.interval or 60))
+    counts = uni_counts(arm, key)
+    if sum(counts.values()) == 0:
+        print(f"[{arm.tag}] 无任务(桶全空;先 enqueue)")
+        return 0
+    for gpu in gpus:
         pid = uni_start_drainer(arm, datasets, gpu, workers)
         print(f"[{arm.tag}] drainer GPU {gpu} PID {pid} (log {arm.drain_log})")
-
-
-def cmd_uni_watch(arm: Arm, opts) -> None:
-    """自愈循环：recover + retry + 重启死掉的 drainer；全部 done 后 report 并退出。"""
-    datasets = datasets_for(arm, opts.datasets)
-    expected = len(datasets)
-    gpus = gpus_for(arm, opts)
-    workers = workers_for(arm, opts)
-    key = uni_key(arm, datasets, workers)
-    log_line(arm, f"watch start key={key} expected={expected} gpus={','.join(gpus)} "
-                  f"workers={workers}", watch_log=arm.watch_log)
     last_status = 0.0
     while True:
         cmd_uni_recover(arm, opts)
@@ -715,21 +692,19 @@ def cmd_uni_watch(arm: Arm, opts) -> None:
             for gpu in gpus:
                 if not uni_drainer_alive(arm, gpu):
                     pid = uni_start_drainer(arm, datasets, gpu, workers)
-                    log_line(arm, f"relaunch drainer GPU {gpu} PID {pid} "
-                                  f"(queue={counts['queue']} running={counts['running']})",
-                             watch_log=arm.watch_log)
+                    print(f"[{arm.tag}] relaunch drainer GPU {gpu} PID {pid} "
+                          f"(queue={counts['queue']} running={counts['running']})", flush=True)
         now = time.time()
         if now - last_status >= 300:
-            log_line(arm, f"status queue={counts['queue']} running={counts['running']} "
-                          f"done={counts['done']} failed={counts['failed']}",
-                     watch_log=arm.watch_log)
+            print(f"[{arm.tag}] status queue={counts['queue']} running={counts['running']} "
+                  f"done={counts['done']} failed={counts['failed']}", flush=True)
             last_status = now
-        if counts["done"] >= expected and counts["queue"] == 0 and counts["running"] == 0:
-            log_line(arm, f"ALL {expected} done", watch_log=arm.watch_log)
+        if counts["queue"] == 0 and counts["running"] == 0 \
+                and counts["done"] + counts["failed"] >= expected:
+            print(f"[{arm.tag}] finish done={counts['done']} failed={counts['failed']}")
             cmd_uni_report(arm, opts)
-            log_line(arm, "watch exit", watch_log=arm.watch_log)
-            return
-        time.sleep(max(1, int(opts.interval)))
+            return 0 if counts["failed"] == 0 else 1
+        time.sleep(interval)
 
 
 def cmd_uni_report(arm: Arm, opts) -> None:
@@ -770,9 +745,9 @@ def cmd_uni_report(arm: Arm, opts) -> None:
 
 def cmd_uni_bank(arm: Arm, opts) -> int:
     """raw Field Bank 构建（原 s5b_univariate_queue.sh bank；conch env，已存在即跳过）。"""
-    conch_python = os.environ.get(f"{arm.env}CONCH_PYTHON",
+    conch_python = os.environ.get(f"{""}CONCH_PYTHON",
                                   "/data/fangyuxuan/miniconda3/envs/conch/bin/python")
-    enc_gpu = os.environ.get(f"{arm.env}ENC_GPU", arm.extras.get("enc_gpu_default", "7"))
+    enc_gpu = os.environ.get(f"{""}ENC_GPU", arm.extras.get("enc_gpu_default", "7"))
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(enc_gpu)
     argv = [str(SCRIPTS / arm.extras["bank_script"]), "--dataset", "all"]
@@ -820,8 +795,8 @@ def load_all_schemes() -> None:
 
 # --- Test_2b 波次切片（逐字移植 scripts/s4_enqueue.py）-----------------------
 
-S4_PAN_CANCER_SCHEMES = ["MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN"]
-S4_HGCN_BINDING = {
+T2B_PAN_CANCER_SCHEMES = ["MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN"]
+T2B_HGCN_BINDING = {
     "TCGA-KIRC": "HGCN_KIRC",
     "TCGA_LIHC": "HGCN_LIHC",
     "TCGA-ESCA": "HGCN_ESCA",
@@ -829,15 +804,15 @@ S4_HGCN_BINDING = {
     "TCGA-LUAD": "HGCN_LUAD",
     "TCGA-UCEC": "HGCN_UCEC",
 }
-S4_ANALYZERS = ["clinic_cox", "mlp_clinic_flatten"]
-S4_ENCODING = "text"
-S4_ARMS = {"A": "none", "B": "0"}
+T2B_ANALYZERS = ["clinic_cox", "mlp_clinic_flatten"]
+T2B_ENCODING = "text"
+T2B_ARMS = {"A": "none", "B": "0"}
 
 
 def s4_load_waves() -> tuple[dict[str, list[str]], set[str]]:
-    """四档分层与主集名单,计数 = label 宇宙有效事件(2026-10-09 口径,同 T39)。
+    """四档分层与主集名单,计数 = label 患者集有效事件(2026-10-09 口径,同 T39)。
 
-    主集 = n_event_label >= MAIN_N_EVENT_MIN(13 个);波次分层同列
+    主集 = n_event_label >= MAIN_N_EVENT_MIN(名单自动派生,当前 14 主集);波次分层同列
     (70-100 带 CI / 30-70 补充 / <30 定性)。
     """
     waves: dict[str, list[str]] = {"1": [], "2": [], "3": []}
@@ -860,7 +835,7 @@ def s4_load_waves() -> tuple[dict[str, list[str]], set[str]]:
 
 def s4_slice_spec(slice_name: str, waves, mains) -> tuple[str, str, list[tuple[str, str]]]:
     arm = slice_name[0].upper()
-    if arm not in S4_ARMS:
+    if arm not in T2B_ARMS:
         raise SystemExit(f"未知 slice: {slice_name}（形如 A1 / A1H / B2 / B3H）")
     hgcn = slice_name.endswith("H")
     wave = slice_name[1:2]
@@ -868,13 +843,13 @@ def s4_slice_spec(slice_name: str, waves, mains) -> tuple[str, str, list[tuple[s
         raise SystemExit(f"未知 slice: {slice_name}")
     combos: list[tuple[str, str]] = []
     if hgcn:
-        for dataset, scheme in sorted(S4_HGCN_BINDING.items()):
+        for dataset, scheme in sorted(T2B_HGCN_BINDING.items()):
             if dataset in waves[wave] and dataset in mains:
                 combos.append((dataset, scheme))
     else:
         for dataset in waves[wave]:
             if dataset in mains:
-                for scheme in S4_PAN_CANCER_SCHEMES:
+                for scheme in T2B_PAN_CANCER_SCHEMES:
                     combos.append((dataset, scheme))
     return arm, wave, combos
 
@@ -895,7 +870,7 @@ def s4_jobs_for_combos(arm: Arm, combos: list[tuple[str, str]]) -> list[dict]:
     slice_arm = combos[0][2] if combos and len(combos[0]) > 2 else None
     if slice_arm is None:
         raise SystemExit("[exp_queue] s4 combos 缺少臂字母(应为 (dataset, scheme, arm))")
-    landmark = parse_landmark_setting(S4_ARMS[slice_arm])
+    landmark = parse_landmark_setting(T2B_ARMS[slice_arm])
     all_jobs: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for dataset, work, *_ in combos:
@@ -910,8 +885,9 @@ def s4_jobs_for_combos(arm: Arm, combos: list[tuple[str, str]]) -> list[dict]:
                 schemes=[scheme_name],
                 datasets=load_dataset_configs(ROOT / "datasets.json"),
                 baseline_out=str(OUTPUTS),
-                encoding=S4_ENCODING,
-                modalities=S4_ANALYZERS,
+                encoding=T2B_ENCODING,
+                modalities=T2B_ANALYZERS,
+                conf_prefix="t2b__",
                 results_root=arm.extras["cindex_results_root"],
                 landmark_tag=landmark.arm_tag,
                 landmark_time=landmark.landmark_time,
@@ -950,7 +926,7 @@ def cmd_2b_enqueue(arm: Arm, opts) -> None:
         allow = set(datasets_for(arm, opts.datasets))
         combos = [c for c in combos if c[0] in allow]
     print(f"[{arm.tag}] slice={opts.slice} arm={letter}({'report raw 切片' if letter == 'A' else 'deleak lm0 切片'}) "
-          f"wave={wave} combos={len(combos)} confs_expected={len(combos) * len(S4_ANALYZERS)}")
+          f"wave={wave} combos={len(combos)} confs_expected={len(combos) * len(T2B_ANALYZERS)}")
     jobs = s4_jobs_for_combos(arm, combos)
     queued = enqueue_cindex_jobs(jobs, queue_root=str(arm.queue_root))
     print(f"[{arm.tag}] queue={queued['root']} created={len(queued['created'])} "
@@ -970,7 +946,7 @@ def cmd_2b_summarize(arm: Arm, opts) -> None:
         if opts.datasets:
             allow = set(datasets_for(arm, opts.datasets))
             combos = [c for c in combos if c[0] in allow]
-        landmark = parse_landmark_setting(S4_ARMS[letter])
+        landmark = parse_landmark_setting(T2B_ARMS[letter])
         jobs = s4_jobs_for_combos(arm, combos)
         by_dataset: dict[str, list[dict]] = {}
         for job in jobs:
@@ -982,8 +958,8 @@ def cmd_2b_summarize(arm: Arm, opts) -> None:
                 dataset_name=dataset,
                 jobs=dataset_jobs,
                 results_root=arm.extras["cindex_results_root"],
-                encoding=S4_ENCODING,
-                modality=",".join(S4_ANALYZERS),
+                encoding=T2B_ENCODING,
+                modality=",".join(T2B_ANALYZERS),
                 landmark_tag=landmark.arm_tag,
             )
 
@@ -1013,7 +989,7 @@ def s4_emit_encodes(arm: Arm) -> list[str]:
                 _, _, combos = s4_slice_spec(f"{letter}{wave}{prefix}", waves, mains)
                 for dataset, work in combos:
                     if not s4_encodes_exist(dataset, work, letter):
-                        lines.append(f"{wave}|{dataset}|{work}|{letter}|{S4_ARMS[letter]}")
+                        lines.append(f"{wave}|{dataset}|{work}|{letter}|{T2B_ARMS[letter]}")
     return lines
 
 
@@ -1036,8 +1012,8 @@ def cmd_2b_list(arm: Arm, opts) -> None:
                 missing = [(d, s) for d, s in combos if not s4_encodes_exist(d, s, letter)]
                 total += len(combos)
                 print(f"  slice {name}: {len(combos)} combos, encodes missing {len(missing)}")
-    print(f"total combos: {total} (label 宇宙有效事件 ≥ {MAIN_N_EVENT_MIN} 主集 = {len(mains)} 个, "
-          f"含 A/B 两臂; confs = {total} x {len(S4_ANALYZERS)} analyzers = {total * len(S4_ANALYZERS)})")
+    print(f"total combos: {total} (label 患者集有效事件 ≥ {MAIN_N_EVENT_MIN} 主集 = {len(mains)} 个, "
+          f"含 A/B 两臂; confs = {total} x {len(T2B_ANALYZERS)} analyzers = {total * len(T2B_ANALYZERS)})")
     print("注: 臂 A(raw 变体切片)与臂 B(landmark_0 切片)的编码由 cmd_2b_encode / Test_3 链提供;"
           "历史 apipe 结果表已随 T35 全清、不再恢复(用户拍板)。")
 
@@ -1045,10 +1021,10 @@ def cmd_2b_list(arm: Arm, opts) -> None:
 def cmd_2b_status(arm: Arm, opts) -> None:
     root = arm.queue_root
     for bucket in ("queue", "running", "done", "failed"):
-        print(f"{bucket}: {bucket_counts(root)[bucket]}")
+        print(f"{bucket}: {bucket_counts(root, prefix='t2b__')[bucket]}")
     done_all = len(list((root / "done").glob("*.conf"))) if (root / "done").is_dir() else 0
     print(f"done (all confs): {done_all} / expected {int(arm.extras['done_expected'])}")
-    encode_list = Path(os.environ.get(f"{arm.env}ENCODE_LIST",
+    encode_list = Path(os.environ.get(f"{""}ENCODE_LIST",
                                       arm.extras["encode_list_default"]))
     if encode_list.exists():
         rows = [line for line in encode_list.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -1094,90 +1070,27 @@ def cmd_2b_encode(arm: Arm, opts) -> int:
     return 0
 
 
-def s4_start_drainer(arm: Arm, opts) -> int:
+def t2b_start_drainer(arm: Arm, opts) -> int:
     log_dir = env_path(arm, "LOG_DIR", str(arm.extras["log_dir"]))
     log_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(gpus_for(arm, opts)[0])
-    python_exe = os.environ.get(f"{arm.env}PYTHON3", "python3")
+    env["CINDEX_CONF_PREFIX"] = "t2b__"
+    python_exe = os.environ.get("PYTHON3", "python3")
     return spawn(python_exe,
                  [str(SCRIPTS / arm.drainer_script), "cindex",
                   *arm.drainer_argv(workers=workers_for(arm, opts))],
-                 log_path=log_dir / "S4_drain.log",
-                 pid_path=log_dir / "S4_drain.pid", env=env)
+                 log_path=log_dir / "T2B_drain.log",
+                 pid_path=log_dir / "T2B_drain.pid", env=env)
 
 
 def cmd_2b_drain(arm: Arm, opts) -> None:
-    pid = s4_start_drainer(arm, opts)
+    pid = t2b_start_drainer(arm, opts)
     gpu = gpus_for(arm, opts)[0]
     log_dir = env_path(arm, "LOG_DIR", str(arm.extras["log_dir"]))
     print(f"[{arm.tag}] drainer PID: {pid}  (GPU {gpu}, workers {workers_for(arm, opts)}, "
-          f"log: {log_dir / 'S4_drain.log'})")
+          f"log: {log_dir / 'T2B_drain.log'})")
     print(f"[{arm.tag}] stop: kill {pid}")
-
-
-def cmd_2b_watch(arm: Arm, opts) -> None:
-    """波次优先级自愈循环（原 s4_Test_2b_queue.sh watch）。"""
-    root = arm.queue_root
-    log_dir = env_path(arm, "LOG_DIR", str(arm.extras["log_dir"]))
-    log_dir.mkdir(parents=True, exist_ok=True)
-    watch_log = log_dir / "S4_watch.log"
-    summary_log = log_dir / "S4_summary.log"
-    expected = int(arm.extras["done_expected"])
-    interval = max(5, int(opts.interval or 60))
-
-    def note(msg: str) -> None:
-        print(f"[{arm.tag}][watch] {msg}", flush=True)
-        with watch_log.open("a", encoding="utf-8") as handle:
-            handle.write(f"[{arm.tag}][watch] {msg}\n")
-
-    def summarize_all(tag: str) -> None:
-        with summary_log.open("a", encoding="utf-8") as handle:
-            handle.write(f"\n===== {tag} {datetime.now().strftime('%F %T')}\n")
-        for slice_name in arm.extras["wave_order"]:
-            try:
-                cmd_2b_summarize(arm, argparse.Namespace(slice=slice_name, datasets=None))
-            except Exception as exc:  # noqa: BLE001
-                print(f"[{arm.tag}][watch] summarize {slice_name} 失败: {exc}", flush=True)
-
-    last_sum = 0.0
-    note(f"start wave_order={' '.join(arm.extras['wave_order'])} done_expected={expected} "
-         f"log_dir={log_dir}")
-    while True:
-        counts = bucket_counts(root)
-        q, r = counts["queue"], counts["running"]
-        done_c = len(list((root / "done").glob("*.conf"))) \
-            if (root / "done").is_dir() else 0
-        now = time.time()
-        alive = pid_alive(pid_from_file(log_dir / "S4_drain.pid"))
-        if not alive and (q > 0 or r > 0):
-            note(f"relaunch drainer (q={q} r={r})")
-            s4_start_drainer(arm, opts)
-            time.sleep(30)
-            continue
-        if q == 0 and r == 0:
-            enqueued = 0
-            for slice_name in arm.extras["wave_order"]:
-                opts_slice = argparse.Namespace(slice=slice_name, datasets=None)
-                before = bucket_counts(root)["queue"]
-                cmd_2b_enqueue(arm, opts_slice)
-                after = bucket_counts(root)["queue"]
-                if after > before:
-                    note(f"enqueue slice {slice_name} (+{after - before})")
-                    enqueued = 1
-                    break
-            if done_c >= expected:
-                note(f"ALL {expected} done")
-                break
-            if not enqueued and not pid_alive(pid_from_file(log_dir / "S4_drain.pid")):
-                note("relaunch drainer")
-                s4_start_drainer(arm, opts)
-            summarize_all("queue empty")
-            last_sum = now
-        elif now - last_sum >= 300:
-            summarize_all("periodic")
-            last_sum = now
-        time.sleep(interval)
 
 
 def cmd_2b_validate(arm: Arm, opts) -> int:
@@ -1227,6 +1140,7 @@ def t3_cindex_jobs(arm: Arm, dataset: str, scheme: str) -> list[dict]:
         baseline_out=str(ROOT / "outputs"),
         encoding="text",
         modalities=[C.ANALYZER],
+        conf_prefix="t3__",
         results_root=arm.extras["cindex_results_root"],
         seed=C.SEED,
         landmark_tag=f"landmark_{C.LANDMARK_TIME}",
@@ -1312,6 +1226,12 @@ def cmd_3arms_status(arm: Arm, opts) -> None:
 
 
 def cindex_drain_inprocess(arm: Arm, opts) -> None:
+    if arm.name.startswith("test_5_"):
+        os.environ["CINDEX_CONF_PREFIX"] = f"t5_{arm.sub}__"
+    elif arm.name == "test_3_arms":
+        os.environ["CINDEX_CONF_PREFIX"] = "t3__"
+    elif arm.name == "test_2b":
+        os.environ["CINDEX_CONF_PREFIX"] = "t2b__"
     """进程内 drain（Test_3_arms / Test_5 的旧姿势：CUDA_VISIBLE_DEVICES + drain_queue）。"""
     from manual_pipeline.cindex import drain_queue, ensure_queue_dirs
 
@@ -1324,9 +1244,9 @@ def cindex_drain_inprocess(arm: Arm, opts) -> None:
     root = ensure_queue_dirs(arm.queue_root)
     label = arm.sub or arm.name
     print(f"[{arm.tag}][drain] {label} queue={root} gpu={gpu} workers={workers} "
-          f"pid={os.getpid()} status={bucket_counts(root)}", flush=True)
+          f"pid={os.getpid()} status={bucket_counts(root, prefix=os.environ.get('CINDEX_CONF_PREFIX', ''))}", flush=True)
     drain_queue(root, reuse=True, poll_seconds=poll, workers=workers)
-    print(f"[{arm.tag}][drain] {label} end status={bucket_counts(root)}", flush=True)
+    print(f"[{arm.tag}][drain] {label} end status={bucket_counts(root, prefix=os.environ.get('CINDEX_CONF_PREFIX', ''))}", flush=True)
 
 
 # --- Test_5 四个子检查（逐字移植 scripts/Test_5_enqueue.py）------------------
@@ -1520,7 +1440,7 @@ def cmd_t5_scheduler(opts) -> int:
     log_path = log_dir / "scheduler.log"
     pid_path = log_dir / "scheduler.pid"
     log_dir.mkdir(parents=True, exist_ok=True)
-    workers = max(1, min(2, int(opts.workers or os.environ.get("T5_WORKERS", 1) or 1)))
+    workers = max(1, min(2, int(opts.workers or os.environ.get("WORKERS", 1) or 1)))
     poll_seconds = float(opts.poll_seconds or 30.0)
 
     if not opts.once:
@@ -1549,7 +1469,7 @@ def cmd_t5_scheduler(opts) -> int:
             cooldown[info["sub"]] = time.time() + 60.0
             del state[gpu]
         # 2) 队列状态（conf 数；running 计入"未清空"）
-        status = {sub: bucket_counts(arms[sub].queue_root, ("queue", "running", "done", "failed"))
+        status = {sub: bucket_counts(arms[sub].queue_root, ("queue", "running", "done", "failed"), prefix=f"t5_{sub}__")
                   for sub in subs}
         work = {sub: status[sub]["queue"] + status[sub]["running"] for sub in subs}
         # 3) 全部清空且无 drainer -> 收工
@@ -1624,7 +1544,7 @@ def runner_module():
 
 def search_units(arm: Arm) -> list[tuple[str, tuple]]:
     """[(dataset, extra…)]：extra 逐臂不同（Test_3 无；Test_6 为 algo）。"""
-    if arm.dataset_source == "main13":
+    if arm.dataset_source == "main":
         return [(ds, ()) for ds in main_datasets_from_manifest()]
     if arm.dataset_source == "t6_grid":
         return [(ds, (algo,)) for ds in T6_DATASETS for algo in T6_ALGOS]
@@ -1796,7 +1716,7 @@ def cmd_search_retry(arm: Arm, opts, *, root: Path | None = None) -> int:
 
 def cmd_search_report(arm: Arm, opts) -> int:
     if arm.name == "test_6_search":
-        python_exe = os.environ.get(f"{arm.env}PYTHON3", "python3")
+        python_exe = os.environ.get("PYTHON3", "python3")
         argv = [python_exe, str(SCRIPTS / arm.extras["report_script"]),
                 *arm.extras["report_argv"]]
         print(f"[{arm.tag}][report] {' '.join(argv)}", flush=True)
@@ -1877,13 +1797,13 @@ def cmd_q_recompute(opts) -> int:
 # ===========================================================================
 
 def cmd_list(opts) -> int:
-    print(f"{'arm':18s} {'backend':11s} {'env':6s} {'queue_root':48s} note")
+    print(f"{'arm':18s} {'backend':11s} {'queue_root':48s} note")
     for arm in ARM_REGISTRY.values():
         try:
             qr = str(arm.queue_root.relative_to(ROOT))
         except ValueError:
             qr = str(arm.queue_root)
-        print(f"{arm.name:18s} {arm.backend:11s} {arm.env:6s} {qr:48s} {arm.note}")
+        print(f"{arm.name:18s} {arm.backend:11s} {"":6s} {qr:48s} {arm.note}")
     print(f"\n别名: " + ", ".join(f"{k}={v}" for k, v in ARM_ALIASES.items()))
     return 0
 
@@ -1962,20 +1882,6 @@ def cmd_drain(arm: Arm, opts) -> int:
                      f"（search 臂保留动态槽位调度，不并入 exp_queue）")
 
 
-def cmd_watch(arm: Arm, opts) -> int:
-    if arm.backend == "univariate":
-        cmd_uni_watch(arm, opts)
-        return 0
-    if arm.backend == "cindex":
-        if arm.dataset_source == "slice_grid":
-            cmd_2b_watch(arm, opts)
-            return 0
-        raise SystemExit(f"[exp_queue] watch 见 scripts/{arm.extras.get('summarize_script', '?')}"
-                         "；Test_3/Test_5 的守候用 drain + scheduler（cindex 队列自带续跑）")
-    raise SystemExit(f"[exp_queue] search 臂 watch 保留在 scripts/"
-                     f"{arm.extras.get('watch_script', '?')}（动态槽位调度）")
-
-
 def maybe_scheduler_resolves(sub: str) -> Arm:
     return ARM_REGISTRY[f"test_5_{sub}"]
 
@@ -1987,7 +1893,7 @@ def main(argv=None) -> int:
         epilog="臂: " + ", ".join(arm_names()),
     )
     parser.add_argument("command", choices=[
-        "list", "status", "enqueue", "retry", "recover", "trim", "drain", "watch",
+        "list", "status", "enqueue", "retry", "recover", "trim", "drain",
         "report", "summarize", "encode", "validate", "emit_encodes", "bank", "check",
         "scheduler", "scheduler_stop", "baseline_c", "q_recompute",
     ])
@@ -1997,7 +1903,7 @@ def main(argv=None) -> int:
     parser.add_argument("--workers", type=int, default=None, help="并发数（默认取臂注册表/环境）")
     parser.add_argument("--gpu", default=None, help="单卡 GPU 号")
     parser.add_argument("--gpus", default=None, help="多卡 GPU 列表（逗号分隔）")
-    parser.add_argument("--interval", type=int, default=None, help="watch 轮询秒数（默认 60）")
+    parser.add_argument("--interval", type=int, default=None, help="drain 监督轮询秒数（默认 60）")
     parser.add_argument("--poll_seconds", type=float, default=None)
     parser.add_argument("--max_retries", type=int, default=MAX_RETRIES)
     parser.add_argument("--max_hours", type=float, default=0.0)
@@ -2079,8 +1985,6 @@ def main(argv=None) -> int:
             rc |= cmd_trim(arm, opts)
         elif opts.command == "drain":
             rc |= cmd_drain(arm, opts)
-        elif opts.command == "watch":
-            rc |= cmd_watch(arm, opts)
         elif opts.command == "report":
             if arm.backend == "univariate":
                 cmd_uni_report(arm, opts)

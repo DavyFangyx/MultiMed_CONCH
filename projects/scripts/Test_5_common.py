@@ -4,7 +4,7 @@
 `z_notes/experiment_list/arm_registry.md`）：
   5E_2b  E→baseline 复现 Test_2b 臂对 {report(raw)/deleak(landmark_0)} × mlp_clinic_flatten
   5E_3   E→baseline 复现 Test_3 臂对 {deleak（Test_3_{work}_{dataset}）/ reach（Test_3_greedy_{dataset}）}
-  5M_2b  M→snn_clinic_flatten（13 主集）+ M→survgc_f/survpgc_f（多模态 2 数据集：BRCA/LIHC）复现 Test_2b 臂对
+  5M_2b  M→snn_clinic_flatten（14 主集）+ M→survgc_f/survpgc_f（多模态 3 数据集：BRCA/LIHC/KIRC）复现 Test_2b 臂对
   5M_3   M→clinic_cox 复现 Test_3 臂对
 
 臂语义（arm_registry.md；臂 = {F 字段组合, T 时间口径} 二元组，编码 = field bank 统一基座，
@@ -15,10 +15,10 @@
   （Test_2b 历史 apipe 臂 A/B 已退役：非 field bank 基座，编码产物删除，结果表冻结为历史口径。）
 
 纪律（spec §2.4 / §8bis.5）：
-  * 数据集名单一律读 label 宇宙有效事件 >= 100 的 13 主集（common.patient_universe 派生）；
+  * 数据集名单一律读 label 患者集有效事件 >= 100 的 14 主集（common.patient_set 派生）；
   * 方案 × 数据集绑定一律读 templates/manual_schemes/*/fields.json 的 `datasets`（不硬编码名单；
     code 里只有"子检查逻辑"常量：臂定义、模型名、编码名）；
-  * 本轮 E/M 轴只换一个轴，其余与基线一致：landmark_0 / 5 折 / seed 0 / 协议 A 训练范围；
+  * 本轮 E/M 轴只换一个轴，其余与基线一致：landmark_0 / 5 折 / seed 0 / 数据集分档协议训练范围；
   * 本模块只读 + 建目录，不写任何 results/Test_2b|Test_3 产物。
 
 EXP_GROUP 映射（可复用 cindex 的既有机制，不新增目录约定）：
@@ -47,7 +47,6 @@ for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
 
 from common.paths import config_family_dir, test_results_dir  # noqa: E402
 
-MANIFEST_CSV = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 OUTPUTS = ROOT / "outputs"
 RESULTS_ROOT = ROOT / "results"
 DATASETS_JSON = ROOT / "datasets.json"
@@ -56,7 +55,7 @@ TEMPLATE_DIR = ROOT / "templates" / "manual_schemes"
 INVARIANCE_ROOT = RESULTS_ROOT / "Test_5_invariance"          # 本步唯一可写的 results 子树
 LOG_ROOT = INVARIANCE_ROOT / "logs"
 
-MAIN_N_EVENT_MIN = 100        # 协议 A 主集阈值（R13）：label 宇宙有效事件 >= 100（2026-10-09 口径）
+MAIN_N_EVENT_MIN = 100        # 数据集分档协议主集阈值（R13）：label 患者集有效事件 >= 100（2026-10-09 口径）
 SEED = 0
 LANDMARK_ARM_TAG = "landmark_0"
 LANDMARK_DAYS = 0
@@ -81,9 +80,10 @@ SUB_SPEC = {
 ARM_LANDMARK = {"report": ("", None), "deleak": (LANDMARK_ARM_TAG, LANDMARK_DAYS),
                 "reach": (LANDMARK_ARM_TAG, LANDMARK_DAYS)}
 
-# deleak 臂（Test_3 臂 B）的本轮范围 = 4 个泛癌种工作 × 13 主集（spec §8bis.2）。
-# Test_3_HGCN_*_TCGA-* 变体（3 个：LIHC/LUAD/LUSC；KIRC 86 事件出主集）不在本轮 deleak 范围：
-# S12a 只为 60 个 deleak 落了 baseline 编码，5E_3 的 E 轴对照需要有同集合 baseline 产物。
+# deleak 臂（Test_3 臂 B）的本轮范围 = 4 个泛癌种工作 × 14 主集（spec §8bis.2）。
+# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC；KIRC 2026-10-12 回主集）不在本轮 deleak 范围：
+# S12a(15 主集时代)为 60 个 deleak 落了 baseline 编码（含 KIRC），现行 14 主集 − COAD = 56 全覆盖；
+# 但 KIRC 的 baseline 产物是否随 T35 清洗需执行前核验，缺失则先补编码。
 DELEAK_WORKS = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
 
 # 多模态（WSI+omics）模型：本轮暂不投放（parked/），原因见 park_reason()。
@@ -118,8 +118,8 @@ def load_all_schemes() -> None:
 
 
 def main_datasets() -> list[str]:
-    """协议 A 主集：label 宇宙有效事件 >= 100（2026-10-09 口径，13 主集；字典序，不硬编码）。"""
-    from common.patient_universe import main_datasets_by_label_events
+    """数据集分档协议主集：label 患者集有效事件 >= 100（2026-10-09 口径，14 主集；字典序，不硬编码）。"""
+    from common.patient_set import main_datasets_by_label_events
 
     return main_datasets_by_label_events(threshold=MAIN_N_EVENT_MIN)
 
@@ -242,7 +242,7 @@ class ArmPlan:
 
 
 def _multimodal_modalities(dataset: str) -> list[str]:
-    """5M_2b 的模型集合：snn 全 13 主集；survgc_f/survpgc_f 仅 registry 多模态 2 集（BRCA/LIHC）。"""
+    """5M_2b 的模型集合：snn 全 14 主集；survgc_f/survpgc_f 仅 registry 多模态 3 集（BRCA/LIHC/KIRC）。"""
     from greedy.clinic import MULTIMODAL_STUDIES
     from greedy.data import display_to_study
 
@@ -327,6 +327,7 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
                     baseline_out=str(OUTPUTS),
                     encoding=plan.encoding,
                     modalities=plan.modalities,
+                    conf_prefix=f"t5_{sub}__",
                     results_root=RESULTS_ROOT,
                     seed=SEED,
                     landmark_tag=plan.landmark_tag,
@@ -371,7 +372,7 @@ def expected_counts(datasets: list[str] | None = None) -> dict[str, dict]:
 
 
 def park_jobs(jobs: list[dict], sub: str) -> dict:
-    """把 job 写成 `<queue_root>/parked/*.conf`（flat，同 s5b 的 parked 惯例）。
+    """把 job 写成 `<queue_root>/parked/*.conf`（flat，同 univariate 臂的 parked 惯例）。
 
     parked/ 不被 drainer 读取（cindex 只扫 queue/running/done/failed），= 暂缓投放、
     不丢 conf，S13 决定后可手工 mv 回 queue/。幂等：同名已存在即 existing。
@@ -423,7 +424,7 @@ def print_status(datasets: list[str] | None = None) -> None:
         print(f"[test_5] {sub}: expected={n:4d} queue={st['queue']:3d} running={st['running']:2d} "
               f"done={st['done']:4d} failed={st['failed']:3d} parked={st['parked']:3d} "
               f"root={queue_root(sub)}")
-    print(f"[test_5] 合计 expected={grand}（5M_2b 的 survgc_f/survpgc_f 在 parked/ 时少 36 = BRCA/LIHC 两集）")
+    print(f"[test_5] 合计 expected={grand}（5M_2b 的 survgc_f/survpgc_f 在 parked/ 时少 56 = BRCA/LIHC/KIRC 三集）")
     print(f"[test_5] 多模态暂缓: {park_reason(PARK_MODALITIES[0])}")
 
 

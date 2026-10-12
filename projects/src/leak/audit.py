@@ -28,19 +28,20 @@
 审计**只跑绑定允许的 (dataset, scheme) 组合**，不做 35 × 10 全交叉：
 
 - ``HGCN_*`` 六个方案各绑定其对应癌种（``HGCN_DATASET_BY_SCHEME``），**禁止**跑其他队列；
-- 泛癌种四方案（MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN）暂按全部 33 TCGA（未解决问题 U2）；
+- 泛癌种四方案（MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN）的绑定范围 = 全部 33 TCGA（未解决问题 U2）；
+- **审计执行范围（默认 all）= 数据集分档协议 14 主集**（label 患者集有效事件 ≥100，与训练范围统一，2026-10-12 拍板）；
 - TCGA 之外的外部数据集（CPTAC、MMRF）一律不纳入；
-- 组合数 = 4 × 33 + 6 = 138。
+- 组合数 = 4 × 14 + 4（HGCN 本癌种在主集内的 KIRC / LIHC / LUSC / LUAD）= 60。
 
 绑定关系由本模块声明，**不读** ``templates/manual_schemes/{scheme}/fields.json`` 的 ``datasets`` 键
 （那是旧的错误全绑定：每个方案都写 33 个 TCGA）。
 
 产物
 ----
-- ``results/Test_2a_leak_audit/{dataset}/{scheme}.json``：138 个方案级逐字段明细；
+- ``results/Test_2a_leak_audit/{dataset}/{scheme}.json``：60 个方案级逐字段明细（14 主集 × 10 方案按绑定）；
 - ``results/Test_2a_leak_audit/leak_audit_summary.csv``：(dataset, scheme) 级聚合 + n_event/event_rate；
 - ``results/Test_2a_leak_audit/{dataset}/G1_{md5(field_idx)}.json``：Test_1a 消费的逐字段审计
-  （33 数据集 × 各自 landmark_0 kept 字段；scheme 名 = ``greedy.embeddings.subset_scheme_name``）。
+  （14 主集 × 各自 landmark_0 kept 字段；scheme 名 = ``greedy.embeddings.subset_scheme_name``）。
   产物不含时间戳（保证同命令重跑逐字节一致）。
 """
 
@@ -59,6 +60,7 @@ from common.datasets import (
     resolve_dataset_names,
 )
 from common.paths import DEFAULT_DATASETS_CONFIG, PROJECT_ROOT, test_results_dir
+from common.patient_set import display_to_study, main_datasets_by_label_events
 from discovery.field_bank import load_kept_fields
 
 from . import provenance
@@ -679,6 +681,10 @@ def run_audit(
     scheme_names = list(schemes or LEAK_SCHEMES)
     configs = load_dataset_configs(str(datasets_config))
     names = resolve_dataset_names(dataset, configs)
+    if dataset == "all":
+        # 执行范围 = 数据集分档协议主集(与训练范围统一);显式 --dataset 为 ad-hoc,不裁剪
+        main_studies = {display_to_study(d) for d in main_datasets_by_label_events(threshold=100)}
+        names = [n for n in names if display_to_study(n) in main_studies]
     if not names:
         raise ValueError("Test_2a 审计需要 --dataset，例如 --dataset all 或 --dataset TCGA-BRCA")
 
@@ -686,7 +692,7 @@ def run_audit(
     plan = build_audit_plan(names, scheme_names, binding=binding, registry=registry_all)
     if not plan:
         raise ValueError(
-            "空审计计划：所选数据集均不在本阶段范围（spec §2.4：仅 33 TCGA，"
+            "空审计计划：所选数据集均不在本阶段范围（数据集分档协议 14 主集，"
             f"CPTAC/MMRF 已剔除；数据集={names}）"
         )
     plan_names = plan_datasets(plan)

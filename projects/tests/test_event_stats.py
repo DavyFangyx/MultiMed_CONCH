@@ -52,7 +52,7 @@ def test_write_event_summary(tmp_path):
     assert path is not None and path.exists()
     summary = pd.read_csv(path)
     row = summary.iloc[0].to_dict()
-    # label 宇宙列(2026-10-09 口径):synthetic 无 label metadata → 空(CSV 读回为 NaN)
+    # label 患者集列(2026-10-09 口径):synthetic 无 label metadata → 空(CSV 读回为 NaN)
     for key in ("n_label_patients", "n_event_label", "n_censored_label"):
         assert pd.isna(row.pop(key))
     assert row == {

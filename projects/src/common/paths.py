@@ -11,21 +11,12 @@ REPO_ROOT = PROJECT_ROOT.parent
 WORKSPACE_ROOT = REPO_ROOT.parent
 
 VALID_ENCODINGS = ("prompt", "onehot")
-VALID_SCHEMES = ("L2", "L3", "L5")
-DEFAULT_L5_GROUPS_CSV = PROJECT_ROOT / "templates" / "field_bank" / "_shared" / "l5_semantic_groups.csv"
-# landmark 字段线三模式(互斥,各有产物目录;2026-10-08 用户拍板):
+# landmark 字段线两模式(互斥,各有产物目录;2026-10-08 用户拍板,2026-10-12 static_only 删除——无消费者):
 #   1. landmark_{0,365,730}:数值 landmark,要件① t_hi<=T 裁剪;产物 outputs/{ds}/field_bank/{enc}/landmark_{T}/
 #   2. no_mask            :landmark off,不裁剪,diagnoses/follow_ups 全量 raw 取值
-#   3. static_only        :完全不要 diagnoses[]/follow_ups[] 字段(含嵌套),只保留稳定字段
 LANDMARK_OFF_TAG = "no_mask"  # 原 static_only(2026-10-05 更名前为 landmark_none),2026-10-08 更名
-STATIC_ONLY_TAG = "static_only"  # 2026-10-08 起为「稳定字段子集」模式,与 landmark off 无关
 _LANDMARK_TAG_RE = re.compile(
-    rf"^(?:{LANDMARK_OFF_TAG}|{STATIC_ONLY_TAG}|landmark_(\d+))$"
-)
-# --landmark_time all 的目录展开只用此式:static_only 不是 landmark 时间变体,不参与 all。
-_LANDMARK_SCAN_TAG_RE = re.compile(rf"^(?:{LANDMARK_OFF_TAG}|landmark_(\d+))$")
-_SCHEME_RUN_TAG_RE = re.compile(
-    rf"^(?:{LANDMARK_OFF_TAG}|{STATIC_ONLY_TAG}|landmark_(\d+))_({'|'.join(VALID_SCHEMES)})$"
+    rf"^(?:{LANDMARK_OFF_TAG}|landmark_(\d+))$"
 )
 LONGITUDINAL_EXPERIMENT = "longitudinal"
 VALID_EXPERIMENTS = ("", LONGITUDINAL_EXPERIMENT)
@@ -62,8 +53,11 @@ TEST_CONFIGS_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs"
 
 
 def config_family_dir(family: str) -> Path:
-    """configs 家族根目录(Test 名,含 queue/running/done/failed 桶)。"""
-    return TEST_CONFIGS_ROOT / family
+    """统一 configs 根:所有实验共享 queue/running/done/failed 四桶(conf 名自带家族区分)。
+
+    family 参数仅作调用兼容保留——不再按实验拆目录(SurvPGC 式 flat 布局)。
+    """
+    return TEST_CONFIGS_ROOT
 
 
 def config_family_bucket_dir(family: str, bucket: str) -> Path:
@@ -123,14 +117,6 @@ def validate_encoding(encoding: str) -> str:
     return value
 
 
-def validate_scheme(scheme: str) -> str:
-    value = str(scheme or "").strip()
-    if value not in VALID_SCHEMES:
-        allowed = ", ".join(VALID_SCHEMES)
-        raise ValueError(f"unsupported scheme {scheme!r}; expected one of: {allowed}")
-    return value
-
-
 def parse_landmark_time_value(raw):
     if raw is None or raw == "":
         raise ValueError("必须传入 --landmark_time，例如 --landmark_time 365 或 --landmark_time none")
@@ -168,10 +154,6 @@ def landmark_token_from_tag(tag: str) -> str:
     value = require_landmark_tag(tag)
     if value == LANDMARK_OFF_TAG:
         return "none"
-    if value == STATIC_ONLY_TAG:
-        raise ValueError(
-            f"{STATIC_ONLY_TAG} 是字段集模式、不是 landmark 时间变体，不能作为 --landmark_time token"
-        )
     return value.rsplit("_", 1)[1]
 
 
@@ -194,7 +176,7 @@ def iter_landmark_tags(parent: Path | str | None) -> list[str]:
     tags = {
         child.name
         for child in root.iterdir()
-        if child.is_dir() and _LANDMARK_SCAN_TAG_RE.fullmatch(child.name)
+        if child.is_dir() and _LANDMARK_TAG_RE.fullmatch(child.name)
     }
     return sorted(tags, key=landmark_sort_key)
 
@@ -265,22 +247,8 @@ def coerce_landmark_days(landmark_time) -> int:
     return parsed
 
 
-def landmark_tag(*, no_landmark: bool = False, landmark_time=None, static_only: bool = False) -> str:
-    """字段线 tag。三模式互斥:landmark_{T}(no_landmark=False,数值)/ no_mask(no_landmark=True)/ static_only。
-
-    static_only=True 时输出 STATIC_ONLY_TAG;landmark_time 仍须给数值(定字段基座口径),
-    不允许与 no_landmark(即 --landmark_time none)同开。
-    """
-    if bool(static_only):
-        if bool(no_landmark):
-            raise ValueError(
-                f"--static_only 与 landmark off({LANDMARK_OFF_TAG})互斥:"
-                "no_mask = 全字段不裁剪，static_only = 只留稳定字段，二选一"
-            )
-        parsed = parse_landmark_time_value(landmark_time)
-        if parsed is None:
-            raise ValueError("开启 --static_only 时必须传入数值 --landmark_time(字段基座口径)，不能是 none")
-        return STATIC_ONLY_TAG
+def landmark_tag(*, no_landmark: bool = False, landmark_time=None) -> str:
+    """字段线 tag。两模式互斥:landmark_{T}(no_landmark=False,数值)/ no_mask(no_landmark=True)。"""
     if bool(no_landmark):
         if landmark_time not in (None, "", False):
             if isinstance(landmark_time, str) and landmark_time.strip().lower() in {"none", "off", "false"}:
@@ -296,7 +264,6 @@ def landmark_tag(*, no_landmark: bool = False, landmark_time=None, static_only: 
 def landmark_tag_from_args(args) -> str:
     return landmark_tag(
         landmark_time=getattr(args, "landmark_time", None),
-        static_only=bool(getattr(args, "static_only", False)),
     )
 
 
@@ -305,7 +272,7 @@ def require_landmark_tag(tag: str | None) -> str:
     if not _LANDMARK_TAG_RE.fullmatch(value):
         raise ValueError(
             f"unsupported landmark_tag {tag!r}; "
-            f"expected {LANDMARK_OFF_TAG}, {STATIC_ONLY_TAG} or landmark_{{N}}"
+            f"expected {LANDMARK_OFF_TAG} or landmark_{{N}}"
         )
     return value
 
@@ -332,7 +299,7 @@ def normalize_result_experiment(experiment: str | None = None) -> str:
 
 def result_experiment_name(kind: str, experiment: str | None = None) -> str:
     kind_value = str(kind or "").strip().lower()
-    if kind_value not in {"greedy", "univariate", "linear_probe", "schemes"}:
+    if kind_value not in {"greedy", "univariate", "linear_probe"}:
         raise ValueError(f"unsupported result kind {kind!r}")
     encoding_experiment = normalize_experiment(experiment)
     if encoding_experiment == LONGITUDINAL_EXPERIMENT:
@@ -543,38 +510,6 @@ def resolve_cli_out_dir(args, default_dir: Path | str, dataset: str, landmark_ta
     return Path(default_dir)
 
 
-def scheme_run_tag(landmark_tag: str, scheme: str) -> str:
-    tag = require_landmark_tag(landmark_tag)
-    scheme = validate_scheme(scheme)
-    return f"{tag}_{scheme}"
-
-
-def parse_scheme_run_tag(value: str) -> tuple[str, str]:
-    raw = str(value or "").strip()
-    if not _SCHEME_RUN_TAG_RE.fullmatch(raw):
-        raise ValueError(
-            f"unsupported scheme run tag {value!r}; "
-            f"expected {LANDMARK_OFF_TAG}/{STATIC_ONLY_TAG}/landmark_{{N}} + _L2/L3/L5"
-        )
-    landmark_tag, scheme = raw.rsplit("_", 1)
-    return require_landmark_tag(landmark_tag), validate_scheme(scheme)
-
-
-def dataset_scheme_dir(
-    dataset_name: str,
-    scheme: str,
-    landmark_tag: str | None = None,
-    experiment: str | None = None,
-) -> Path:
-    scheme = validate_scheme(scheme)
-    tag = require_landmark_tag(landmark_tag)
-    return dataset_outputs_root(dataset_name, experiment) / "schemes" / scheme_run_tag(tag, scheme)
-
-
-def shared_l5_groups_path() -> Path:
-    return DEFAULT_L5_GROUPS_CSV
-
-
 def dataset_field_dict_path(dataset_name: str) -> Path:
     return RAWDATA_STATS_ROOT / dataset_name / "scanned_fields.json"
 
@@ -612,7 +547,7 @@ def dataset_field_stats_path(dataset_name: str, landmark_tag: str | None = None)
 def _tag_with_suffix(landmark_tag: str | None, out_suffix) -> str:
     """tag 校验后追加输出后缀(如 t0stats → landmark_0_t0stats)。
 
-    后缀目录不匹配 _LANDMARK_TAG_RE/_LANDMARK_SCAN_TAG_RE,iter_landmark_tags 不会误认为 landmark 变体。
+    后缀目录不匹配 _LANDMARK_TAG_RE,iter_landmark_tags 不会误认为 landmark 变体。
     """
     tag = require_landmark_tag(landmark_tag)
     suffix = str(out_suffix or "").strip().lower()

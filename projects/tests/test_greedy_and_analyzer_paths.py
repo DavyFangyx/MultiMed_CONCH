@@ -56,17 +56,6 @@ def test_resolve_greedy_subset_job(tmp_path):
     assert job["run_name"] == "tcga_lihc__onehot__no_mask__G3_deadbeef12"
 
 
-def test_resolve_scheme_run_tag_job(tmp_path):
-    clinic_dir = _make_pt_dir(tmp_path / "TCGA-READ" / "schemes" / "landmark_730_L2")
-    job = resolve_clinic_eval_job(clinic_dir)
-    assert job["display_name"] == "TCGA-READ"
-    assert job["scheme"] == "landmark_730_L2"
-    assert job["encoding"] == "L2"
-    assert job["landmark_tag"] == "landmark_730"
-    assert job["study"] == "tcga_read"
-    assert job["run_name"] == "tcga_read__landmark_730_L2"
-
-
 def test_resolve_a_manual_text_scheme(tmp_path):
     clinic_dir = _make_pt_dir(tmp_path / "TCGA-READ" / "A_manual" / "L4")
     job = resolve_clinic_eval_job(clinic_dir)

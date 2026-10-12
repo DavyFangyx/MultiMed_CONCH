@@ -1,7 +1,8 @@
 """Test_3 共享口径测试：主集读取（不硬编码）/ 方案绑定 / 路径与命名。
 
 口径：z_notes/Test_series_spec.md §2.4（绑定）、§7（Test_3 产物）、§12 R13
-（主集 = label 宇宙有效事件 >= 100，2026-10-09 口径，13 主集）。
+（主集 = label 患者集有效事件 >= 100，2026-10-09 口径，14 主集；2026-10-12
+label 全表口径重建后 KIRC 175 回归）。
 """
 from __future__ import annotations
 
@@ -16,17 +17,17 @@ for item in (ROOT, ROOT / "src", ROOT / "scripts"):
 
 import Test_3_common as C  # noqa: E402
 
-MAIN_13 = [
-    "TCGA-BLCA", "TCGA-BRCA", "TCGA-GBM", "TCGA-HNSC", "TCGA-LAML", "TCGA-LGG",
-    "TCGA-LUAD", "TCGA-LUSC", "TCGA-OV", "TCGA-PAAD", "TCGA-SKCM", "TCGA-STAD",
-    "TCGA_LIHC",
+MAIN_14 = [
+    "TCGA-BLCA", "TCGA-BRCA", "TCGA-GBM", "TCGA-HNSC", "TCGA-KIRC", "TCGA-LAML",
+    "TCGA-LGG", "TCGA-LUAD", "TCGA-LUSC", "TCGA-OV", "TCGA-PAAD", "TCGA-SKCM",
+    "TCGA-STAD", "TCGA_LIHC",
 ]
 
 
-def test_main_datasets_is_13_roster():
+def test_main_datasets_is_14_roster():
     main = C.main_datasets()
-    # R13 主集 = 13（2026-10-09 口径：label 宇宙有效事件 >= 100；原 15 主集 − COAD 90 − KIRC 86）
-    assert main == MAIN_13
+    # R13 主集 = 14（label 患者集有效事件 >= 100；2026-10-12 重建后 KIRC 175 回归，COAD 95 出主集）
+    assert main == MAIN_14
     assert main == sorted(main)  # 字典序，产物路径可预期
 
 
@@ -38,7 +39,7 @@ def test_main_datasets_threshold_is_data_driven():
 
 def test_load_n_event_crosscheck_raises_on_mismatch(tmp_path):
     summary = tmp_path / "event_summary.csv"
-    # 真实 TCGA-COAD 的 label 宇宙有效事件 = 90；summary 故意写错 → 交叉核对报错
+    # 真实 TCGA-COAD 的 label 患者集有效事件 = 95；summary 故意写错 → 交叉核对报错
     summary.write_text("dataset,n_event_label\nTCGA-COAD,999\n", encoding="utf-8")
     try:
         C.load_n_event(C.MANIFEST_CSV, summary, strict=True)
@@ -49,14 +50,14 @@ def test_load_n_event_crosscheck_raises_on_mismatch(tmp_path):
 
 
 def test_load_n_event_returns_tcga_label_events(tmp_path):
-    from common.patient_universe import label_event_count
+    from common.patient_set import label_event_count
 
     table = C.load_n_event(C.MANIFEST_CSV, tmp_path / "event_summary.csv")
     assert all(name.upper().startswith("TCGA") for name in table)
     assert "TCGA_LIHC" in table and "TCGA-LIHC" not in table  # 下划线变体优先
     assert "CPTAC" not in table and "MMRF" not in table
-    assert table["TCGA-COAD"] == label_event_count("TCGA-COAD")["n_event"] == 90
-    assert table["TCGA-KIRC"] == label_event_count("TCGA-KIRC")["n_event"] == 86
+    assert table["TCGA-COAD"] == label_event_count("TCGA-COAD")["n_event"] == 95
+    assert table["TCGA-KIRC"] == label_event_count("TCGA-KIRC")["n_event"] == 175
 
 
 def test_work_pairs_binding_rule():
@@ -73,9 +74,11 @@ def test_work_pairs_binding_rule():
             assert C.HGCN_BINDING.get(dataset) == work
     assert ("TCGA_LIHC", "HGCN_LIHC") in pairs
     assert ("TCGA-BRCA", "HGCN_BRCA") not in pairs
-    # 绑定表覆盖 6 个 HGCN 方案；落在 13 主集内的是 3 个（KIRC/ESCA/UCEC 事件数不足）
+    # 绑定表覆盖 6 个 HGCN 方案；落在 14 主集内的是 4 个（ESCA/UCEC 事件数不足；KIRC 已回归）
     assert len(C.HGCN_BINDING) == 6
-    assert {d for d in C.HGCN_BINDING if d in datasets} == {"TCGA_LIHC", "TCGA-LUSC", "TCGA-LUAD"}
+    assert {d for d in C.HGCN_BINDING if d in datasets} == {
+        "TCGA_LIHC", "TCGA-LUSC", "TCGA-LUAD", "TCGA-KIRC",
+    }
 
 
 def test_paths_and_scheme_names():

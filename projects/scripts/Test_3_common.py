@@ -3,7 +3,7 @@
 口径来源（唯一来源 = `z_notes/Test_series_spec.md`）：
   §7     Test_3 规格（搜索池 / A2_greedy / gain-only 早停（D4 修订 2026-10-04）/ 两臂 B, C / 遗漏字段清单）
   §2.4   方案 × 数据集绑定（泛癌种 4 方案 × 全部 TCGA；HGCN_* 仅本癌种）
-  §12 U1 数据协议 A + R13 训练范围（label 宇宙有效事件 >= 100 的 13 个主集）
+  §12 U1 数据集分档协议+ R13 训练范围（label 患者集有效事件 >= 100 的 14 个主集）
 
 纪律：
   * 数据集名单一律从数据读（Test_0 manifest / event_summary.csv），**不硬编码**；
@@ -24,11 +24,11 @@ for _p in (ROOT, ROOT / "src"):
 
 from common.paths import test_results_dir
 
-# --- 协议 A / R13 -----------------------------------------------------------
-# 2026-10-09 用户拍板: 主集门槛计数口径 = label 宇宙有效事件(患者级前置过滤
+# --- 数据集分档协议/ R13 -----------------------------------------------------------
+# 2026-10-09 用户拍板: 主集门槛计数口径 = label 患者集有效事件(患者级前置过滤
 # 同口径;raw n_event 含 gt≤0 等从不进训练的病例)。阈值 100 不变,
-# 主集 = 13 个(原 15 主集 − COAD 90 − KIRC 86)。
-MAIN_N_EVENT_MIN = 100  # 协议 A 主集阈值(R13): label 宇宙有效事件 >= 100
+# 主集 = 14 个(2026-10-12 label 全表口径重建后 KIRC 175 回归;COAD 95 出主集)。
+MAIN_N_EVENT_MIN = 100  # 数据集分档协议主集阈值(R13): label 患者集有效事件 >= 100
 
 MANIFEST_CSV = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
@@ -65,12 +65,12 @@ def tcga_prefix(name: str) -> bool:
 def load_n_event(manifest_csv: Path | str = MANIFEST_CSV,
                  event_summary_csv: Path | str = EVENT_SUMMARY_CSV,
                  *, strict: bool = True) -> dict[str, int]:
-    """dataset -> label 宇宙有效事件(2026-10-09 口径)。
+    """dataset -> label 患者集有效事件(2026-10-09 口径)。
 
     计数直接读 label metadata(censorship==0 行数),不依赖 raw 统计;
     若 event_summary 已有 n_event_label 列则交叉核对(不一致即报错)。
     """
-    from common.patient_universe import tcga_label_event_table
+    from common.patient_set import tcga_label_event_table
 
     label_events = tcga_label_event_table()
 
@@ -92,18 +92,18 @@ def load_n_event(manifest_csv: Path | str = MANIFEST_CSV,
         if diff:
             raise ValueError(f"n_event_label 与 label metadata 不一致: {diff}")
     if not label_events:
-        raise SystemExit("[test_3] 读不到 label 宇宙有效事件(Clinic_Analyzer/data/datasets_csv/metadata)")
+        raise SystemExit("[test_3] 读不到 label 患者集有效事件(Clinic_Analyzer/data/datasets_csv/metadata)")
     return label_events
 
 
 def main_datasets(n_event: dict[str, int] | None = None, *, threshold: int = MAIN_N_EVENT_MIN) -> list[str]:
-    """协议 A 主集：TCGA 中 label 宇宙有效事件 >= threshold，字典序（不硬编码名单）。"""
-    from common.patient_universe import main_datasets_by_label_events
+    """数据集分档协议主集：TCGA 中 label 患者集有效事件 >= threshold，字典序（不硬编码名单）。"""
+    from common.patient_set import main_datasets_by_label_events
 
     if n_event is not None:
         names = sorted(name for name, value in n_event.items() if tcga_prefix(name) and value >= threshold)
         if not names:
-            raise SystemExit(f"[test_3] 主集为空（label 宇宙有效事件 >= {threshold}）")
+            raise SystemExit(f"[test_3] 主集为空（label 患者集有效事件 >= {threshold}）")
         return names
     return main_datasets_by_label_events(threshold=threshold)
 

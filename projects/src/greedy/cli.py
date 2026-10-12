@@ -40,7 +40,7 @@ from .clinic import (
     parse_modalities,
     parse_one_modality,
 )
-from .data import default_analyzer_split_dir, load_candidate_fields, resolve_patient_universe
+from .data import default_analyzer_split_dir, load_candidate_fields, resolve_patient_set
 from .embeddings import subset_embedding_dir, subset_scheme_name
 from .protocol import run_nested_greedy
 
@@ -409,7 +409,7 @@ def run_one(args, dataset: str) -> Path:
     args._fields = fields
 
     field_bank_dir = Path(args.field_bank_dir) if args.field_bank_dir else dataset_field_bank_dir(dataset, encoding, tag, experiment=experiment)
-    patient_ids, events = resolve_patient_universe(
+    patient_ids, events = resolve_patient_set(
         dataset, field_bank_dir=field_bank_dir, label_file=args.label_file, encoding=encoding, landmark_tag=tag
     )
 

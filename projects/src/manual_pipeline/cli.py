@@ -13,7 +13,7 @@ import argparse
 from pathlib import Path
 
 from common.clinical_io import load_clinical_cases
-from common.patient_universe import restrict_cases_to_label_universe
+from common.patient_set import restrict_cases_to_label_patients
 from .datasets import expand_source_jobs, load_source_dataset_configs
 from .paths import (
     DEFAULT_BASELINE_OUT_ROOT,
@@ -232,8 +232,8 @@ def main(argv=None):
             for job in source_jobs:
                 print(f"  -> 收集 {job['name']} 患者用于共享 nominal 词表")
                 cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
-                # 患者级前置过滤(2026-10-09 用户拍板):共享词表拟合只在 label 宇宙上。
-                cases, _ = restrict_cases_to_label_universe(cases, job["name"])
+                # 患者级前置过滤(2026-10-09 用户拍板):共享词表拟合只在 label 患者集上。
+                cases, _ = restrict_cases_to_label_patients(cases, job["name"])
                 merged_rows.extend(build_patient_rows(cases))
 
             mappings = fit_onehot_mappings(

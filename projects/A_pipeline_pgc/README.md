@@ -87,6 +87,7 @@ $PY run.py hgcn_clinic --dataset all --scheme all --force
 
 ## 增加数据集
 
+对话：claude --resume d15c134b-043b-4051-98d1-ded3319258f9
 以 2026-10-08 新增 TCGA-LUAD / TCGA-LUSC(肺癌)为例,步骤:
 
 1. **datasets.json 登记**(同文件按 `project_ids` 拆分,与肾癌三集同模式):
@@ -99,7 +100,6 @@ $PY run.py hgcn_clinic --dataset all --scheme all --force
    $PY run.py baseline --force --dataset all --scheme all                     # 11 集同跑:共享名义词表重构
    $PY run.py hgcn_clinic --force --dataset all --scheme all                  # 复用新词表
    ```
-4. **契约与下游同步**:`z_notes/time_axis/frozen_schemes_contract.md` 数据集名单、执行日志 D 系列登记、下游 SurvPGC `build_workspace.sh` 软链 + hgcn 数据拷贝。
 
 影响口径(2026-10-08 实测):新数据集对旧集 **D0 与 HGCN L0 零影响**(demographic 字段词表未变);词表重建后旧集 **D1-D5 全部重算、维度 +24~29**(预期内,以 BRCA 为例):
 
