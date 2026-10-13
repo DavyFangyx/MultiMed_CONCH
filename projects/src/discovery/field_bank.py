@@ -28,7 +28,6 @@ from .landmark import (
 from .field_bank_spec import SHARED_SPEC_PATH, fill_from_spec, load_shared_spec
 from common.paths import (
     DEFAULT_CKPT,
-    DEFAULT_GPU,
     REPO_ROOT,
     dataset_field_bank_dir,
     dataset_field_bank_template_dir,
@@ -551,7 +550,6 @@ def _run_field_bank_one(args, name, datasets, encoding) -> None:
     if args.prompts_only:
         return
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("FIELD_BANK_GPU", DEFAULT_GPU)
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
 

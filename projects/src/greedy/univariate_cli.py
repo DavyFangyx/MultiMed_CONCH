@@ -187,21 +187,28 @@ def evaluate_all_fields(
     embeddings_root: Path | None = None,
     encoding: str = "prompt",
 ) -> list[dict]:
-    """逐字段串行评估(2026-10-12 用户拍板:并发粒度 = conf 级,见 drain 循环;
+    """字段级并行评估(2026-10-13:WORKERS = 总训练进程上限,按 conf×字段 两层分配;
 
-    一个 worker 执行一个 conf 文件,不再用多个 worker 并发执行同一个 conf 的字段)。
+    单 conf 内的字段并发数由 drain 循环传入,通常 = WORKERS // 并行 conf 数)。
+    每字段一个独立 evaluate.py 子进程,线程池只做编排,进程数有全局上限。
     """
+    field_workers = max(1, int(workers or 1))
     rows: list[dict] = []
-    for field_idx, field_name in enumerate(fields):
-        row = evaluate_one_field(
+
+    def _eval_one(item):
+        field_idx, field_name = item
+        return evaluate_one_field(
             evaluator,
             field_idx,
             field_name,
             embeddings_root=embeddings_root,
             encoding=encoding,
         )
-        if row is not None:
-            rows.append(row)
+
+    with ThreadPoolExecutor(max_workers=min(field_workers, len(fields))) as pool:
+        for row in pool.map(_eval_one, enumerate(fields)):
+            if row is not None:
+                rows.append(row)
     return sort_field_rows(rows)
 
 
@@ -590,13 +597,15 @@ def run_claimed_jobs(args) -> None:
         f"[queue] root={root} job_key={job_key} "
         f"created={len(queued['created'])} existing={len(queued['existing'])}"
     )
-    def _run_claimed(claimed: Path) -> None:
+    def _run_claimed(claimed: Path, field_workers: int) -> None:
         job = load_job(claimed)
         dataset = job["dataset"]
         gpu = job.get("cuda_visible_devices") or os.environ.get("CUDA_VISIBLE_DEVICES", "")
         landmark = job.get("landmark_tag") or job.get("landmark_time") or ""
         print(f"[queue] claim {claimed.name} dataset={dataset} landmark={landmark} gpu={gpu}")
         job_args = merge_job_args(args, job)
+        # WORKERS 语义(2026-10-13):总训练进程上限,由 drain 决定;conf 里存的旧 workers 值忽略
+        job_args.workers = field_workers
         try:
             run_one(job_args, dataset)
         except Exception as exc:
@@ -606,9 +615,11 @@ def run_claimed_jobs(args) -> None:
         dest = mark_done(claimed)
         print(f"[queue] done {dest.name} dataset={dataset} landmark={landmark}")
 
-    n_conf = max(1, int(args.workers or 1))
+    total_workers = max(1, int(args.workers or 1))
+    field_target = 4  # 每 conf 内字段并发数(进程总数仍以 WORKERS 为上限)
     while True:
         claimed = []
+        n_conf = max(1, total_workers // field_target)
         for _ in range(n_conf):
             path = claim_job(root, job_key)
             if path is None:
@@ -617,8 +628,9 @@ def run_claimed_jobs(args) -> None:
         if not claimed:
             print(f"[queue] idle job_key={job_key}")
             return
+        field_workers = max(1, total_workers // len(claimed))
         with ThreadPoolExecutor(max_workers=len(claimed)) as pool:
-            futures = [pool.submit(_run_claimed, path) for path in claimed]
+            futures = [pool.submit(_run_claimed, path, field_workers) for path in claimed]
             for fut in as_completed(futures):
                 fut.result()
 

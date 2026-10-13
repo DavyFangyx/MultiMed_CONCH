@@ -13,7 +13,7 @@
   * conf 名与内容由底层 primitives 决定，本文件不构造、不改写。
 
 三个 backend（= 三套队列原语，臂记录里的 `backend` 字段选择）：
-  univariate  greedy/queue.py         Test_1a t0 / off / merged 三臂
+  univariate  greedy/queue.py         Test_1a t0 / off 两臂
   cindex      manual_pipeline/cindex  Test_2b 波次切片 / Test_3 两臂 / Test_5 四个子检查
   search      selection/queue.py      Test_3 搜索 / Test_6 试点（动态槽位调度保留在
                                       Test_3_search_queue.py 与 t6_scheduler.sh，
@@ -240,36 +240,8 @@ _ARM_OFF = Arm(
     workers_default=8, gpus_default="7",
     extras={"bank_script": "build_raw_field_bank.py",
             "bank_root": OUTPUTS / "_raw", "bank_tag": LANDMARK_OFF_TAG,
-            "enc_gpu_default": "7", "build_log_default": "/tmp/raw_bank_build.log"},
+            "build_log_default": "/tmp/raw_bank_build.log"},
     note="off：extraction_mask off + outputs/_raw bank",
-)
-
-# merged：t0 语义 + bank 改道 outputs/_merged
-_ARM_MERGED = Arm(
-    name="test_1a_merged", backend="univariate", tag="merged",
-    queue_root=config_family_dir("Test_1a_t0_merged"),
-    results_root=test_results_dir("Test_1a/arm_t0_merged"),
-    field_csv_root=(test_results_dir("Test_1a/arm_t0_merged") / "univariate" / "prompt"
-                    / "landmark_0"),
-    dataset_source="main",
-    drainer_script="run_univariate_cindex.py",
-    drainer_argv=lambda datasets, *, workers: [
-        "--dataset", ",".join(datasets),
-        "--landmark_time", "0",
-        "--field_bank_root", str(OUTPUTS / "_merged"),
-        "--embeddings_root", str(OUTPUTS / "_merged"),
-        "--results_dir", str(test_results_dir("Test_1a/arm_t0_merged")),
-        "--queue_root", str(config_family_dir("Test_1a_t0_merged")),
-        "--encoding", "prompt",
-        "--analyzer", "mlp_clinic_flatten",
-        "--seed", "0",
-        "--workers", str(workers),
-    ],
-    pid_dir_default="/tmp/test_1a_merged_univariate",
-    drain_log_default="/tmp/test_1a_merged_drain.log",
-    report_json=test_results_dir("Test_1a/arm_t0_merged") / "_test_1a_merged_report.json",
-    workers_default=8, gpus_default="1",
-    note="merged t0：landmark_0 + outputs/_merged bank",
 )
 
 # --- cindex：Test_2b 波次切片 ------------------------------------------------
@@ -417,15 +389,15 @@ _ARM_T6_SEARCH = Arm(
 
 ARM_REGISTRY: dict[str, Arm] = {
     arm.name: arm for arm in (
-        _ARM_T0, _ARM_OFF, _ARM_MERGED,
+        _ARM_T0, _ARM_OFF,
         _ARM_2B, _ARM_3ARMS, _ARM_5E_2B, _ARM_5E_3, _ARM_5M_2B, _ARM_5M_3,
         _ARM_T3_SEARCH, _ARM_T6_SEARCH,
     )
 }
 
 ARM_ALIASES = {
-    "t0": "test_1a_t0", "off": "test_1a_off", "merged": "test_1a_merged",
-    "1a_t0": "test_1a_t0", "1a_off": "test_1a_off", "1a_merged": "test_1a_merged",
+    "t0": "test_1a_t0", "off": "test_1a_off",
+    "1a_t0": "test_1a_t0", "1a_off": "test_1a_off",
     "2b": "test_2b", "3arms": "test_3_arms", "3search": "test_3_search",
     "6search": "test_6_search", "2b_arms": "test_2b", "3_arms": "test_3_arms",
     "5E_2b": "test_5_5E_2b", "5E_3": "test_5_5E_3",
@@ -435,7 +407,7 @@ ARM_ALIASES = {
 # 组别名：一次带上一族（旧脚本的"全部子检查/三臂一起"用法）
 ARM_GROUPS = {
     "test_5": ("test_5_5E_2b", "test_5_5E_3", "test_5_5M_2b", "test_5_5M_3"),
-    "test_1a": ("test_1a_t0", "test_1a_off", "test_1a_merged"),
+    "test_1a": ("test_1a_t0", "test_1a_off"),
 }
 
 
@@ -744,16 +716,15 @@ def cmd_uni_report(arm: Arm, opts) -> None:
 
 
 def cmd_uni_bank(arm: Arm, opts) -> int:
-    """raw Field Bank 构建（原 s5b_univariate_queue.sh bank；conch env，已存在即跳过）。"""
-    conch_python = os.environ.get(f"{""}CONCH_PYTHON",
+    """raw Field Bank 构建(原 s5b_univariate_queue.sh bank;conch env,已存在即跳过)。
+
+    GPU 由调用方 CUDA_VISIBLE_DEVICES 控制(库内不再覆写)。
+    """
+    conch_python = os.environ.get("CONCH_PYTHON",
                                   "/data/fangyuxuan/miniconda3/envs/conch/bin/python")
-    enc_gpu = os.environ.get(f"{""}ENC_GPU", arm.extras.get("enc_gpu_default", "7"))
-    env = dict(os.environ)
-    env["CUDA_VISIBLE_DEVICES"] = str(enc_gpu)
     argv = [str(SCRIPTS / arm.extras["bank_script"]), "--dataset", "all"]
-    print(f"[{arm.tag}] bank build: CUDA_VISIBLE_DEVICES={enc_gpu} {conch_python} "
-          f"{' '.join(argv)}", flush=True)
-    return subprocess.call([conch_python, *argv], cwd=str(ROOT), env=env)
+    print(f"[{arm.tag}] bank build: {conch_python} {' '.join(argv)}", flush=True)
+    return subprocess.call([conch_python, *argv], cwd=str(ROOT))
 
 
 def cmd_uni_check(arm: Arm, opts) -> int:
@@ -1043,7 +1014,7 @@ def cmd_2b_encode(arm: Arm, opts) -> int:
     """2b 两臂的 bank 切片装配(2026-10-09 改造,零 CONCH 重编码)。
 
       臂 B(deleak)= Test_3_{work}_{ds} landmark_0 切片 —— 与 Test_3 臂 B 同一
-        产物,由 scripts/Test_3_arms.py encode --arm b 覆盖,此处只报指引;
+        产物,由 scripts/Test_3_arms.py slice --arm b 覆盖,此处只报指引;
       臂 A(report)= raw 变体切片,落 legacy 子目录
         outputs/{ds}/A_manual/Test_3_{work}_{ds}/embeddings/pt(重建批次投用)。
     """
@@ -1066,7 +1037,7 @@ def cmd_2b_encode(arm: Arm, opts) -> int:
                 print(f"[{arm.tag}][encode] A {dataset}/{work} → {out} (raw 变体切片)")
                 n_done += 1
     print(f"[{arm.tag}][encode] 臂 A raw 切片完成 {n_done} 个;"
-          f"臂 B 切片由 Test_3 链覆盖(scripts/Test_3_arms.py encode --arm b)")
+          f"臂 B 切片由 Test_3 链覆盖(scripts/Test_3_arms.py slice --arm b)")
     return 0
 
 
@@ -1766,15 +1737,6 @@ def cmd_search_report(arm: Arm, opts) -> int:
 # 共用 verb（与臂无关：Test_5 baseline_c / Q 轴重算 / 汇总入口）
 # ===========================================================================
 
-def cmd_baseline_c(opts) -> int:
-    conch_python = os.environ.get("T5_CONCH_PYTHON",
-                                  "/data/fangyuxuan/miniconda3/envs/conch/bin/python")
-    # 逐字同旧 Test_5_queue.sh cmd_baseline_c（nice -n 10，共享机礼貌）
-    argv = ["nice", "-n", "10", conch_python, str(SCRIPTS / "Test_5_baseline_c.py"), "--all"]
-    print(f"[exp_queue] baseline_c: {' '.join(argv)}", flush=True)
-    return subprocess.call(argv, cwd=str(ROOT))
-
-
 def cmd_q_recompute(opts) -> int:
     python_exe = os.environ.get("T5_PYTHON3",
                                 "/data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python")
@@ -1894,8 +1856,8 @@ def main(argv=None) -> int:
     )
     parser.add_argument("command", choices=[
         "list", "status", "enqueue", "retry", "recover", "trim", "drain",
-        "report", "summarize", "encode", "validate", "emit_encodes", "bank", "check",
-        "scheduler", "scheduler_stop", "baseline_c", "q_recompute",
+        "report", "summarize", "slice", "validate", "emit_slices", "bank", "check",
+        "scheduler", "scheduler_stop", "q_recompute",
     ])
     parser.add_argument("--arm", action="append", default=None,
                         help="臂名/别名，可重复；status 支持 all（默认 all）")
@@ -1938,18 +1900,16 @@ def main(argv=None) -> int:
                     cmd_t5_list(arm, opts)
                 return 0
         return cmd_list(opts)
-    if opts.command == "baseline_c":
-        return cmd_baseline_c(opts)
     if opts.command == "q_recompute":
         return cmd_q_recompute(opts)
     if opts.command == "scheduler":
         return cmd_t5_scheduler(opts)
     if opts.command == "scheduler_stop":
         return cmd_t5_scheduler_stop(opts)
-    if opts.command == "emit_encodes":
+    if opts.command == "emit_slices":
         arm = resolve_arms(opts.arm or ["test_2b"])[0]
         if arm.dataset_source != "slice_grid":
-            raise SystemExit("emit_encodes 只适用于 --arm test_2b")
+            raise SystemExit("emit_slices 只适用于 --arm test_2b")
         cmd_2b_emit_encodes(arm, opts)
         return 0
 
@@ -2001,9 +1961,9 @@ def main(argv=None) -> int:
                 cmd_3arms_summarize(arm, opts)
             else:
                 raise SystemExit(f"[exp_queue] summarize 不适用于臂 {arm.name}")
-        elif opts.command == "encode":
+        elif opts.command == "slice":
             if arm.dataset_source != "slice_grid":
-                raise SystemExit("encode 只适用于 --arm test_2b（Test_3 编码见 Test_3_arms.py）")
+                raise SystemExit("slice 只适用于 --arm test_2b（Test_3 切片见 Test_3_arms.py）")
             rc |= cmd_2b_encode(arm, opts)
         elif opts.command == "validate":
             if arm.dataset_source != "slice_grid":

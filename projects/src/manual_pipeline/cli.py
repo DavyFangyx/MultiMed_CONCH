@@ -72,11 +72,6 @@ def _add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument("--ckpt", default=DEFAULT_CKPT)
     parser.add_argument("--out", default=DEFAULT_OUT_DIR)
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument(
-        "--gpu",
-        default=None,
-        help="保留兼容（原 encode 子命令用；现子命令不使用）。",
-    )
     parser.add_argument("--baseline_out", default=DEFAULT_BASELINE_OUT_ROOT)
     parser.add_argument("--baseline_stats_dir", default=None)
     parser.add_argument("--baseline_nominal_min_count", type=int, default=5)

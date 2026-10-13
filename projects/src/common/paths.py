@@ -106,8 +106,6 @@ REGISTRY_DIR = RAWDATA_STATS_SHARED_DIR
 REGISTRY_DICTS_DIR = RAWDATA_STATS_ROOT
 TIME_STATS_ROOT = RAWDATA_STATS_ROOT
 
-DEFAULT_GPU = "7"
-
 
 def validate_encoding(encoding: str) -> str:
     value = str(encoding or "").strip().lower()

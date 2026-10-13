@@ -24,8 +24,6 @@ DEFAULT_PROMPT_DIR = str(PROJECT_ROOT / "outputs" / "custom" / "A_manual")
 DEFAULT_CKPT = str(WORKSPACE_ROOT / "CONCH" / "pytorch_model.bin")
 DEFAULT_OUT_DIR = str(PROJECT_ROOT / "outputs" / "custom" / "A_manual")
 DEFAULT_BASELINE_OUT_ROOT = str(PROJECT_ROOT / "outputs")
-# encode 的可见 GPU：显式 --gpu > 环境变量 A_PIPELINE_GPU > 7
-DEFAULT_GPU = os.environ.get("A_PIPELINE_GPU", "7")
 
 
 def dataset_prompt_dir(dataset_name: str) -> str:

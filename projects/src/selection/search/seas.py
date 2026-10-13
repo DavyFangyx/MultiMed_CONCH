@@ -116,6 +116,7 @@ def load_or_encode_field_semantics(
     batch_size=64,
     device=None,
     python_executable=None,
+    load_only=False,
 ) -> np.ndarray:
     texts = compose_field_texts(fields, template_csv, dictionary_csv)
     cache_path = Path(cache_path)
@@ -130,6 +131,12 @@ def load_or_encode_field_semantics(
             matrix = np.load(cache_path)
             if matrix.ndim == 2 and matrix.shape[0] == len(fields):
                 return matrix
+    if load_only:
+        raise FileNotFoundError(
+            f"field_semantics 缓存缺失或与当前字段表不一致: {cache_path}。"
+            "实验阶段不再现场编码(编码与实验解耦):请先跑阶段 2.7 "
+            "`python scripts/pregen_field_semantics.py` 预生成。"
+        )
     if python_executable and Path(python_executable).resolve() != Path(sys.executable).resolve():
         with tempfile.TemporaryDirectory(prefix="e2_semantics_") as temporary:
             text_path = Path(temporary) / "texts.json"

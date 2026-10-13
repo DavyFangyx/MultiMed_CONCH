@@ -26,13 +26,13 @@ python scripts/run_field_filter.py --dataset all --landmark_time 0 \
 ```
 ### 阶段 2:编码(一律 conch env;换卡改行首 env,默认卡 7)
 ```bash
-# Field Bank 文本基座(Test_1a t0 臂 / Test_3 字段基座;失败 → 先补阶段 1;换卡改 FIELD_BANK_GPU)
-FIELD_BANK_GPU=7 conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
+# Field Bank 文本基座(Test_1a t0 臂 / Test_3 字段基座;失败 → 先补阶段 1;换卡改行首 CUDA_VISIBLE_DEVICES)
+CUDA_VISIBLE_DEVICES=7 conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
 # 论文方案 gdc 线:基线 / HGCN 子命令(文本嵌入一律 bank 切片,apipe 全量编码已删除;
-#   Test_3_* 切片 = scripts/Test_3_arms.py encode,零重编码)
+#   Test_3_* 切片 = scripts/Test_3_arms.py slice,零重编码)
 conda run -n conch python scripts/run_a_manual.py baseline --dataset all --scheme paper
-# off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/;换卡改行首 ENC_GPU)
-ENC_GPU=7 bash scripts/exp_queue.sh bank --arm test_1a_off
+# off 臂 raw Field Bank(mask off;唯一差异 = 取值 mask;产物 outputs/_raw/;换卡改行首 CUDA_VISIBLE_DEVICES)
+CUDA_VISIBLE_DEVICES=7 bash scripts/exp_queue.sh bank --arm test_1a_off
 # 判据:退出码 0;bash scripts/exp_queue.sh check --arm test_1a_off 通过(raw bank 齐);主集 field_index.json 存在
 ```
 ### 阶段 3:实验(所有 Test;细节见 runbook.md 阶段 3)
@@ -57,7 +57,7 @@ bash scripts/exp_queue.sh enqueue --arm test_3_search
 T3_SEARCH_WORKERS=16 nohup python scripts/Test_3_search_queue.py watch --gpus 1,0,3,4,5,6 --interval 60 \
     > results/Test_3_greedy_vs_works/logs/watch.log 2>&1 &
 python scripts/Test_3_arms.py generate --arm b
-python scripts/Test_3_arms.py encode --arm b --gpu 1 --parallel 3
+python scripts/Test_3_arms.py slice --arm b --parallel 3
 bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant b
 CUDA_VISIBLE_DEVICES=1 WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
 python scripts/Test_3_arms.py generate --arm ksig
@@ -81,10 +81,6 @@ python scripts/run_bakeoff_report.py --results-root results/Test_6_search/prompt
 ```bash
 # Test_1a 两臂对照图 / Δc 排序 / leak×Δc 交叉
 python results_display/scripts/Test_1a_field_level.py
-# Test_1a merged 变体:t0 臂指 merged 结果 + 严格断言(mask_unaffected Δc 必须精确 0,否则 exit 1)
-python results_display/scripts/Test_1a_field_level.py \
-  --t0_root results/Test_1a/arm_t0_merged/univariate/prompt/landmark_0 \
-  --out_dir results_display/Test_1a_field_level_merged --strict_noise_floor
 # Test_2b Δc 森林图 / 汇总表(Test_1b 分布 / Test_4 三档见 runbook.md 阶段 4,可在此重跑)
 python results_display/scripts/Test_2b_delta_report.py
 # 判据:4 个脚本退出码 0

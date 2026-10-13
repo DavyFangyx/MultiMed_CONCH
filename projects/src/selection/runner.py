@@ -217,6 +217,7 @@ def main(argv=None):
                     cache_path=semantic_root / tag / args.dataset / cache_name,
                     batch_size=args.semantic_batch_size,
                     python_executable=args.conch_python or DEFAULT_CONCH_PYTHON,
+                    load_only=True,
                 )
         elif args.algo in {"SEAS-no-sem", "SEAS-no-int"}:
             semantic = np.zeros((len(fields), 1), dtype=float)

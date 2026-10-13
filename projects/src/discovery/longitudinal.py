@@ -13,7 +13,6 @@ import pandas as pd
 from common.missingness import classify_raw_value
 from common.patient_set import restrict_cases_to_label_patients
 from common.paths import (
-    DEFAULT_GPU,
     LONGITUDINAL_EXPERIMENT,
     dataset_field_bank_dir,
     landmark_tag_from_args,
@@ -488,7 +487,7 @@ def _encode_longitudinal_prompt(
         )
         return {"out_dir": out_dir, "n_patients": len(encoded_rows), "max_records": max_records}
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = DEFAULT_GPU
+    # 编码可见 GPU 一律由调用方 CUDA_VISIBLE_DEVICES 控制(库内不再覆写)
     torch, create_model_from_pretrained, get_tokenizer = _lazy_import_conch()
     from tqdm import tqdm
 

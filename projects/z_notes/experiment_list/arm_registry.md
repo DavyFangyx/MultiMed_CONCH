@@ -57,7 +57,7 @@ Test_5 换 E 轴时,编码器被 E 轴值覆盖(如 baseline D-向量)——那�
 - 编码基座: field bank(landmark_0 变体)切片
 - 服务对象: Test_3 臂 B(原 B′,scheme = `Test_3_{work}_{dataset}`)、Test_4 档 2、
   Test_5 {5E_3,5M_3} 的 deleak 臂
-- 状态: 现行(60 个切片方案登记齐,编码产物 T31 清理后按需 `Test_3_arms.py encode` 重切)
+- 状态: 现行(60 个切片方案登记齐,编码产物 T31 清理后按需 `Test_3_arms.py slice` 重切)
 ────────────────────────────────────────
 
 **可达值**

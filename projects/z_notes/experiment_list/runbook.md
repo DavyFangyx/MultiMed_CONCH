@@ -35,7 +35,7 @@
 ```
 
 - **并行例外**:Test_2(时间轴链)与 Test_3(字段轴链)互不依赖,允许同时投放;其余按编号串行。
-- **GPU 纪律**:Test_5 硬约束只用 GPU 0-3 且放置时为空闲卡(4-7 不碰);编码默认卡见阶段 2(FIELD_BANK_GPU / A_PIPELINE_GPU 默认 6/7);最多 4 个 drainer;不 kill 他人进程。
+- **GPU 纪律**:Test_5 硬约束只用 GPU 0-3 且放置时为空闲卡(4-7 不碰);**GPU 选择一律 `CUDA_VISIBLE_DEVICES`**(唯一旋钮,每步命令行首给出);最多 4 个 drainer;不 kill 他人进程。
 - **训练范围(R13,2026-10-02)**:训练/搜索限 **label 患者集有效事件 ≥ 100 的主集**(名单自动派生不硬编码:`common.patient_set::main_datasets_by_label_events`;权威口径见 `z_notes/protocol0_cohort_selection/cohort_rules.md` §0.3);
   <100 档不新增训练(历史结果已随 T35 清洗;四档语义见数据集分档协议)。
 - **队列四桶**:全实验共享 `Clinic_Analyzer/configs/{queue,running,done,failed}` 四桶(flat 布局,conf 名自带家族区分,见 `Clinic_Analyzer/configs/README.md`);+ `parked/` = 撤下但保留,不被 drainer 读取;
@@ -124,22 +124,16 @@ python scripts/run_time_stats.py --dataset all
 ## 阶段 2:编码(Field Bank / 方案 / label 派生)
 
 把阶段 1 的筛选结果编成模型输入:Field Bank 文本基座、方案组合、论文/自定义方案(gdc 线)、off 臂 raw bank。
-**编码一律 conch env**;GPU 由 `FIELD_BANK_GPU`(Field Bank)与 `A_PIPELINE_GPU` / `--gpu`(run_a_manual)控制,默认 7。
+**编码一律 conch env**;GPU 一律由命令行的 `CUDA_VISIBLE_DEVICES` 控制(唯一 GPU 旋钮,无专属环境变量)。
 
 ```bash
-# 在 projects/ 根目录;编码一律 conch env;GPU 由下面两个变量控制(FIELD_BANK_GPU 默认 6,A_PIPELINE_GPU 默认 7)
-# Field Bank 编码卡(卡被占 → 改这里或临时 export 覆盖)
-export FIELD_BANK_GPU="${FIELD_BANK_GPU:-6}"
-# run_a_manual 编码卡(--gpu 优先于本变量)
-export A_PIPELINE_GPU="${A_PIPELINE_GPU:-7}"
-
+# 在 projects/ 根目录;编码一律 conch env;卡号按服务器现状自选(示例 6)
 # 2.1 Field Bank 文本基座(landmark_0,现行取值口径)= Test_1a t0 臂 / Test_3 的字段基座;失败 → 先补阶段 1
-conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
+CUDA_VISIBLE_DEVICES=6 conda run -n conch python scripts/run_field_bank.py --dataset all --landmark_time 0 --encoding prompt
 
 # 2.3 论文 / 自定义方案(gdc 线;入口 scripts/run_a_manual.py,现三子命令 = baseline / hgcn_clinic / cindex;
-#    原 json2prompt / encode / pipeline 已随 apipe 全量编码路径删除(T31 + 2026-10-09 收尾),
-#    文本嵌入一律 bank 切片:Test_3_* 用 scripts/Test_3_arms.py encode,零 CONCH 重编码)
-# baseline:baseline 模型训练(失败 → 先看 pipeline 是否已跑完)
+# 文本嵌入一律 bank 切片:Test_3_* 用 scripts/Test_3_arms.py slice,零 CONCH 重编码)
+# baseline:baseline onehot/D 向量临床嵌入(失败 → 先看阶段 1 产物是否齐)
 conda run -n conch python scripts/run_a_manual.py baseline --dataset all --scheme paper
 # hgcn_clinic:HGCN 临床绑定(走 base python;失败 → 确认该方案已注册)
 python scripts/run_a_manual.py hgcn_clinic --dataset all --scheme paper
@@ -151,9 +145,16 @@ bash scripts/exp_queue.sh bank --arm test_1a_off
 # 校验 主集 raw bank 齐备
 bash scripts/exp_queue.sh check --arm test_1a_off
 
-# 2.5 label 派生(Test_1a t0/off/merged 三臂前置):univariate 训练要求派生 label 已存在
+# 2.5 label 派生(Test_1a t0 臂前置):univariate 训练要求派生 label 已存在
 #    (risk set + 时间平移,写 results/Test_2b/arm_B/labels/;cindex 路径会自动派生,univariate 不会)
 python scripts/derive_landmark_labels.py --landmark_time 0
+
+# 2.6 Test_5 reach 臂 baseline 编码(纯 CPU,不占 GPU;S12a 跳过后本轮 5E_3/5M_3 需要)
+#    — 必须在阶段 3 之前完成:阶段 3 只索引+训练,不现场编码
+nice -n 10 /data/fangyuxuan/miniconda3/envs/conch/bin/python scripts/Test_5_baseline_c.py --all
+
+# 2.7 搜索字段语义缓存预生成(纯 CPU;Test_3/Test_6 搜索只 load 不现场编码,缺缓存直接报错)
+python scripts/pregen_field_semantics.py
 ```
 
 - **判据**:各命令退出码 0;`bash scripts/exp_queue.sh check --arm test_1a_off` 通过(raw bank 齐,主集派生);
@@ -163,9 +164,9 @@ python scripts/derive_landmark_labels.py --landmark_time 0
   `outputs/_raw/{ds}/field_bank/prompt/no_mask/`(off 臂 raw bank)。
 - **label 派生(患者线,与字段线正交)**:landmark 三要件(风险集只留 gt>T、终点平移 gt−T、gt≤0 全局剔除)
   落 `results/Test_2b/arm_B/labels/{study}__landmark_0.csv`;cindex 路径评估时自动派生,
-  univariate(t0/off/merged 三臂)不自动 → 前置用 `scripts/derive_landmark_labels.py`(本阶段 2.5);
+  univariate(t0/off 两臂)不自动 → 前置用 `scripts/derive_landmark_labels.py`(本阶段 2.5);
   字段线与患者线在评估(阶段 3~7 的 cindex)汇合。
-- 卡缺件补救:阶段 4/5/6 的 queue 入口自带 `encode` / `Test_3_arms.py encode` / 缺编码报告,按需补齐即可。
+- 卡缺件补救:阶段 3 的 queue 入口自带 `slice` / `Test_3_arms.py slice` / 缺切片报告,按需补齐即可(均为 bank 切片,零 CONCH 重编码)。
 
 ---
 
@@ -175,8 +176,9 @@ python scripts/derive_landmark_labels.py --landmark_time 0
 死进程补位、收尾报表)→ 判据。规格与口径见 `z_notes/Test_series_spec.md` 与
 `z_notes/experiment_list/experiment_list.md`;管线阶段依据见 `z_notes/tcga_pipeline/tcga_pipeline.md` ⑤~⑦。
 
-> **workers 语义**(2026-10-12 用户拍板):**一个 worker 执行一个 conf 文件**,`WORKERS=N` = 同时并行
-> N 个 conf(数据集);conf 内部字段串行。不再用多个 worker 并发执行同一个 conf。
+> **workers 语义**(2026-10-13):`WORKERS=N` = **训练进程总数上限**——同时认领 N//4 个 conf(数据集),
+> 每个 conf 内约 4 个字段并发(每字段一个独立 evaluate.py 子进程)。
+> 字段级并行是单实验吞吐的头号来源;96 核服务器建议 WORKERS=16。
 
 ### Test_1a 单字段泄露对照(t0 / off 两臂)
 
@@ -184,10 +186,10 @@ python scripts/derive_landmark_labels.py --landmark_time 0
 # 前置 = 阶段 2:Field Bank 基座 + off 臂 raw bank + 派生 label 齐备
 # t0 臂(mask 开,landmark_0)
 bash scripts/exp_queue.sh enqueue --arm test_1a_t0
-CUDA_VISIBLE_DEVICES=2,3,4 WORKERS=8 bash scripts/exp_queue.sh drain --arm test_1a_t0
+CUDA_VISIBLE_DEVICES=2,3,4 WORKERS=16 bash scripts/exp_queue.sh drain --arm test_1a_t0
 # off 臂(mask 关,no_mask raw bank)
 bash scripts/exp_queue.sh enqueue --arm test_1a_off
-CUDA_VISIBLE_DEVICES=7 WORKERS=8 bash scripts/exp_queue.sh drain --arm test_1a_off
+CUDA_VISIBLE_DEVICES=7 WORKERS=16 bash scripts/exp_queue.sh drain --arm test_1a_off
 # 两臂患者集一致性审计(可选)
 python scripts/Test_1a_audit_arms.py
 ```
@@ -200,8 +202,8 @@ python scripts/Test_1a_audit_arms.py
 ```bash
 # 2a 逐字段 leak_rate 审计(描述性,不训练)
 python scripts/run_leak_audit.py
-# 2b 训练:补切片 → 逐波投放(依赖 Test_3 的 generate/encode 先行,见下)
-bash scripts/exp_queue.sh encode --arm test_2b
+# 2b 训练:补切片 → 逐波投放(依赖 Test_3 的 generate/slice 先行,见下)
+bash scripts/exp_queue.sh slice --arm test_2b
 bash scripts/exp_queue.sh enqueue --arm test_2b --slice A1   # 按 wave_order 逐波投
 CUDA_VISIBLE_DEVICES=5 WORKERS=8 bash scripts/exp_queue.sh drain --arm test_2b
 python3 results_display/scripts/Test_2b_delta_report.py     # 两臂对照
@@ -219,11 +221,11 @@ T3_SEARCH_WORKERS=16 nohup python scripts/Test_3_search_queue.py watch --gpus 1,
     > results/Test_3_greedy_vs_works/logs/watch.log 2>&1 &
 # 5b 两臂(臂 B deleak / 臂 C reach;零 CONCH 重编码)
 python scripts/Test_3_arms.py generate --arm b
-python scripts/Test_3_arms.py encode --arm b --gpu 1 --parallel 3
+python scripts/Test_3_arms.py slice --arm b --parallel 3
 bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant b
 CUDA_VISIBLE_DEVICES=1 WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
 python scripts/Test_3_arms.py generate --arm ksig
-python scripts/Test_3_arms.py encode --arm ksig --gpu 1 --parallel 3
+python scripts/Test_3_arms.py slice --arm ksig --parallel 3
 bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant ksig
 CUDA_VISIBLE_DEVICES=1 WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
 python scripts/Test_3_compare.py --all
@@ -284,7 +286,8 @@ python results_display/scripts/Test_4_three_tiers.py
 ## env 变量速查
 
 > 队列 drain 路径只有三个通用变量:`CUDA_VISIBLE_DEVICES`(GPU)/ `WORKERS`(并发)/ `PYTHON3`(解释器),不再有按臂前缀的变量族。
-> 编码路径另有少量专属变量:`FIELD_BANK_GPU`(Field Bank 编码卡)、`ENC_GPU`(raw bank 编码卡)、`CONCH_PYTHON`(conch env 解释器),见阶段 2。
+> GPU 唯一旋钮 = `CUDA_VISIBLE_DEVICES`(每步命令行首给出);无任何专属 GPU 环境变量。
+> 编码路径另有 `CONCH_PYTHON`(conch env 解释器路径,非 GPU 旋钮),见阶段 2。
 
 | 变量 | 默认 | 用途 |
 |---|---|---|

@@ -12,14 +12,14 @@ set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
 PYTHON3="${T3_PYTHON3:-python3}"
-ENC_GPU="${T3_ENC_GPU:-1}"
+# GPU 由调用方 CUDA_VISIBLE_DEVICES 控制(2026-10-13 删宏后)
 GPU="${T3_GPU:-1}"
 POLL="${T3_POLL:-120}"
 WORKERS="${T3_WORKERS:-2}"
 LOG_ROOT=results/Test_3_greedy_vs_works/logs
 mkdir -p "$LOG_ROOT"
 
-echo "===== arm C chain start $(date '+%F %T') enc_gpu=$ENC_GPU train_gpu=$GPU ====="
+echo "===== arm C chain start $(date '+%F %T') train_gpu=$GPU ====="
 
 mapfile -t DATASETS < <("$PYTHON3" -c "import sys; sys.path.insert(0, 'scripts'); import Test_3_common as C; print('\n'.join(C.main_datasets()))")
 echo "[chain] datasets=${#DATASETS[@]}: ${DATASETS[*]}"
@@ -37,12 +37,12 @@ while [ "${#pending[@]}" -gt 0 ]; do
             echo "[chain] $ds 连续失败 ${ATTEMPTS[$ds]} 次，放弃（不阻塞总表；可手动重跑）"
             continue
         fi
-        echo "[chain] $ds result.json 落盘 $(date '+%F %T') → generate/encode/enqueue"
+        echo "[chain] $ds result.json 落盘 $(date '+%F %T') → generate/slice/enqueue"
         if ! "$PYTHON3" scripts/Test_3_arms.py generate --arm ksig --datasets "$ds"; then
             ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds generate 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
         fi
-        if ! "$PYTHON3" scripts/Test_3_arms.py encode --arm ksig --gpu "$ENC_GPU" --parallel 2 --datasets "$ds"; then
-            ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds encode 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
+        if ! "$PYTHON3" scripts/Test_3_arms.py slice --arm ksig --parallel 2 --datasets "$ds"; then
+            ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds slice 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
         fi
         if ! "$PYTHON3" scripts/exp_queue.py enqueue --arm test_3_arms --variant ksig --datasets "$ds"; then
             ATTEMPTS[$ds]=$(( ${ATTEMPTS[$ds]:-0} + 1 )); echo "[chain] $ds enqueue 失败(第 ${ATTEMPTS[$ds]} 次)"; rest+=("$ds"); continue
@@ -54,7 +54,7 @@ while [ "${#pending[@]}" -gt 0 ]; do
 done
 
 echo "[chain] 14/14 臂 C 已投放，等待 B 队列排空后开 drain $(date '+%F %T')"
-"$PYTHON3" scripts/exp_queue.py drain --arm test_3_arms --gpu "$GPU" --workers "$WORKERS"
+"$PYTHON3" scripts/exp_queue.py drain --arm test_3_arms --workers "$WORKERS"
 echo "[chain] drain 结束 $(date '+%F %T')"
 
 "$PYTHON3" scripts/Test_3_arms.py summarize --arm b   || echo "[chain] summarize b 失败"

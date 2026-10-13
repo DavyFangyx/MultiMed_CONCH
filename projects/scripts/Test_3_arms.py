@@ -6,14 +6,14 @@
            recommended_subset = gain-only δ=0.005 参考点;--arm best 用历史 best_subset)
   (deleak_apipe = 论文完整组合 × lm0 的 Test_2b 历史产物,冻结只读,保留为交叉参考)
 
-链路:generate(fields.json ∩ bank 登记)→ encode(bank 切片,零 CONCH 重编码)
+链路:generate(fields.json ∩ bank 登记)→ slice(bank 切片,零 CONCH 重编码)
       → enqueue/drain(已收敛到 `scripts/exp_queue.py --arm test_3_arms`,本文件不再实现)
       → summarize(写 arm_B 表,按行键合并)。reach 的 c-index 与搜索 best_cv_c_mean 同口径,
       可直接引用搜索 result.json,无需重新训练。
 
 用法(projects/ 根目录):
   python3 scripts/Test_3_arms.py generate --arm b
-  python3 scripts/Test_3_arms.py encode   --arm b --parallel 3
+  python3 scripts/Test_3_arms.py slice    --arm b --parallel 3
   python3 scripts/Test_3_arms.py summarize
   python3 scripts/Test_3_arms.py status   --arm b
   # enqueue / drain 走统一入口(旧姿势等价;本文件同名子命令只指路,不再执行):
@@ -89,7 +89,7 @@ def embeddings_dir(dataset: str, scheme: str) -> Path:
     return ROOT / "outputs" / dataset / "A_manual" / scheme / f"landmark_{C.LANDMARK_TIME}" / "embeddings" / "pt"
 
 
-def _encode_one(dataset: str, scheme: str, gpu: str) -> str:
+def _encode_one(dataset: str, scheme: str) -> str:
     """bank-only 口径:按方案 fields.json(∩ bank)切片 bank 嵌入矩阵,零 CONCH 重编码。
 
     skip 守卫(2026-10-09 指纹化): 已有切片必须与方案字段位号一致且患者数 =
@@ -121,7 +121,7 @@ def _encode_one(dataset: str, scheme: str, gpu: str) -> str:
             pass
         print(f"[test_3][arms] stale {dataset}/{scheme}: 切片字段/患者数与 bank 不一致,重切")
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
-    log = LOG_ROOT / f"encode_{dataset}__{scheme}.log"
+    log = LOG_ROOT / f"slice_{dataset}__{scheme}.log"
     try:
         payload = materialize_bank_subset(dataset, fields, clinic, overwrite=True)
     except Exception as exc:  # noqa: BLE001
@@ -133,11 +133,11 @@ def _encode_one(dataset: str, scheme: str, gpu: str) -> str:
     return f"ok   {dataset}/{scheme} (bank 切片 {len(fields)} 字段)"
 
 
-def cmd_encode(arm: str, datasets: list[str], gpu: str, parallel: int) -> None:
+def cmd_slice(arm: str, datasets: list[str], parallel: int) -> None:
     pairs = scheme_pairs(arm, datasets)
-    print(f"[test_3][arms] encode(bank 切片) {len(pairs)} 个 (dataset, scheme), parallel={parallel}", flush=True)
+    print(f"[test_3][arms] slice(bank 切片) {len(pairs)} 个 (dataset, scheme), parallel={parallel}", flush=True)
     with ThreadPoolExecutor(max_workers=max(1, parallel)) as pool:
-        for message in pool.map(lambda item: _encode_one(item[0], item[1], gpu), pairs):
+        for message in pool.map(lambda item: _encode_one(item[0], item[1]), pairs):
             print(f"[test_3][arms] {message}", flush=True)
 
 
@@ -168,11 +168,14 @@ def cmd_enqueue(arm: str, datasets: list[str]) -> None:
     )
 
 
-def cmd_drain(gpu: str, workers: int, poll: float) -> None:
-    """已收敛：实现在 `scripts/exp_queue.py` 的 cindex backend（--arm test_3_arms）。"""
+def cmd_drain(workers: int, poll: float) -> None:
+    """已收敛:实现在 `scripts/exp_queue.py` 的 cindex backend(--arm test_3_arms)。
+
+    GPU 由调用方 CUDA_VISIBLE_DEVICES 控制。
+    """
     raise SystemExit(
-        "[test_3][arms] drain 已收敛到统一入口（逐字等价，勿再走本文件）:\n"
-        f"  bash scripts/exp_queue.sh drain --arm test_3_arms --gpu {gpu} --workers {workers}"
+        "[test_3][arms] drain 已收敛到统一入口(逐字等价,勿再走本文件):\n"
+        f"  bash scripts/exp_queue.sh drain --arm test_3_arms --workers {workers}"
     )
 
 
@@ -212,10 +215,9 @@ def cmd_status(arm: str, datasets: list[str]) -> None:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Test_3 两臂编排器")
-    parser.add_argument("command", choices=["generate", "encode", "enqueue", "drain", "summarize", "status"])
+    parser.add_argument("command", choices=["generate", "slice", "enqueue", "drain", "summarize", "status"])
     parser.add_argument("--arm", default="b", choices=ARMS)
-    parser.add_argument("--gpu", default="1")
-    parser.add_argument("--parallel", type=int, default=3, help="encode 并发进程数")
+    parser.add_argument("--parallel", type=int, default=3, help="slice 并发进程数")
     parser.add_argument("--workers", type=int, default=2, help="drain 并发 worker 数")
     parser.add_argument("--poll", type=float, default=15.0)
     parser.add_argument("--datasets", default=None, help="可选：覆盖数据集名单（冒烟/调试用）")
@@ -228,12 +230,12 @@ def main(argv=None) -> int:
                 if args.datasets else C.main_datasets())
     if args.command == "generate":
         cmd_generate(args.arm, datasets)
-    elif args.command == "encode":
-        cmd_encode(args.arm, datasets, args.gpu, args.parallel)
+    elif args.command == "slice":
+        cmd_slice(args.arm, datasets, args.parallel)
     elif args.command == "enqueue":
         cmd_enqueue(args.arm, datasets)
     elif args.command == "drain":
-        cmd_drain(args.gpu, args.workers, args.poll)
+        cmd_drain(args.workers, args.poll)
     elif args.command == "summarize":
         cmd_summarize(datasets, args.arm)
     elif args.command == "status":
