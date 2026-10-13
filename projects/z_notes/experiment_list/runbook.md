@@ -1,6 +1,6 @@
 # 实验执行手册:全链路 runbook(审查 → 编码 → 实验 → 报表)
 
-> **只想快速开跑:见同目录 `usage.md`(精简速查);本文件是完整版**,env 速查 / 已知坑以本文件为准。
+> **唯一执行文档**:命令 + 判据都在本文件;顶部"一页速览"即速查,env 速查 / 已知坑见文末。
 > **本文件是实验执行的权威手册**:阶段划分、命令、产物以这里为准。
 > **分步手动执行**:长序列运行、部分节点需人工核查审计,不提供一键串行脚本;按下方阶段顺序逐阶段执行。
 > 口径权威:`z_notes/experiment_list/experiment_list.md`(实验清单)、`z_notes/Test_series_spec.md`(规格)、
@@ -9,7 +9,7 @@
 > 投递/监控 = **base python 3.13**。队列纪律:**上一步完成再走下一步**(不要并行 stage,除非明确说可并行)。
 > **队列入口已收敛**:投递/监控一律 `bash scripts/exp_queue.sh <verb> --arm <臂>`
 > (臂/别名/组:`python3 scripts/exp_queue.py list`;臂注册表与三 backend 见 `scripts/exp_queue.py` 头注释)。
-> 例外 = Test_3 搜索 / Test_6 的 **watch·drain**(动态槽位调度):留在 `scripts/Test_3_search_queue.py` / `scripts/t6_scheduler.sh`。
+> 执行统一为 `bash scripts/exp_queue.sh run`(无臂:conf 自描述,按名序调度;约束槽位 = conf 的 gpu_policy)。
 
 ---
 
@@ -20,7 +20,7 @@
 | 0 | 前置闸门 | `python scripts/check_search_labels.py` | 只读报告,无产物 |
 | 1 | 数据准备与原始文件审查(label 重建/split 重建/扫描/统计/筛选) | `rebuild_labels.py --all`(⓪a,可选) → `generate_5fold_splits.py --all --seed 1`(⓪b,可选) → `run_scan_fields.py` → `run_field_presence.py` → `run_field_stats.py --landmark_time 0` → `run_field_filter.py --landmark_time 0` | `Clinic_Analyzer/data/splits/5foldcv/`、`rawdata_stats/{ds}/…`、`rawdata_stats/_shared/landmark_0/` |
 | 2 | 编码(Field Bank / 方案 / label 派生) | `scripts/run_field_bank.py` → `run_a_manual.py`;`bash scripts/exp_queue.sh bank --arm test_1a_off` | `outputs/{ds}/field_bank/…`、`outputs/{ds}/A_manual/…`、`outputs/_raw/{ds}/…` |
-| 3 | 实验(Test_1a / Test_2 / Test_3 / Test_5 / Test_6,各一个实验小节) | 每实验 = `enqueue --arm <臂>` → `drain --arm <臂> --gpus <卡> --workers <数>`(一条 drain 守到完成:失败重试/死进程补位/收尾报表,无 watch);Test_3 搜索与 Test_6 的动态槽位调度留在 `Test_3_search_queue.py` / `t6_scheduler.sh` | 各实验小节"产物"栏 |
+| 3 | 实验(Test_1a / Test_2 / Test_3 / Test_5 / Test_6,各一个实验小节) | 每实验 = `enqueue --arm <臂>` → `run --workers <数>`(统一执行,无臂:conf 自描述,失败重试/死进程补位/名序调度;t5/t6 的 GPU 0-3 = conf gpu_policy) | 各实验小节"产物"栏 |
 | 4 | 报表(展示层,不训练) | `python results_display/scripts/{Test_1a_field_level,Test_1b_dataset_cindex,Test_2b_delta_report,Test_4_three_tiers}.py` | `results_display/` 4 个目录 |
 
 **依赖关系(串行顺序的由来)**:
@@ -164,8 +164,8 @@ python scripts/pregen_field_semantics.py
 
 ## 阶段 3:实验(Test_1a / Test_2 / Test_3 / Test_5 / Test_6)
 
-所有实验收进本节,一个实验一个小节:投放 → 训练(drain 一条命令守到完成,自带失败重试、
-死进程补位、收尾报表)。规格与口径见 `z_notes/Test_series_spec.md` 与
+所有实验收进本节,一个实验一个小节:**enqueue(按臂模板投放自描述 conf)→ `run`(无臂统一执行,
+守到完成,自带失败重试/死进程补位;一次 run 按 conf 名序调度多个实验)**。规格与口径见 `z_notes/Test_series_spec.md` 与
 `z_notes/experiment_list/experiment_list.md`;管线阶段依据见 `z_notes/tcga_pipeline/tcga_pipeline.md` ⑤~⑦。
 
 > **workers 语义**(2026-10-13):`WORKERS=N` = **训练进程总数上限**——同时认领 N//4 个 conf(数据集),
@@ -178,10 +178,9 @@ python scripts/pregen_field_semantics.py
 # 前置 = 阶段 2:Field Bank 基座 + off 臂 raw bank + 派生 label 齐备
 # t0 臂(mask 开,landmark_0)
 bash scripts/exp_queue.sh enqueue --arm test_1a_t0
-CUDA_VISIBLE_DEVICES=2,3,4 WORKERS=16 bash scripts/exp_queue.sh drain --arm test_1a_t0
-# off 臂(mask 关,no_mask raw bank)
 bash scripts/exp_queue.sh enqueue --arm test_1a_off
-CUDA_VISIBLE_DEVICES=7 WORKERS=16 bash scripts/exp_queue.sh drain --arm test_1a_off
+# 两臂 conf 都在共享四桶,一次 run 全部执行(名序:t0 先 off 后)
+CUDA_VISIBLE_DEVICES=2,3,4,7 WORKERS=16 bash scripts/exp_queue.sh run
 # 两臂患者集一致性审计(可选)
 python scripts/Test_1a_audit_arms.py
 ```
@@ -196,7 +195,7 @@ python scripts/run_leak_audit.py
 # 2b 训练:补切片 → 逐波投放(依赖 Test_3 的 generate/slice 先行,见下)
 bash scripts/exp_queue.sh slice --arm test_2b
 bash scripts/exp_queue.sh enqueue --arm test_2b --slice A1   # 按 wave_order 逐波投
-CUDA_VISIBLE_DEVICES=5 WORKERS=8 bash scripts/exp_queue.sh drain --arm test_2b
+CUDA_VISIBLE_DEVICES=5 WORKERS=8 bash scripts/exp_queue.sh run
 python3 results_display/scripts/Test_2b_delta_report.py     # 两臂对照
 ```
 
@@ -205,19 +204,17 @@ python3 results_display/scripts/Test_2b_delta_report.py     # 两臂对照
 ### Test_3 字段轴链(搜索 → 两臂 → Test_4)
 
 ```bash
-# 3a 搜索(动态槽位调度保留在 Test_3_search_queue.py,不并入 exp_queue)
+# 3a 搜索(经统一 run 执行:每 conf 一个 run_selection 进程)
 bash scripts/exp_queue.sh enqueue --arm test_3_search
-T3_SEARCH_WORKERS=16 nohup python scripts/Test_3_search_queue.py watch --gpus 1,0,3,4,5,6 --interval 60 \
-    > results/Test_3_greedy_vs_works/logs/watch.log 2>&1 &
 # 3b 两臂(臂 B deleak / 臂 C reach;零 CONCH 重编码)
 python scripts/Test_3_arms.py generate --arm b
 python scripts/Test_3_arms.py slice --arm b --parallel 3
 bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant b
-CUDA_VISIBLE_DEVICES=1 WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
 python scripts/Test_3_arms.py generate --arm ksig
 python scripts/Test_3_arms.py slice --arm ksig --parallel 3
 bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant ksig
-CUDA_VISIBLE_DEVICES=1 WORKERS=2 bash scripts/exp_queue.sh drain --arm test_3_arms
+# 3a+3b 的 conf 同桶,一次 run 全部执行
+CUDA_VISIBLE_DEVICES=1,0 WORKERS=8 bash scripts/exp_queue.sh run
 python scripts/Test_3_compare.py --all
 # 3c Test_4 三档收口(纯汇总,不训练)
 python results_display/scripts/Test_4_three_tiers.py
@@ -229,19 +226,19 @@ python results_display/scripts/Test_4_three_tiers.py
 
 ```bash
 bash scripts/exp_queue.sh enqueue --arm test_5
-bash scripts/exp_queue.sh scheduler    # 后台多卡调度:GPU 硬约束 0-3 空闲卡自动放置(日志 results/Test_5_invariance/logs/)
+CUDA_VISIBLE_DEVICES=0,1,2,3 WORKERS=8 bash scripts/exp_queue.sh run
+#   t5 conf 带 gpu_policy=0-3:run 只在 0-3 有空闲卡时执行,否则放回队列等待
 bash scripts/exp_queue.sh summarize --arm test_5
 bash scripts/exp_queue.sh q_recompute  # 输出 diff=0 即通过
 ```
 
 - **产物**:`results/Test_5_invariance/{子检查}/`、`results_display/Test_5_invariance/q_metrics.csv`。
-- 停止调度器:`bash scripts/exp_queue.sh scheduler_stop`。
 
 ### Test_6 搜索算法选型(Test_1a 先验就绪后;建议最后跑)
 
 ```bash
-# 试点 24 个搜索(3 数据集 × 8 算法);GPU 0-3 共 8 槽 × 8 workers(脚本内固定;nohup,日志 /tmp/t6_scheduler.log)
-bash scripts/t6_scheduler.sh
+# 试点 24 个搜索(3 数据集 × 8 算法);conf 带 gpu_policy=0-3,经统一 run 执行
+CUDA_VISIBLE_DEVICES=0,1,2,3 WORKERS=8 bash scripts/exp_queue.sh run
 python scripts/run_bakeoff_report.py --results-root results/Test_6_search/prompt \
     --extra-roots results/Test_3_greedy_vs_works/search --budget_cap 500
 ```
@@ -289,7 +286,7 @@ python results_display/scripts/Test_4_three_tiers.py
    任何 label 改动旧行自动 miss 重训(不报错,无需手清)。
 3. **自愈循环的停止**:Test_5 `scheduler` 是后台自愈循环,
    停止用 `bash scripts/exp_queue.sh scheduler_stop`(只 kill 自己写的 `scheduler.pid`);Test_3 搜索的动态槽位
-   调度仍在 `scripts/Test_3_search_queue.py`,它一轮跑完自动 report 退出。
+
    **不要直接 kill 无关进程**;drain 自带自愈与收尾报表——drain 进程被杀后重跑同一条 drain 命令即续(会自动补位、回收、重试)。
 4. **搜索链路患者口径 = 字段库 ∩ label**:label 文件若带 gt≤0 患者会被计入训练风险集 → 阶段 0 闸门 `check_search_labels.py` 不过就先修 label。
 5. **冻结线 PGC**:`A_pipeline_pgc/run.py`(L0-L5 / D0-D5)**默认拒绝任何编码运行,必须显式 `--force`**;
@@ -301,7 +298,7 @@ python results_display/scripts/Test_4_three_tiers.py
 8. **Test_5 的 parked 与缺编码**:`5M_2b` 的 `survgc_f`/`survpgc_f`(多模态 3 集 conf)默认撤到 `parked/`
    (需 slide 级 label metadata;决定后用 `--include-multimodal` 或手工 mv 回 `queue/`);
    `enqueue` 对缺编码的 (dataset, scheme, arm) 会 **SKIP 并列出**,不报错——看 `status` 的"缺编码"段。
-9. **Test_6 的 `--out` 必须含 ds(+algo)**:防不同 (ds, algo) 串目录;`t6_scheduler.sh` 已按此写好,手工补跑请照抄。
+9. **Test_6 的 `--out` 必须含 ds(+algo)**:防不同 (ds, algo) 串目录;enqueue 模板已按此写,手工补跑请照抄。
 10. **`results/Test_1a/arm_t0` 是指向 `results/univariate` 的软链**,不是真目录;删改前先 `ls -la` 确认。
 11. **分步手动执行**:无自动串行脚本;每个阶段按命令块复制粘贴执行,上一步完成再走下一步。
 12. **Test_3 搜索队列有 4 个"遗留键" conf**:LUAD/LUSC/OV/PAAD 的 conf 名里嵌的 job_key 来自更早一次带

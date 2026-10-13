@@ -1,27 +1,35 @@
-"""Dataset-level conf queue, modeled on Clinic_Analyzer snapshots.
+"""Dataset-level conf queue(univariate/greedy 后端)。
 
-One conf per (dataset, landmark_time). Multiple GPU workers share the same
-queue and claim jobs with an atomic mv, so a running job is not taken again.
-Univariate has a default root; greedy must pass --queue_root explicitly (the
-D0 family root was deleted).
+一个 conf 对应一个 (dataset, landmark_time)。多 GPU worker 共享同一队列,
+以原子 mv 认领,在跑任务不会被重复取走。**机制层(四桶/认领/状态迁移)统一
+在 `src/queue_core.py`**,本文件只保留本后端的 job_key 材料与 enqueue 语义。
+
+Univariate 有默认根;greedy 必须显式传 --queue_root(D0 家族根已删除)。
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from common.paths import config_family_dir
+from queue_core import (  # noqa: E402  机制层三后端合一(2026-10-13)
+    BUCKETS,
+    count,
+    dump_job,
+    ensure_dirs,
+    existing_job,
+    job_key_from_payload as _core_job_key,
+    load_job,
+    mark_done,
+    mark_failed,
+    release,
+)
+from queue_core import now_utc as _now  # noqa: E402
 
-
-# D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy 队列根必须显式传 --queue_root。
+# D0 家族 Clinic_Analyzer/configs/greedy 已删除:greedy 队列根必须显式传 --queue_root。
 DEFAULT_QUEUE_ROOT = None
 DEFAULT_UNIVARIATE_QUEUE_ROOT = config_family_dir("Test_1a_t0")
-BUCKETS = ("queue", "running", "done", "failed")
 WORKER_LOCAL_KEYS = ("workers", "device", "conch_python", "analyzer_python", "queue_root")
 JOB_KEY_SKIP = set(WORKER_LOCAL_KEYS) | {"dataset", "landmark_tag"}
 
@@ -36,32 +44,15 @@ def queue_root_from_args(args) -> Path:
         if experiment == "longitudinal":
             return DEFAULT_UNIVARIATE_QUEUE_ROOT.parent / "longitudinal_univariate"
         return DEFAULT_UNIVARIATE_QUEUE_ROOT
-    # D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy 队列根必须显式给出。
+    # D0 家族 Clinic_Analyzer/configs/greedy 已删除:greedy 队列根必须显式给出。
     raise ValueError(
-        "greedy 队列根必须显式传 --queue_root（例如 Clinic_Analyzer/configs/Test_3_search）；"
-        "D0 家族 Clinic_Analyzer/configs/greedy 已删除，不再提供默认队列根"
+        "greedy 队列根必须显式传 --queue_root(例如 Clinic_Analyzer/configs/Test_3_search);"
+        "D0 家族 Clinic_Analyzer/configs/greedy 已删除,不再提供默认队列根"
     )
 
 
 def ensure_queue_dirs(root: Path) -> Path:
-    root = Path(root)
-    for name in BUCKETS:
-        (root / name).mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def _json_default(obj):
-    if isinstance(obj, Path):
-        return str(obj)
-    raise TypeError(f"not json serializable: {type(obj)}")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _dumps(payload: dict) -> str:
-    return json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default) + "\n"
+    return ensure_dirs(root)
 
 
 def args_payload(args) -> dict:
@@ -83,9 +74,7 @@ def args_payload(args) -> dict:
 
 
 def job_key_from_payload(payload: dict) -> str:
-    material = {key: payload[key] for key in sorted(payload) if key not in JOB_KEY_SKIP}
-    blob = json.dumps(material, ensure_ascii=False, sort_keys=True, default=_json_default)
-    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
+    return _core_job_key(payload, JOB_KEY_SKIP)
 
 
 def job_key_from_args(args) -> str:
@@ -105,35 +94,6 @@ def job_stem(dataset: str, landmark_time) -> str:
 
 def job_filename_for(job_key: str, dataset: str, landmark_time) -> str:
     return f"{job_key}__{job_stem(dataset, landmark_time)}.conf"
-
-
-def dump_job(path: Path, payload: dict) -> bool:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-    try:
-        fd = os.open(path, flags, 0o644)
-    except FileExistsError:
-        return False
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(_dumps(payload))
-    except Exception:
-        path.unlink(missing_ok=True)
-        raise
-    return True
-
-
-def load_job(path: Path) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
-
-
-def _existing_job_path(root: Path, name: str) -> Path | None:
-    for bucket in BUCKETS:
-        candidate = root / bucket / name
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def enqueue_jobs(args, datasets: list[str], *, root: Path | None = None) -> dict:
@@ -164,7 +124,7 @@ def enqueue_jobs(args, datasets: list[str], *, root: Path | None = None) -> dict
     multi = len(jobs) > 1 or str(getattr(args, "dataset", "")) == "all" or str(getattr(args, "landmark_time", "")) == "all"
     for dataset, landmark_time, landmark_tag in jobs:
         name = job_filename_for(key, dataset, landmark_time)
-        found = _existing_job_path(root, name)
+        found = existing_job(root, name)
         if found is not None:
             existing.append(found)
             continue
@@ -184,7 +144,7 @@ def enqueue_jobs(args, datasets: list[str], *, root: Path | None = None) -> dict
         if dump_job(dest, job):
             created.append(dest)
         else:
-            found = _existing_job_path(root, name)
+            found = existing_job(root, name)
             if found is not None:
                 existing.append(found)
     return {
@@ -195,58 +155,15 @@ def enqueue_jobs(args, datasets: list[str], *, root: Path | None = None) -> dict
     }
 
 
-def _claim_path(src: Path, dest: Path) -> bool:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.rename(src, dest)
-    except FileNotFoundError:
-        return False
-    except FileExistsError:
-        return False
-    except OSError:
-        return False
-    return dest.exists() and not src.exists()
-
-
 def claim_job(root: Path, job_key: str) -> Path | None:
-    root = ensure_queue_dirs(root)
-    queue_dir = root / "queue"
-    running_dir = root / "running"
-    for src in sorted(queue_dir.glob(f"{job_key}__*.conf")):
-        dest = running_dir / src.name
-        if not _claim_path(src, dest):
-            continue
-        job = load_job(dest)
-        job["claimed_at"] = _now()
-        job["claimed_pid"] = os.getpid()
-        job["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        dest.write_text(_dumps(job), encoding="utf-8")
-        return dest
-    return None
+    """按 job_key 前缀原子认领(机制 = queue_core.claim,带 claimed_pid 盖章)。"""
+    from queue_core import claim
 
-
-def _move_job(path: Path, bucket: str) -> Path:
-    path = Path(path)
-    dest = path.parent.parent / bucket / path.name
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if path.resolve() != dest.resolve():
-        os.replace(path, dest)
-    return dest
-
-
-def mark_done(path: Path) -> Path:
-    return _move_job(path, "done")
-
-
-def mark_failed(path: Path, error: str | None = None) -> Path:
-    dest = _move_job(path, "failed")
-    if error:
-        dest.with_suffix(".err").write_text(str(error).rstrip() + "\n", encoding="utf-8")
-    return dest
+    return claim(root, f"{job_key}__")
 
 
 def release_job(path: Path) -> Path:
-    return _move_job(path, "queue")
+    return release(path)
 
 
 def merge_job_args(worker_args, job: dict):
@@ -265,5 +182,5 @@ def merge_job_args(worker_args, job: dict):
 
 
 def count_bucket(root: Path, bucket: str, job_key: str | None = None) -> int:
-    pattern = f"{job_key}__*.conf" if job_key else "*.conf"
-    return len(list((Path(root) / bucket).glob(pattern)))
+    pattern = f"{job_key}__" if job_key else "*"
+    return count(root, bucket, pattern)

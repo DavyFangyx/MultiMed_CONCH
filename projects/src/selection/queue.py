@@ -1,34 +1,33 @@
-"""Config-snapshot queue for E2 subset-selection experiments."""
+"""Config-snapshot queue for E2 subset-selection experiments(机制层 = queue_core)。"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from common.paths import config_family_dir
+from queue_core import BUCKETS, claim, move, now_utc  # noqa: E402
 
-
-BUCKETS = ("queue", "running", "done", "failed")
 DEFAULT_ROOT = config_family_dir("Test_3_search")
 WORKER_LOCAL_KEYS = {"queue_root", "poll_seconds", "max_jobs", "workers"}
 
 
 def ensure_dirs(root: Path) -> Path:
-    root = Path(root)
-    for bucket in BUCKETS:
-        (root / bucket).mkdir(parents=True, exist_ok=True)
-    return root
+    from queue_core import ensure_dirs as _ensure
+
+    return _ensure(root)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return now_utc()
 
 
 def _dump(path: Path, payload: dict) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
+    from queue_core import json_dumps
+
+    path.write_text(json_dumps(payload), encoding="utf-8")
 
 
 def _payload(args) -> dict:
@@ -82,6 +81,8 @@ def enqueue(args, datasets: list[str], landmarks: list[str], root: Path | None =
                 fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
             except FileExistsError:
                 existing.append(target)
+            except FileExistsError:
+                existing.append(target)
                 continue
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(json.dumps(job, ensure_ascii=False, indent=2) + "\n")
@@ -90,23 +91,7 @@ def enqueue(args, datasets: list[str], landmarks: list[str], root: Path | None =
 
 
 def claim(root: Path, job_key: str) -> Path | None:
-    root = ensure_dirs(root)
-    for source in sorted((root / "queue").glob(f"{job_key}__*.conf")):
-        target = root / "running" / source.name
-        try:
-            os.rename(source, target)
-        except OSError:
-            continue
-        job = json.loads(target.read_text(encoding="utf-8"))
-        job.update({"claimed_at": _now(), "claimed_pid": os.getpid(),
-                    "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "")})
-        _dump(target, job)
-        return target
-    return None
+    """按 job_key 前缀原子认领(机制 = queue_core.claim)。"""
+    from queue_core import claim as _claim
 
-
-def move(path: Path, bucket: str) -> Path:
-    target = Path(path).parent.parent / bucket / Path(path).name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(path, target)
-    return target
+    return _claim(root, f"{job_key}__")

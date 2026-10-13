@@ -1,33 +1,25 @@
 #!/usr/bin/env python3
-"""实验队列统一入口：一套 verb + 一张臂注册表，承载全部 (数据集 × 实验配置) 差异。
+"""实验队列统一入口(2026-10-13 重构)。
 
-收敛口径（实现层同构、结果层零变动）：
-  * 队列原语早已统一（`src/greedy/queue.py` / `src/manual_pipeline/cindex.py` /
-    `src/selection/queue.py`），本文件只合并三套"调用层"：同一组 verb
-    （enqueue / status / retry / recover / trim / drain / report / summarize / list …），
-    差异全部落在 ARM_REGISTRY 的每条臂记录里；
-  * 每条臂的 drainer argv **逐字**保留旧脚本写法 —— argv 全字段进 job_key 哈希材料
-    （greedy/queue.py 跳过 workers/device/conch_python/analyzer_python/queue_root +
-    dataset/landmark_tag；selection/queue.py 跳过 queue_root/poll_seconds/max_jobs/workers
-    + dataset/landmark_time），改一个字符就会造出新 conf / 孤儿；
-  * conf 名与内容由底层 primitives 决定，本文件不构造、不改写。
+设计决策与依据(替代旧的禁令式注释):
+  * **enqueue 需要 arm,run 不需要**——arm 的"实验定义"半部(datasets 来源、
+    2b 波次网格、3arms 绑定、t5 子检查)是 enqueue 模板,省去手写 argv 网格
+    (使用便捷);运行半部(drainer/调度/自愈)已并入统一 run。
+  * **conf 自描述**:enqueue 时写入 kind/label/gpu_policy(JSON conf;
+    cindex 的 bash 风格 conf 由 conf_text 写 KIND/GPU_POLICY 行)。
+    `run` 只读 conf,按名排序认领(一次 run 自然按序调度多个实验)。
+  * **预算 = CUDA_VISIBLE_DEVICES + WORKERS**(操作决策,不进代码);
+    分类约束(t5/t6 的 GPU 0-3)是 conf 的 gpu_policy 字段,run 只在约束卡
+    空闲时执行,否则放回队列等待。
+  * **job_key = 语义元组的哈希**(本地参数 workers/queue_root/device/解释器
+    路径不进哈希)——同一实验配置在任何机器/并发数下同键。
 
-三个 backend（= 三套队列原语，臂记录里的 `backend` 字段选择）：
-  univariate  greedy/queue.py         Test_1a t0 / off 两臂
-  cindex      manual_pipeline/cindex  Test_2b 波次切片 / Test_3 两臂 / Test_5 四个子检查
-  search      selection/queue.py      Test_3 搜索 / Test_6 试点（动态槽位调度保留在
-                                      Test_3_search_queue.py 与 t6_scheduler.sh，
-                                      不并入本文件）
-
-用法（projects/ 根目录，base python3；训练由各 drainer 自行拉起）：
-  python3 scripts/exp_queue.py list                              # 臂注册表
-  python3 scripts/exp_queue.py status --arm all                  # 全家族一屏
-  python3 scripts/exp_queue.py enqueue --arm test_1a_t0          # 投放（幂等）
-  python3 scripts/exp_queue.py enqueue --arm test_2b --slice A1  # 波次切片
-  python3 scripts/exp_queue.py drain --arm test_1a_t0 --gpus 7 --workers 8   # 起 drainer 并守到完成
-  python3 scripts/exp_queue.py scheduler                         # Test_5 多卡调度（GPU 0-3）
-  python3 scripts/exp_queue.py recover --arm test_3_search       # running 悬挂回收
-外壳 `scripts/exp_queue.sh` 负责环境变量前缀透传与 scheduler/bank 后台包装。
+用法(projects/ 根目录,base python3):
+  python3 scripts/exp_queue.py list                              # 臂注册表(enqueue 模板视图)
+  python3 scripts/exp_queue.py enqueue --arm test_1a_t0          # 投放(幂等,写自描述 conf)
+  python3 scripts/exp_queue.py run --workers 16                  # 无臂统一执行,守到完成(自愈)
+  python3 scripts/exp_queue.py status                            # flat 四桶一屏(arm 仅过滤标签)
+外壳 `scripts/exp_queue.sh` 负责环境变量前缀透传与后台包装。
 """
 from __future__ import annotations
 
@@ -62,7 +54,7 @@ MAX_RETRIES = 3
 BUCKETS = ("queue", "running", "done", "failed")
 UNI_BUCKETS = ("queue", "running", "done", "failed")
 
-# Test_6 试点网格（逐字同 scripts/t6_scheduler.sh；该脚本保留负责槽位调度）
+# Test_6 试点网格（槽位调度已并入统一 run：gpu_policy=0-3）
 T6_DATASETS = ("TCGA-GBM", "TCGA-LGG", "TCGA-PAAD")
 T6_ALGOS = ("A1_random", "A3_beam", "A4_anneal", "A5_genetic", "A6_aco", "SEAS",
             "A0_full", "A0b_topk")
@@ -150,9 +142,9 @@ def pid_from_file(path: Path) -> int:
 
 
 # ===========================================================================
-# 臂注册表
-#   * drainer_argv 逐字保留旧脚本写法（job_key 哈希材料，禁用任何"顺手重构"）
-#   * queue_root / results_root / pid / log 默认值同旧脚本（env 前缀可覆盖）
+# 臂注册表(enqueue 模板视图)
+#   每条臂 = 一个实验定义:dataset 来源 + argv 模板 + 报表标签;
+#   运行半部(drainer/pid/log/gpus 默认)已随统一 run 移除。
 # ===========================================================================
 
 @dataclass
@@ -325,7 +317,7 @@ def search_cli() -> Path:
 
 
 def t3_search_argv(dataset: str, workers: int | None = None) -> list[str]:
-    """逐字同 Test_3_search_queue._runner_argv（--out 绝对路径进 job_key）。"""
+    """搜索作业 argv（--out 绝对路径进 job_key；与 conf args 同源）。"""
     import Test_3_common as C
 
     argv = [
@@ -344,7 +336,7 @@ def t3_search_argv(dataset: str, workers: int | None = None) -> list[str]:
 
 
 def t6_search_argv(dataset: str, algo: str, workers: int | None = None) -> list[str]:
-    """逐字同 t6_scheduler.sh（--out 相对路径进 job_key，勿改绝对路径）。"""
+    """Test_6 搜索作业 argv（--out 相对路径进 job_key）。"""
     return [
         sys.executable, str(search_cli()),
         "--dataset", dataset,
@@ -367,9 +359,8 @@ _ARM_T3_SEARCH = Arm(
     workers_default=16, gpus_default="1,0,3,4,5,6,4,5,3",
     extras={"landmark": "0", "argv": t3_search_argv,
             "report_out": RESULTS / "Test_3_greedy_vs_works" / "search_summary.csv",
-            "watch_script": "Test_3_search_queue.py",
             "workers_map_env": "T3_SEARCH_WORKERS_MAP"},
-    note="A2_greedy × landmark_0 × mlp_clinic_flatten × seed 0（drain/watch 见 Test_3_search_queue.py）",
+    note="A2_greedy × landmark_0 × mlp_clinic_flatten × seed 0（经统一 run 执行）",
 )
 
 _ARM_T6_SEARCH = Arm(
@@ -383,8 +374,8 @@ _ARM_T6_SEARCH = Arm(
             "report_argv": ["--results-root", "results/Test_6_search/prompt",
                             "--extra-roots", "results/Test_3_greedy_vs_works/search",
                             "--budget_cap", "500"],
-            "watch_script": "t6_scheduler.sh"},
-    note="Test_6 试点 3 数据集 × 8 算法（槽位调度仍由 t6_scheduler.sh 负责）",
+            "gpu_policy": "0-3"},
+    note="Test_6 试点 3 数据集 × 8 算法（gpu_policy=0-3，经统一 run 执行）",
 )
 
 ARM_REGISTRY: dict[str, Arm] = {
@@ -1245,6 +1236,8 @@ def cmd_t5_enqueue(arm: Arm, opts) -> int:
     only = tuple(opts.only or ())
     missing = t5_missing_encodings(arm, datasets)
     jobs = C5.build_jobs(arm.sub, datasets, conf_filters=only)
+    for job in jobs:
+        job["gpu_policy"] = "0-3"   # 统一 run 的约束槽位(Test_5 硬约束 GPU 0-3)
     expect = C5.expected_counts(datasets)[arm.sub]["total"]
     parked_jobs: list[dict] = []
     if arm.sub == "5M_2b" and not opts.include_multimodal:
@@ -1502,7 +1495,7 @@ _RUNNER_MODULE = None
 def runner_module():
     """加载 drainer 模块，借用它的 parser——job_key 哈希全部 argparse 字段，
     手抄默认值极易漂移，故直接复用同一 parser 保证逐位一致（照抄
-    Test_3_search_queue.py:82-97 的 parser 复用姿势）。"""
+    旧 watch 的 parser 复用姿势,经统一 run 逐 conf 执行）。"""
     global _RUNNER_MODULE
     if _RUNNER_MODULE is None:
         path = search_cli()
@@ -1548,7 +1541,7 @@ def search_conf_path(arm: Arm, dataset: str, name: str, bucket: str,
     """conf 路径：优先当前 key 的精确名，回退按 dataset 后缀 glob（旧 key/旧 --out 遗留 conf）。
 
     drain 只认 conf 文件本身，故 recover/retry/status 用回退查找与旧脚本
-    Test_3_search_queue.conf_path 的 glob 口径一致；enqueue 判重仍走 selection.queue
+    conf 定位的 glob 口径一致；enqueue 判重仍走 selection.queue
     的精确名（job_key 由 --out 等全字段决定）。
     """
     root = root or arm.queue_root
@@ -1577,7 +1570,7 @@ def cmd_search_enqueue(arm: Arm, opts, *, root: Path | None = None) -> str:
 
     root = root or arm.queue_root
     created = existing = 0
-    # workers 一律 None：test_3_search 逐字同 Test_3_search_queue.cmd_enqueue（旧 argv
+    # workers 一律 None：test_3_search 的 enqueue argv(旧 watch 口径,现经统一 run 执行)
     # 不带 --workers），test_6_search 由 t6_search_argv 自带（T6_WORKERS）。二者都不改
     # job_key/conf 字节（selection.queue WORKER_LOCAL_KEYS 含 workers）。
     workers = None
@@ -1785,22 +1778,42 @@ def cmd_status(arm: Arm, opts) -> int:
     return 0
 
 
+def _stamp_json_confs(arm: Arm) -> None:
+    """enqueue 后给本臂新产生的 JSON conf 补自描述字段(2026-10-13:run 只读 conf)。"""
+    root = ensure_queue_dirs(arm.queue_root)
+    for path in sorted((root / "queue").glob("*.conf")):
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if job.get("kind"):
+            continue
+        kind = {"univariate": "univariate", "cindex": "cindex", "search": "search"}[arm.backend]
+        job["kind"] = kind
+        job["label"] = arm.name
+        if arm.name.startswith(("test_6",)) :
+            job["gpu_policy"] = "0-3"
+        path.write_text(json.dumps(job, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def cmd_enqueue(arm: Arm, opts) -> int:
     if arm.backend == "univariate":
         cmd_uni_enqueue(arm, opts)
-        return 0
-    if arm.backend == "cindex":
+    elif arm.backend == "cindex":
         if arm.dataset_source == "slice_grid":
             cmd_2b_enqueue(arm, opts)
-            return 0
-        if arm.sub:
-            return cmd_t5_enqueue(arm, opts)
-        cmd_3arms_enqueue(arm, opts)
-        return 0
-    if arm.backend == "search":
+        elif arm.sub:
+            rc = cmd_t5_enqueue(arm, opts)
+            if rc:
+                return rc
+        else:
+            cmd_3arms_enqueue(arm, opts)
+    elif arm.backend == "search":
         cmd_search_enqueue(arm, opts)
-        return 0
-    raise SystemExit(f"[exp_queue] 未知 backend: {arm.backend}")
+    else:
+        raise SystemExit(f"[exp_queue] 未知 backend: {arm.backend}")
+    _stamp_json_confs(arm)
+    return 0
 
 
 def cmd_retry(arm: Arm, opts) -> int:
@@ -1857,7 +1870,7 @@ def main(argv=None) -> int:
     parser.add_argument("command", choices=[
         "list", "status", "enqueue", "retry", "recover", "trim", "drain",
         "report", "summarize", "slice", "validate", "emit_slices", "bank", "check",
-        "scheduler", "scheduler_stop", "q_recompute",
+        "scheduler", "scheduler_stop", "q_recompute", "run",
     ])
     parser.add_argument("--arm", action="append", default=None,
                         help="臂名/别名，可重复；status 支持 all（默认 all）")
@@ -1890,6 +1903,8 @@ def main(argv=None) -> int:
     except (TypeError, ValueError):
         raise SystemExit(f"[exp_queue] --workers 需要正整数: {opts.workers}")
 
+    if opts.command == "run":
+        return cmd_run(opts)
     if opts.command == "list":
         # `--arm <test_5 子检查>` 时列出逐 conf 明细（原 Test_5_queue.sh list /
         # Test_5_enqueue.py --list）；不带 --arm（或 all）时列臂注册表。
@@ -1984,3 +1999,262 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ===========================================================================
+# 统一 run(2026-10-13 重构)——无 --arm:conf 自描述(kind/entry/label),认领即执行
+#
+# 决策依据:
+#   * enqueue 是唯一需要 arm 的地方(实验定义模板);drain/run 只读 conf。
+#   * 预算 = CUDA_VISIBLE_DEVICES + WORKERS(操作决策);分类约束(t5/t6 的
+#     GPU 0-3)是 conf 的 gpu_policy 字段,不是臂级代码。
+#   * 进程模型:WORKERS = 训练进程总数上限;同时认领 WORKERS//4 个 conf,
+#     每 conf 内约 4 个字段并发(univariate);cindex/search 每 conf 一个进程。
+# ===========================================================================
+
+RUN_FIELD_TARGET = 4          # 每 conf 内字段并发数(univariate;进程总数以 WORKERS 为上限)
+
+
+def _run_add_meta(path: Path, *, kind: str, entry: str, label: str) -> None:
+    """enqueue 后给 JSON conf 补自描述字段(kind/entry/label)。bash 风格 conf 不受理。"""
+    import json as _json
+
+    try:
+        job = _json.loads(Path(path).read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        return
+    job["kind"] = kind
+    job["entry"] = entry
+    job["label"] = label
+    Path(path).write_text(_json.dumps(job, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _run_uni_conf(path: Path, field_workers: int) -> None:
+    from greedy.queue import load_job, mark_done, mark_failed, merge_job_args
+    from greedy.univariate_cli import run_one
+
+    job = load_job(path)
+    merged = merge_job_args(argparse.Namespace(), job)
+    merged.workers = field_workers
+    try:
+        run_one(merged, job["dataset"])
+    except Exception as exc:  # noqa: BLE001
+        mark_failed(path, error=f"{type(exc).__name__}: {exc}")
+        print(f"[run] fail {path.name}: {exc}", flush=True)
+        return
+    mark_done(path)
+    print(f"[run] done {path.name}", flush=True)
+
+
+def _run_cindex_conf(path: Path) -> None:
+    from manual_pipeline.cindex import mark_done, mark_failed, run_claimed_conf
+
+    try:
+        run_claimed_conf(path, reuse=True)
+    except Exception as exc:  # noqa: BLE001
+        mark_failed(path, error=f"{type(exc).__name__}: {exc}")
+        print(f"[run] fail {path.name}: {exc}", flush=True)
+        return
+    mark_done(path)
+    print(f"[run] done {path.name}", flush=True)
+
+
+def _search_argv_from_conf(job: dict) -> list[str]:
+    args = job.get("args") or {}
+    argv = [str(SCRIPTS / "run_selection.py")]
+    for key in ("dataset", "landmark_time", "algo", "stop_mode", "seed", "out",
+                "inner_analyzer", "budget_cap", "anchor_p", "workers", "max_epochs"):
+        if key in args and args[key] is not None:
+            argv.extend([f"--{key}", str(args[key])])
+    return argv
+
+
+def _run_search_conf(path: Path) -> None:
+    from queue_core import load_job, mark_done, mark_failed
+
+    job = load_job(path)
+    argv = _search_argv_from_conf(job)
+    python_exe = os.environ.get("PYTHON3", "python3")
+    rc = subprocess.call([python_exe, *argv], cwd=str(ROOT))
+    if rc != 0:
+        mark_failed(path, error=f"run_selection rc={rc}: {' '.join(argv)}")
+        print(f"[run] fail {path.name} rc={rc}", flush=True)
+        return
+    mark_done(path)
+    print(f"[run] done {path.name}", flush=True)
+
+
+def _gpu_free(gpu: int, gpu_state: dict[int, tuple[int, int]]) -> bool:
+    used_mb, util = gpu_state.get(gpu, (10**9, 100))
+    return used_mb < 8 * 1024 and util < 20
+
+
+def _pick_gpu(policy: str, used: set[int], gpu_state: dict[int, tuple[int, int]]) -> str:
+    """按 gpu_policy 选卡:"" = 沿用 CUDA_VISIBLE_DEVICES;"0-3" = 0-3 里挑空闲。"""
+    policy = (policy or "").strip()
+    if not policy:
+        return os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    lo, hi = (0, 3) if policy == "0-3" else (0, 0)
+    for gpu in range(lo, hi + 1):
+        if gpu not in used and _gpu_free(gpu, gpu_state):
+            return str(gpu)
+    return ""
+
+
+def _query_gpus() -> dict[int, tuple[int, int]]:
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,memory.used,utilization.gpu", "--format=csv,noheader"],
+            capture_output=True, text=True, check=False, timeout=10,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return {}
+    state: dict[int, tuple[int, int]] = {}
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+        try:
+            state[int(parts[0])] = (int(parts[1].split()[0]), int(parts[2].split()[0]))
+        except ValueError:
+            continue
+    return state
+
+
+def _run_claimed_with_policy(path: Path, field_workers: int, gpu_policy: str,
+                             gpu_state: dict[int, tuple[int, int]],
+                             used_gpus: set[int]) -> None:
+    gpu = _pick_gpu(gpu_policy, used_gpus, gpu_state)
+    if gpu_policy and not gpu:
+        # 约束卡暂无空闲:不执行,把 conf 放回队列等下一轮(不失败)
+        from queue_core import release
+
+        release(path)
+        print(f"[run] defer {path.name} (gpu_policy={gpu_policy} 无空闲卡)", flush=True)
+        return
+    if gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu
+    kind = Path(path).name
+    job = None
+    try:
+        from queue_core import load_job as _load
+
+        job = _load(path)
+    except Exception:  # noqa: BLE001
+        job = None
+    if job and job.get("kind") == "cindex":
+        _run_cindex_conf(path)
+    elif job and job.get("kind") == "search":
+        _run_search_conf(path)
+    elif job and job.get("kind") == "univariate":
+        _run_uni_conf(path, field_workers)
+    elif job is None:
+        # bash 风格 conf(cindex 家族):按名字前缀分发
+        if path.name.startswith(("t2b__", "t3__", "t5_")):
+            _run_cindex_conf(path)
+        else:
+            from queue_core import mark_failed
+
+            mark_failed(path, error="conf 无法解析且无家族标记")
+            print(f"[run] fail {path.name}: 无法解析", flush=True)
+    else:
+        from queue_core import mark_failed
+
+        mark_failed(path, error=f"未知 kind: {job.get('kind')}")
+        print(f"[run] fail {path.name}: 未知 kind {job.get('kind')}", flush=True)
+
+
+def _recover_stale_running(root: Path) -> int:
+    """running/ 里 claimed_pid 已死的 conf 放回 queue/(自愈:死进程补位)。"""
+    from queue_core import load_job as _load, release as _release
+
+    moved = 0
+    for path in sorted((root / "running").glob("*.conf")):
+        try:
+            job = _load(path)
+            pid = int(job.get("claimed_pid") or 0)
+        except Exception:  # noqa: BLE001
+            pid = 0
+        if pid and not pid_alive(pid):
+            _release(path)
+            moved += 1
+            print(f"[run] recover {path.name} (pid {pid} 已死)", flush=True)
+    return moved
+
+
+def _retry_failed(root: Path) -> int:
+    from queue_core import load_job as _load, release as _release
+
+    moved = 0
+    for path in sorted((root / "failed").glob("*.conf")):
+        try:
+            job = _load(path)
+        except Exception:  # noqa: BLE001
+            continue
+        tries = int(job.get("run_tries") or 0)
+        if tries >= MAX_RETRIES:
+            continue
+        job["run_tries"] = tries + 1
+        path.write_text(json.dumps(job, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _release(path)
+        moved += 1
+        print(f"[run] retry {path.name} (第 {tries + 1} 次)", flush=True)
+    return moved
+
+
+def cmd_run(opts) -> int:
+    """统一 run:认领全部 queue/ conf(名排序)→ 按 conf 自描述执行,守到完成。
+
+    GPU:无 gpu_policy 的 conf 沿用调用方 CUDA_VISIBLE_DEVICES;
+    gpu_policy=0-3 的 conf(t5/t6)只在 0-3 有空闲卡时执行,否则放回队列等待。
+    """
+    from queue_core import BUCKETS as _B, claim, count
+
+    root = config_family_dir("")
+    workers = max(1, int(opts.workers or 16))
+    interval = max(1, int(opts.interval or 30))
+    total = sum(count(root, b) for b in _B)
+    if total == 0:
+        print("[run] 无任务(桶全空;先 enqueue)")
+        return 0
+    field_target = RUN_FIELD_TARGET
+    n_conf = max(1, workers // field_target)
+    gpu_state = _query_gpus()
+    last_query = time.time()
+    while True:
+        # 自愈:死进程补位 + 失败重试
+        _recover_stale_running(root)
+        _retry_failed(root)
+        claimed = []
+        for _ in range(n_conf):
+            path = claim(root, "")
+            if path is None:
+                break
+            claimed.append(path)
+        if claimed:
+            field_workers = max(1, workers // len(claimed))
+            gpu_state = _query_gpus()
+            used: set[int] = set()
+            with ThreadPoolExecutor(max_workers=len(claimed)) as pool:
+                futures = []
+                for path in claimed:
+                    job = None
+                    try:
+                        from queue_core import load_job as _load
+
+                        job = _load(path)
+                    except Exception:  # noqa: BLE001
+                        job = None
+                    policy = (job or {}).get("gpu_policy", "")
+                    futures.append(pool.submit(_run_claimed_with_policy, path,
+                                               field_workers, policy, gpu_state, used))
+                for fut in as_completed(futures):
+                    fut.result()
+        counts = {b: count(root, b) for b in _B}
+        print(f"[run] queue={counts['queue']} running={counts['running']} "
+              f"done={counts['done']} failed={counts['failed']} total={total}", flush=True)
+        if counts["queue"] == 0 and counts["running"] == 0 \
+                and counts["done"] + counts["failed"] >= total:
+            print(f"[run] finish done={counts['done']} failed={counts['failed']}")
+            return 0 if counts["failed"] == 0 else 1
+        time.sleep(interval)

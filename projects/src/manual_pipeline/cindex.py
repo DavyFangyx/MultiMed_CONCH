@@ -251,11 +251,13 @@ def conf_text(
     landmark_tag: str = "",
     exp_group: str | None = None,
     label_file: Path | str | None = None,
+    gpu_policy: str = "",
 ) -> str:
     run_name = f"{study}__{scheme}"
     if landmark_tag:
         run_name = f"{run_name}__{landmark_tag}"
     lines = [
+        "KIND=cindex",
         f"EXP_GROUP={_bash_quote(exp_group or ANALYZER_EXP_GROUP)}",
         f"RUN_NAME={_bash_quote(run_name)}",
         f"PRESET={_bash_quote(modality)}",
@@ -266,6 +268,8 @@ def conf_text(
         "WANDB_MODE=disabled",
         f"SEED={int(seed)}",
     ]
+    if gpu_policy:
+        lines.append(f"GPU_POLICY={_bash_quote(str(gpu_policy))}")
     if label_file is not None:
         # Test_1b risk set + time-origin shift: run.sh prefers LABEL_FILE_PATH over
         # the default metadata CSV; the split files stay untouched.
@@ -335,28 +339,26 @@ def _conf_prefix() -> str:
 
 
 def claim_conf(root: Path) -> Path | None:
-    root = ensure_queue_dirs(root)
-    queue_dir = root / "queue"
-    running_dir = root / "running"
-    for src in sorted(queue_dir.glob(f"{_conf_prefix()}*.conf")):
-        dest = running_dir / src.name
-        if dest.exists():
-            src.unlink(missing_ok=True)
-            continue
-        if _claim_path(src, dest):
-            return dest
-    return None
+    """按 CINDEX_CONF_PREFIX 前缀原子认领(机制 = queue_core.claim)。
+
+    2026-10-13 起与 univariate/search 同机制:认领即盖 claimed_pid,
+    stale-running 回收有据可查(此前 cindex conf 无 PID,卡死无法自动回收)。
+    """
+    from queue_core import claim
+
+    return claim(root, _conf_prefix())
 
 
 def mark_done(path: Path) -> Path:
-    return _move_conf(path, "done")
+    from queue_core import mark_done as _done
+
+    return _done(path)
 
 
 def mark_failed(path: Path, error: str | None = None) -> Path:
-    dest = _move_conf(path, "failed")
-    if error:
-        dest.with_suffix(".err").write_text(str(error).rstrip() + "\n", encoding="utf-8")
-    return dest
+    from queue_core import mark_failed as _failed
+
+    return _failed(path, error)
 
 
 def existing_result_dir(out_dir: Path) -> Path | None:
@@ -529,6 +531,7 @@ def enqueue_cindex_jobs(
             landmark_tag=job.get("landmark_run_tag", job.get("landmark_tag", "")),
             exp_group=job.get("exp_group"),
             label_file=job.get("label_file"),
+            gpu_policy=job.get("gpu_policy", ""),
         )
         failed = root / "failed" / name
         dest = root / "queue" / name
