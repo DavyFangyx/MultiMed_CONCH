@@ -1,33 +1,25 @@
-"""Test_3 两臂编排(全走同一条编码/模型/划分/seed;spec §7.2,bank-only 口径 2026-10-07)。
+"""Test_3 两臂编排(结果侧工具;F×T 口径 2026-10-13)。
 
 臂语义唯一来源 = z_notes/experiment_list/arm_registry.md:
-  deleak = 论文组合 ∩ bank 字段 × landmark_0 —— 自定义方案 Test_3_{work}_{dataset}(去泄露值)
-  reach  = 贪婪最优子集 × landmark_0 —— 自定义方案 Test_3_greedy_{dataset}(可达值;
-           recommended_subset = gain-only δ=0.005 参考点;--arm best 用历史 best_subset)
-  (deleak_apipe = 论文完整组合 × lm0 的 Test_2b 历史产物,冻结只读,保留为交叉参考)
+  deleak    = work × lm0 —— 方案 work_lm0_{work}_{ds}(与 Test_2b 臂 B 同一产物)
+  reach     = greedy × lm0 —— 方案 greedy_lm0_{ds}(字段 = 搜索 result.json recommended_subset)
+  reach_raw = greedy × raw —— 方案 greedy_raw_{ds}(同字段名单,raw bank;Test_4 档 4)
 
-链路:generate(fields.json ∩ bank 登记)→ slice(bank 切片,零 CONCH 重编码)
-      → enqueue/drain(已收敛到 `scripts/exp_queue.py --arm test_3_arms`,本文件不再实现)
-      → summarize(写 arm_B 表,按行键合并)。reach 的 c-index 与搜索 best_cv_c_mean 同口径,
-      可直接引用搜索 result.json,无需重新训练。
+链路:enqueue(exp_queue,训练时索引,无切片步骤)→ run → 汇总(results_display/scripts/Test_3_arms_summarize.py)。
+字段名单训练时解析(scripts/check_arm_fields.py 可做阶段检查,不进主 pipeline)。
 
 用法(projects/ 根目录):
-  python3 scripts/Test_3_arms.py generate --arm b
-  python3 scripts/Test_3_arms.py slice    --arm b --parallel 3
-  python3 scripts/Test_3_arms.py summarize
-  python3 scripts/Test_3_arms.py status   --arm b
-  # enqueue / drain 走统一入口(旧姿势等价;本文件同名子命令只指路,不再执行):
-  bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant b
-  bash scripts/exp_queue.sh drain   --arm test_3_arms
+  python3 scripts/Test_3_arms.py summarize --arm deleak
+  python3 scripts/Test_3_arms.py status   --arm deleak
+  # enqueue / run 走统一入口:
+  bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant deleak
+  bash scripts/exp_queue.sh run
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import subprocess
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,14 +29,14 @@ for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
 
 import Test_3_common as C  # noqa: E402
 
+from manual_pipeline.arm_names import greedy_scheme_name  # noqa: E402
+
 from common.paths import config_family_dir, test_results_dir  # noqa: E402
 
-LOG_ROOT = C.OUT_ROOT / "logs"
-ARMS = ("b", "ksig", "best")
-C_KIND = {"ksig": "ksig", "best": "best"}
-# 命名公约过渡（见 common/paths.py）：新名优先、旧名回退，迁移前后都能跑。
-QUEUE_ROOT = config_family_dir("Test_3_arms")      # cindex conf 队列根（迁移前回退 configs/A_manual）
-ARM_B_RESULTS = test_results_dir("Test_2b/arm_B")  # 臂 B 汇总表根（迁移前回退 results/A_manual_landmark）
+ARMS = ("deleak", "reach", "reach_raw", "reach_best")
+ARM_ALIASES = {"b": "deleak", "ksig": "reach", "raw": "reach_raw", "best": "reach_best"}
+QUEUE_ROOT = config_family_dir("Test_3_arms")
+ARM_B_RESULTS = ROOT / "results" / "paper_lm0"  # deleak/reach 臂汇总表根(与 2b 臂 B 同表)
 
 
 def conch_python() -> Path:
@@ -54,97 +46,35 @@ def conch_python() -> Path:
 
 
 def scheme_pairs(arm: str, datasets: list[str]) -> list[tuple[str, str, str | None]]:
-    """[(dataset, scheme, work|None)]；b 按 §2.4 绑定展开。"""
+    """[(dataset, scheme, work|None)]；deleak 按 §2.4 绑定展开;reach 需搜索 result.json。"""
+    arm = ARM_ALIASES.get(arm, arm)
     pairs: list[tuple[str, str, str | None]] = []
     for dataset in datasets:
-        if arm == "b":
-            for _, work in [(d, w) for d, w in C.work_pairs([dataset])]:
+        if arm == "deleak":
+            for _, work in C.work_pairs([dataset]):
                 pairs.append((dataset, C.b_scheme_name(work, dataset), work))
         else:
-            name = C.c_scheme_name(dataset, kind=C_KIND[arm])
+            name = C.c_scheme_name(dataset, kind="best" if arm == "reach_best" else "ksig")
             if not C.search_result_json(dataset).exists():
                 raise SystemExit(f"[test_3][arms] 缺搜索 result.json: {C.search_result_json(dataset)}")
+            if arm == "reach_raw":
+                name = greedy_scheme_name(dataset, t="raw")
             pairs.append((dataset, name, None))
     return pairs
 
 
-def cmd_generate(arm: str, datasets: list[str]) -> None:
-    from Test_3_custom_scheme import build_scheme, load_bank_field_list, load_greedy_fields, load_scheme
-
-    bank_cache: dict[str, list[str]] = {}
-    for dataset, name, work in scheme_pairs(arm, datasets):
-        bank_fields = bank_cache.setdefault(dataset, load_bank_field_list(dataset))
-        if work:
-            fields = load_scheme(work)
-            note = f"work={work} bank切片(landmark_{C.LANDMARK_TIME})"
-        else:
-            fields, algo = load_greedy_fields(
-                C.search_result_json(dataset), kind=("best" if arm == "best" else "ksig")
-            )
-            note = f"greedy={C.search_result_json(dataset).name} algo={algo} bank切片(landmark_{C.LANDMARK_TIME})"
-        build_scheme(name, dataset, fields, bank_fields, note)
+def arm_landmark(arm: str) -> tuple[str, int | None]:
+    """臂的时间口径 → (landmark_tag, landmark_time);raw 臂 = 原始口径(与 paper×raw 同)。"""
+    if arm == "reach_raw":
+        return "", None
+    return f"landmark_{C.LANDMARK_TIME}", int(C.LANDMARK_TIME)
 
 
-def embeddings_dir(dataset: str, scheme: str) -> Path:
-    return ROOT / "outputs" / dataset / "A_manual" / scheme / f"landmark_{C.LANDMARK_TIME}" / "embeddings" / "pt"
-
-
-def _encode_one(dataset: str, scheme: str) -> str:
-    """bank-only 口径:按方案 fields.json(∩ bank)切片 bank 嵌入矩阵,零 CONCH 重编码。
-
-    skip 守卫(2026-10-09 指纹化): 已有切片必须与方案字段位号一致且患者数 =
-    bank 患者数,否则重切(防字段表改动后静默复用旧切片)。
-    """
-    import json
-
-    from Test_3_custom_scheme import (
-        bank_variant_dir,
-        load_bank_field_list,
-        load_scheme,
-        materialize_bank_subset,
-    )
-
-    clinic = embeddings_dir(dataset, scheme)
-    fields = load_scheme(scheme)  # fields.json 已只含 bank 内字段
-    bank_fields = load_bank_field_list(dataset)
-    desired = sorted(bank_fields.index(f) for f in fields if f in bank_fields)
-    if clinic.is_dir() and any(clinic.glob("*")):
-        meta_path = clinic.parent / "fields.json"
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            bank_pt = bank_variant_dir(dataset, "landmark_0") / "embeddings" / "pt"
-            n_bank = len(list(bank_pt.glob("*.pt")))
-            if (n_bank > 0 and meta.get("subset_idx") == desired
-                    and len(list(clinic.glob("*.pt"))) == n_bank):
-                return f"skip {dataset}/{scheme} (切片与方案字段/患者数一致)"
-        except (json.JSONDecodeError, OSError):
-            pass
-        print(f"[test_3][arms] stale {dataset}/{scheme}: 切片字段/患者数与 bank 不一致,重切")
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
-    log = LOG_ROOT / f"slice_{dataset}__{scheme}.log"
-    try:
-        payload = materialize_bank_subset(dataset, fields, clinic, overwrite=True)
-    except Exception as exc:  # noqa: BLE001
-        with log.open("a", encoding="utf-8") as handle:
-            handle.write(f"\n===== slice {time.strftime('%F %T')} FAILED: {exc}\n")
-        raise
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(f"\n===== slice {time.strftime('%F %T')} {scheme}: {payload}\n")
-    return f"ok   {dataset}/{scheme} (bank 切片 {len(fields)} 字段)"
-
-
-def cmd_slice(arm: str, datasets: list[str], parallel: int) -> None:
-    pairs = scheme_pairs(arm, datasets)
-    print(f"[test_3][arms] slice(bank 切片) {len(pairs)} 个 (dataset, scheme), parallel={parallel}", flush=True)
-    with ThreadPoolExecutor(max_workers=max(1, parallel)) as pool:
-        for message in pool.map(lambda item: _encode_one(item[0], item[1]), pairs):
-            print(f"[test_3][arms] {message}", flush=True)
-
-
-def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
+def _cindex_jobs(dataset: str, scheme: str, arm: str = "deleak") -> list[dict]:
     from common.datasets import load_dataset_configs
     from manual_pipeline.cindex import iter_cindex_jobs
 
+    tag, time = arm_landmark(arm)
     return iter_cindex_jobs(
         dataset_name=dataset,
         schemes=[scheme],
@@ -154,71 +84,66 @@ def _cindex_jobs(dataset: str, scheme: str) -> list[dict]:
         modalities=[C.ANALYZER],
         results_root=ROOT / "results",
         seed=C.SEED,
-        landmark_tag=f"landmark_{C.LANDMARK_TIME}",
-        landmark_time=int(C.LANDMARK_TIME),
+        landmark_tag=tag,
+        landmark_time=time,
     )
 
 
 def cmd_enqueue(arm: str, datasets: list[str]) -> None:
     """已收敛：实现在 `scripts/exp_queue.py` 的 cindex backend（--arm test_3_arms）。"""
     raise SystemExit(
-        "[test_3][arms] enqueue 已收敛到统一入口（逐字等价，勿再走本文件）:\n"
+        "[test_3][arms] enqueue 已收敛到统一入口:\n"
         f"  bash scripts/exp_queue.sh enqueue --arm test_3_arms --variant {arm}"
         + (f" --datasets {','.join(datasets)}" if datasets else "")
     )
 
 
 def cmd_drain(workers: int, poll: float) -> None:
-    """已收敛:实现在 `scripts/exp_queue.py` 的 cindex backend(--arm test_3_arms)。
-
-    GPU 由调用方 CUDA_VISIBLE_DEVICES 控制。
-    """
+    """已收敛:执行 = 统一 run。GPU 由调用方 CUDA_VISIBLE_DEVICES 控制。"""
     raise SystemExit(
-        "[test_3][arms] drain 已收敛到统一入口(逐字等价,勿再走本文件):\n"
-        f"  bash scripts/exp_queue.sh drain --arm test_3_arms --workers {workers}"
+        "[test_3][arms] 执行已收敛到统一入口:\n"
+        f"  bash scripts/exp_queue.sh run --workers {workers}"
     )
 
 
 def cmd_summarize(datasets: list[str], arm: str) -> None:
-    from manual_pipeline.cindex import summarize_dataset
-
-    for dataset, scheme, _work in scheme_pairs(arm, datasets):
-        jobs = _cindex_jobs(dataset, scheme)
-        # 表目录沿用 S4/Test_2b 约定 "{dataset}[gdc]"（s4_enqueue.table_key），
-        # 否则会另建一张无后缀表、与臂 B 的行分家。
-        rows = summarize_dataset(dataset_name=f"{dataset}[gdc]", jobs=jobs, results_root=ROOT / "results",
-                                 encoding="text", modality=C.ANALYZER,
-                                 landmark_tag=f"landmark_{C.LANDMARK_TIME}")
-        print(f"[test_3][arms] summarize {dataset}: {len(rows)} 行（表内累计）", flush=True)
+    """已归位:汇总 = results_display/scripts 的职责(2026-10-13)。"""
+    raise SystemExit(
+        "[test_3][arms] summarize 已归位 results_display/scripts/Test_3_arms_summarize.py:\n"
+        f"  python3 results_display/scripts/Test_3_arms_summarize.py --arm {arm}"
+        + (f" --datasets {','.join(datasets)}" if datasets else "")
+    )
 
 
 def cmd_status(arm: str, datasets: list[str]) -> None:
+    from manual_pipeline.arm_names import bank_dir, bank_embeddings, parse_arm_scheme
     from manual_pipeline.cindex import conf_filename
     from greedy.data import display_to_study
 
     root = Path(QUEUE_ROOT)
+    tag, _time = arm_landmark(arm)
+    table_root = ROOT / "results" / "paper_raw" if arm == "reach_raw" else ARM_B_RESULTS
     for dataset, scheme, work in scheme_pairs(arm, datasets):
         study = display_to_study(dataset)
-        name = conf_filename(study, scheme, C.ANALYZER, f"landmark_{C.LANDMARK_TIME}")
+        name = conf_filename(study, scheme, C.ANALYZER, tag)
         bucket = next((b for b in ("queue", "running", "done", "failed") if (root / b / name).exists()), "-")
-        encoded = "emb" if (embeddings_dir(dataset, scheme).is_dir()) else "   "
-        table = ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv"
+        parsed = parse_arm_scheme(scheme)
+        bank = "bank" if parsed and bank_embeddings(bank_dir(dataset, parsed["t"])).is_dir() else "    "
+        table = table_root / f"{dataset}[gdc]" / "cindex.csv"
         c = ""
         if table.exists():
             with table.open(newline="", encoding="utf-8") as fh:
                 for row in csv.DictReader(fh):
-                    if row.get("scheme") == f"{scheme}__landmark_{C.LANDMARK_TIME}" and \
-                            row.get("modality") == C.ANALYZER:
+                    if row.get("scheme") == scheme and row.get("modality") == C.ANALYZER:
                         c = f" c={row.get('val_c_index_mean')}"
-        print(f"[test_3][arms] {dataset:12s} {scheme:44s} {encoded} {bucket:8s}{c}")
+        print(f"[test_3][arms] {dataset:12s} {scheme:44s} {bank} {bucket:8s}{c}")
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Test_3 两臂编排器")
-    parser.add_argument("command", choices=["generate", "slice", "enqueue", "drain", "summarize", "status"])
-    parser.add_argument("--arm", default="b", choices=ARMS)
-    parser.add_argument("--parallel", type=int, default=3, help="slice 并发进程数")
-    parser.add_argument("--workers", type=int, default=2, help="drain 并发 worker 数")
+    parser = argparse.ArgumentParser(description="Test_3 两臂编排器(结果侧)")
+    parser.add_argument("command", choices=["generate", "enqueue", "drain", "summarize", "status"])
+    parser.add_argument("--arm", default="deleak", choices=ARMS)
+    parser.add_argument("--workers", type=int, default=2, help="drain 并发 worker 数(占位)")
     parser.add_argument("--poll", type=float, default=15.0)
     parser.add_argument("--datasets", default=None, help="可选：覆盖数据集名单（冒烟/调试用）")
     return parser
@@ -229,9 +154,11 @@ def main(argv=None) -> int:
     datasets = ([x.strip() for x in args.datasets.split(",") if x.strip()]
                 if args.datasets else C.main_datasets())
     if args.command == "generate":
-        cmd_generate(args.arm, datasets)
-    elif args.command == "slice":
-        cmd_slice(args.arm, datasets, args.parallel)
+        # 训练时索引(2026-10-13 拍板):无切片生成步骤;阶段检查见 scripts/check_arm_fields.py。
+        raise SystemExit(
+            "[test_3][arms] 无 generate 步骤:字段名单训练时解析(bank 模式)。\n"
+            "  阶段检查: python3 scripts/check_arm_fields.py --arm deleak --datasets TCGA-BLCA"
+        )
     elif args.command == "enqueue":
         cmd_enqueue(args.arm, datasets)
     elif args.command == "drain":

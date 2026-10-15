@@ -15,6 +15,7 @@ from timeit import default_timer as timer
 from common.datasets import load_dataset_configs, resolve_dataset_names
 from common.paths import (
     DEFAULT_DATASETS_CONFIG,
+    LANDMARK_LABELS_DIR,
     LANDMARK_OFF_TAG,
     PROJECT_ROOT,
     RESULTS_ROOT,
@@ -43,7 +44,7 @@ from .queue import (
     mark_failed,
     merge_job_args,
 )
-from .splits import load_analyzer_split_dir
+from .data import load_analyzer_split_dir
 
 
 CSV_COLUMNS = [
@@ -277,7 +278,7 @@ def make_parser() -> argparse.ArgumentParser:
         "--results_dir",
         default=None,
         help="Clinic_Analyzer 结果根目录（results/ 的替身）；默认 None（=results/）。"
-        "Test_1a off 臂用 results/Test_1a/arm_off 避免污染 t0 的 results/Test_1a/arm_t0/。",
+        "F=single × T=raw 臂用 results/single_raw,不污染 lm0 臂的 results/single_lm0/。",
     )
     parser.add_argument(
         "--extraction_mask",
@@ -315,9 +316,9 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--landmark_labels_dir",
-        default=str(test_results_dir("Test_2b/arm_B") / "labels"),
-        help="S4 派生的 landmark label 目录（{study}__landmark_{T}.csv，含经典三要件风险集排除）。"
-        "开启 landmark（landmark_time 为天数）时强制使用，保证与 Test_1b 臂 B 同患者集。",
+        default=str(LANDMARK_LABELS_DIR),
+        help="landmark 派生 label 目录（{study}__landmark_{T}.csv，含经典三要件风险集排除）。"
+        "开启 landmark（landmark_time 为天数）时强制使用，保证与 lm0 臂同患者集。",
     )
     parser.add_argument("--out", default=None)
     parser.add_argument(
@@ -465,7 +466,7 @@ def resolve_univariate_label_file(args, split_dir: Path, tag: str) -> str | None
         raise FileNotFoundError(
             f"未找到 landmark 派生 label: {candidate}。"
             "univariate 必须与 Test_1b 臂 B 同患者集（S4 派生 label，经典三要件风险集排除）。"
-            "请确认 results/Test_2b/arm_B/labels/ 下该文件存在（可用 manual pipeline 的 "
+            "请确认 results/labels/ 下该文件存在（可用 manual pipeline 的 "
             "landmark_labels 派生），或显式传 --label_file。"
         )
     return str(candidate)
@@ -477,11 +478,11 @@ def univariate_out_dir(args, dataset: str, encoding: str, landmark_tag: str, exp
     if getattr(args, "out", None):
         out_dir = out_dir / modality  # 自定义 --out 不含 analyzer 层
     elif getattr(args, "results_dir", None):
-        # --results_dir 是 results/ 的替身（Test_1a off 臂 = results/Test_1a/arm_off）：
-        # 把 {results}/{exp_name}/{encoding}/{tag}/{ds}/{modality} 整体搬到 {results_dir}/ 下，
+        # --results_dir 是 results/ 的替身（F=single × T=raw 臂 = results/single_raw）：
+        # 把 {results}/single_lm0/{univariate/...} 整体搬到 {results_dir}/ 下，
         # 与 analyzer 树（results_dir/univariate/.../{ds}/runs/...）同根对齐。
         try:
-            rel = out_dir.relative_to(RESULTS_ROOT)
+            rel = out_dir.relative_to(RESULTS_ROOT / "single_lm0")
         except ValueError:
             rel = out_dir
         out_dir = Path(args.results_dir) / rel

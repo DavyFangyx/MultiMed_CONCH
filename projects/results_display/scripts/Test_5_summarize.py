@@ -16,7 +16,7 @@ run dir 里当前已有的 val_result_fold*.csv 直接聚成行，而 _merge_cin
 
 用法（projects/ 根目录，base python3）：
   python3 scripts/Test_5_summarize.py --sub all
-  python3 scripts/Test_5_summarize.py --sub 5E_2b --datasets TCGA-LAML,TCGA-GBM
+  python3 scripts/Test_5_summarize.py --sub E_time --datasets TCGA-LAML,TCGA-GBM
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT, ROOT / "scripts"):
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (ROOT, ROOT / "src", ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

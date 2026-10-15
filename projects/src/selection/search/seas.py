@@ -134,7 +134,7 @@ def load_or_encode_field_semantics(
     if load_only:
         raise FileNotFoundError(
             f"field_semantics 缓存缺失或与当前字段表不一致: {cache_path}。"
-            "实验阶段不再现场编码(编码与实验解耦):请先跑阶段 2.7 "
+            "实验阶段不再现场编码(编码与实验解耦):请先跑 runbook 阶段 2.6 "
             "`python scripts/pregen_field_semantics.py` 预生成。"
         )
     if python_executable and Path(python_executable).resolve() != Path(sys.executable).resolve():

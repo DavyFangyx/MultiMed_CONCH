@@ -2,10 +2,10 @@
 
 口径来源（唯一来源 = `z_notes/Test_series_spec.md` §8bis 与臂注册表
 `z_notes/experiment_list/arm_registry.md`）：
-  5E_2b  E→baseline 复现 Test_2b 臂对 {report(raw)/deleak(landmark_0)} × mlp_clinic_flatten
-  5E_3   E→baseline 复现 Test_3 臂对 {deleak（Test_3_{work}_{dataset}）/ reach（Test_3_greedy_{dataset}）}
-  5M_2b  M→snn_clinic_flatten（14 主集）+ M→survgc_f/survpgc_f（多模态 3 数据集：BRCA/LIHC/KIRC）复现 Test_2b 臂对
-  5M_3   M→clinic_cox 复现 Test_3 臂对
+  E_time   E→onehot_ordinary 复现时间轴链对照 {report(raw)/deleak(landmark_0)} × mlp_clinic_flatten
+  E_field E→onehot_ordinary 复现字段轴链对照 {deleak(work_lm0_{work}_{ds})/ reach(greedy_lm0_{ds})}
+  M_time  M→snn_clinic_flatten（14 主集）+ M→survgc_f/survpgc_f（多模态 3 数据集：BRCA/LIHC/KIRC）复现时间轴链对照
+  M_field M→clinic_cox 复现字段轴链对照
 
 臂语义（arm_registry.md；臂 = {F 字段组合, T 时间口径} 二元组，编码 = field bank 统一基座，
 切片装配而非条件因子）：
@@ -36,7 +36,7 @@ import argparse
 import csv
 import json
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -60,18 +60,20 @@ SEED = 0
 LANDMARK_ARM_TAG = "landmark_0"
 LANDMARK_DAYS = 0
 
-SUBS = ("5E_2b", "5E_3", "5M_2b", "5M_3")
+SUBS = ("E_time", "E_field", "M_time", "M_field")
 
 # 子检查语义（臂 × 编码 × 模型）；方案集合与数据集绑定全部从数据派生。
 # 臂标签 = arm_registry.md 的短标签（report / deleak / reach），不再用字母代号。
 SUB_SPEC = {
-    "5E_2b": {"encoding": "baseline", "arms": ("report", "deleak"),
+    # E 轴(2026-10-13 改名):onehot_ordinary = field bank onehot 变体(全局词表),训练时索引;
+    # 原 baseline 物化线(A_manual/baseline)已退役。
+    "E_time": {"encoding": "onehot", "arms": ("report", "deleak"),
               "modalities": ("mlp_clinic_flatten",), "schemes": "work"},
-    "5E_3": {"encoding": "baseline", "arms": ("deleak", "reach"),
+    "E_field": {"encoding": "onehot", "arms": ("deleak", "reach"),
              "modalities": ("mlp_clinic_flatten",), "schemes": "test3"},
-    "5M_2b": {"encoding": "text", "arms": ("report", "deleak"),
+    "M_time": {"encoding": "text", "arms": ("report", "deleak"),
               "modalities": ("snn_clinic_flatten", "survgc_f", "survpgc_f"), "schemes": "work"},
-    "5M_3": {"encoding": "text", "arms": ("deleak", "reach"), "modalities": ("clinic_cox",),
+    "M_field": {"encoding": "text", "arms": ("deleak", "reach"), "modalities": ("clinic_cox",),
              "schemes": "test3"},
 }
 
@@ -81,7 +83,7 @@ ARM_LANDMARK = {"report": ("", None), "deleak": (LANDMARK_ARM_TAG, LANDMARK_DAYS
                 "reach": (LANDMARK_ARM_TAG, LANDMARK_DAYS)}
 
 # deleak 臂（Test_3 臂 B）的本轮范围 = 4 个泛癌种工作 × 14 主集（spec §8bis.2）。
-# Test_3_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC；KIRC 2026-10-12 回主集）不在本轮 deleak 范围：
+# paper_HGCN_*_TCGA-* 变体（4 个：KIRC/LIHC/LUAD/LUSC；KIRC 2026-10-12 回主集）不在本轮 deleak 范围：
 # S12a(15 主集时代)为 60 个 deleak 落了 baseline 编码（含 KIRC），现行 14 主集 − COAD = 56 全覆盖；
 # 但 KIRC 的 baseline 产物是否随 T35 清洗需执行前核验，缺失则先补编码。
 DELEAK_WORKS = ("MULTISURV", "SURVPGC", "MMSURV", "INTEGRATIVE_DNN")
@@ -162,27 +164,12 @@ def work_schemes(dataset: str) -> list[str]:
                   if work_bound_to(s, dataset) and scheme_applies_to_dataset(s, dataset, datasets))
 
 
-def deleak_schemes(dataset: str) -> list[str]:
-    """deleak 臂（Test_3 臂 B）方案（已注册 + 绑定该数据集），本轮 = 4 泛癌种工作。"""
-    from manual_pipeline.config import SCHEME_CONFIG
-
-    return [name for name in (f"Test_3_{w}_{dataset}" for w in DELEAK_WORKS) if name in SCHEME_CONFIG]
-
-
-def reach_schemes(dataset: str) -> list[str]:
-    """reach 臂（贪婪最优，模板/编码存在才算；否则空 = 该数据集本轮无 reach）。"""
-    from manual_pipeline.config import SCHEME_CONFIG
-
-    name = f"Test_3_greedy_{dataset}"
-    return [name] if name in SCHEME_CONFIG else []
-
-
 def greedy_template_datasets() -> list[str]:
-    """存在 Test_3_greedy_{dataset} 模板的数据集（数据驱动，供报告用）。"""
-    from manual_pipeline.config import SCHEME_CONFIG
+    """存在搜索 result.json 的数据集(数据驱动,供报告用)。"""
+    from Test_3_common import main_datasets
+    from manual_pipeline.arm_names import greedy_result_json
 
-    return sorted(name[len("Test_3_greedy_"):] for name in SCHEME_CONFIG
-                  if name.startswith("Test_3_greedy_"))
+    return [ds for ds in main_datasets() if greedy_result_json(ds).exists()]
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +229,7 @@ class ArmPlan:
 
 
 def _multimodal_modalities(dataset: str) -> list[str]:
-    """5M_2b 的模型集合：snn 全 14 主集；survgc_f/survpgc_f 仅 registry 多模态 3 集（BRCA/LIHC/KIRC）。"""
+    """M_time 的模型集合：snn 全 14 主集；survgc_f/survpgc_f 仅 registry 多模态 3 集（BRCA/LIHC/KIRC）。"""
     from greedy.clinic import MULTIMODAL_STUDIES
     from greedy.data import display_to_study
 
@@ -253,30 +240,33 @@ def _multimodal_modalities(dataset: str) -> list[str]:
 
 
 def arm_plans(sub: str, dataset: str) -> list[ArmPlan]:
+    """按臂生成 F×T 方案名(编码无关):text(prompt bank)与 onehot(onehot bank)
+    都是"训练时索引"同一机制,方案名相同、conf 的 bank 根不同。"""
+    from manual_pipeline.arm_names import greedy_scheme_name, work_scheme_name
+
     spec = SUB_SPEC[sub]
-    encoding = spec["encoding"]
     plans: list[ArmPlan] = []
     for arm in spec["arms"]:
         if spec["schemes"] == "work":
-            schemes = work_schemes(dataset)
-            notes = []
+            t = "raw" if arm == "report" else "lm0"
+            schemes = [work_scheme_name(w, dataset, t) for w in work_schemes(dataset)]
         else:
-            schemes = (deleak_schemes(dataset) if arm == "deleak" else reach_schemes(dataset))
-            notes = [] if schemes else ["no template/registration"]
-        if sub == "5M_2b":
+            schemes = ([work_scheme_name(w, dataset, "lm0") for w in DELEAK_WORKS]
+                       if arm == "deleak" else [greedy_scheme_name(dataset)])
+        if sub == "M_time":
             modalities = _multimodal_modalities(dataset)
         else:
             modalities = list(spec["modalities"])
         tag, time = ARM_LANDMARK[arm]
-        plans.append(ArmPlan(arm=arm, encoding=encoding, schemes=schemes, modalities=modalities,
-                             landmark_tag=tag, landmark_time=time, notes=notes))
+        plans.append(ArmPlan(arm=arm, encoding=spec["encoding"], schemes=schemes,
+                             modalities=modalities, landmark_tag=tag, landmark_time=time, notes=[]))
     return plans
 
 
 def _reuse_existing_landmark_labels() -> None:
     """把 cindex 的 build_landmark_label_file 替换为"存在即只读复用"（幂等装入）。
 
-    原实现每次枚举 landmark 臂都无条件重写 results/Test_2b/arm_B/labels/*.csv
+    原实现每次枚举 landmark 臂都无条件重写 results/labels/*.csv
     （内容确定：已核 blca/brca/laml/stad 与现文件逐字节一致，仅 mtime 变化）。本步对
     Test_2b 是只读范围，故在 Test_5 进程内避免重写；现成文件缺失才回退原实现（新建）。
     """
@@ -307,7 +297,7 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
     """枚举该子检查的全部 cindex job（含 out_dir / conf_name，可幂等入队）。
 
     只读：不存在的编码目录由 iter_cindex_jobs 打印后跳过（不产生 conf）；landmark 派生
-    label 文件已存在时只读复用（不重写 results/Test_2b/arm_B/labels/*，见上）。
+    label 文件已存在时只读复用（不重写 results/labels/*，见上）。
     """
     from manual_pipeline.cindex import iter_cindex_jobs
 
@@ -315,11 +305,16 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
     datasets = list(datasets or main_datasets())
     datasets_cfg = _datasets_config()
     jobs: list[dict] = []
-    with exp_group_override(sub):
-        for dataset in datasets:
-            for plan in arm_plans(sub, dataset):
-                if not plan.schemes:
-                    continue
+    for dataset in datasets:
+        for plan in arm_plans(sub, dataset):
+            if not plan.schemes:
+                continue
+            # M_field 的 deleak×cox = 主线 Test_2b 同配置(同方案/同 landmark/同 cox/同 seed):
+            # 不覆写 exp_group——conf 落点 = paper_lm0(与 2b 同一 OUT_DIR,run 时 .done 命中
+            # 直接 skip,零重复训练;表行也由 paper_lm0 提供)。
+            override = not (sub == "M_field" and plan.arm == "deleak")
+            ctx = exp_group_override(sub) if override else nullcontext()
+            with ctx:
                 for job in iter_cindex_jobs(
                     dataset_name=dataset,
                     schemes=plan.schemes,
@@ -327,7 +322,7 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
                     baseline_out=str(OUTPUTS),
                     encoding=plan.encoding,
                     modalities=plan.modalities,
-                    conf_prefix=f"t5_{sub}__",
+                    conf_prefix="",
                     results_root=RESULTS_ROOT,
                     seed=SEED,
                     landmark_tag=plan.landmark_tag,
@@ -343,11 +338,15 @@ def build_jobs(sub: str, datasets: list[str] | None = None,
 
 
 def encoding_paths(dataset: str, scheme: str, encoding: str, landmark_tag: str) -> Path:
-    """conf 的 CLINIC_DIR_PATH（与 cindex.scheme_output_dir 同口径，供缺件报告）。"""
+    """conf 的 CLINIC_DIR_PATH 口径,供缺件报告:text F×T 臂 → bank embeddings/pt;
+    baseline → 物化目录(scheme_output_dir 同口径)。"""
+    from manual_pipeline.arm_names import bank_dir, bank_embeddings, parse_arm_scheme
     from manual_pipeline.cindex import scheme_output_dir
 
-    # 注意：必须保留 `baseline__` 前缀再交给 scheme_output_dir（它用前缀判定
-    # `A_manual/baseline/{scheme}` 子目录；先 bound_scheme_name 会得到 prompt 路径）。
+    parsed = parse_arm_scheme(scheme)
+    if parsed is not None:
+        bank_encoding = "onehot" if encoding == "onehot" else "prompt"
+        return bank_embeddings(bank_dir(dataset, parsed["t"], encoding=bank_encoding))
     name = f"baseline__{scheme}" if encoding == "baseline" and not scheme.startswith("baseline__") \
         else scheme
     subdir = "" if landmark_tag in ("", "no_mask") else landmark_tag
@@ -424,7 +423,7 @@ def print_status(datasets: list[str] | None = None) -> None:
         print(f"[test_5] {sub}: expected={n:4d} queue={st['queue']:3d} running={st['running']:2d} "
               f"done={st['done']:4d} failed={st['failed']:3d} parked={st['parked']:3d} "
               f"root={queue_root(sub)}")
-    print(f"[test_5] 合计 expected={grand}（5M_2b 的 survgc_f/survpgc_f 在 parked/ 时少 56 = BRCA/LIHC/KIRC 三集）")
+    print(f"[test_5] 合计 expected={grand}（M_time 的 survgc_f/survpgc_f 在 parked/ 时少 56 = BRCA/LIHC/KIRC 三集）")
     print(f"[test_5] 多模态暂缓: {park_reason(PARK_MODALITIES[0])}")
 
 

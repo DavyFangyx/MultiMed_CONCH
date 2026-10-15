@@ -72,16 +72,19 @@
 - **输入**:③ 的 kept_fields + 字段模板
 - **输出**:`outputs/{ds}/field_bank/prompt/{tag}/` 的 prompts.csv → CONCH 编码 → `embeddings/pt/{patient}.pt` + `field_index.json`
 - **脚本 / 落点**:`scripts/run_field_bank.py`(`src/discovery/field_bank.py`)
-- **地位**:主线唯一的 CONCH 编码基座;下游(逐字段评估、贪婪搜索、论文方案、Test_3 臂)一律从这份 bank 按字段位号取列/切片,不再触发重编码
+- **地位**:主线唯一的 CONCH 编码基座;下游(逐字段评估、贪婪搜索、论文方案臂)一律从这份 bank 按字段位号取列,不再触发重编码
 
 ---
 
-### ⑤ 论文方案组合(字段级)
+### ⑤ 论文方案组合(字段级;2026-10-13 训练时索引)
 
-- **做什么**:论文方案只提供**字段组合名单**(`templates/manual_schemes/{scheme}/fields.json`),不触发重编码——**方案字段 ∩ bank 字段** → 按 `field_index.json` 翻译成列位号 → 从 bank 矩阵切片,零 CONCH 重编码,mask 随切片保留
+- **做什么**:论文方案只提供**字段组合名单**(`templates/manual_schemes/{scheme}/fields.json`),
+  不触发重编码——cindex conf 记录(bank 根 + 字段名单来源 + bank 指纹),analyzer **训练时现场解析**
+  "方案字段 ∩ bank 字段 → 列位号 → 取列",不物化切片文件;解析结果写 run 的 `field_resolution.json`
 - **输入**:field bank
-- **输出**:10 个论文方案(MULTISURV / SURVPGC / MMSURV / INTEGRATIVE_DNN + HGCN×6 按癌种绑定)
-- **脚本 / 落点**:切片见 `scripts/Test_3_arms.py`(bank-only 口径);旧 `scripts/run_schemes.py`(自组 L2/L3/L5 重编码)已删除,无消费者;方案 × 数据集绑定见 spec §2.4
+- **输出**:无中间文件(臂方案名 = F×T 口径 `work_raw_{work}_{ds}` / `work_lm0_{work}_{ds}` / `greedy_lm0_{ds}`)
+- **脚本 / 落点**:解析在 `Clinic_Analyzer/evaluate.py`(镜像实现 `src/manual_pipeline/arm_names.py`);
+  阶段检查 `scripts/check_arm_fields.py`(主线外,只读);方案 × 数据集绑定见 spec §2.4
 
 ---
 
@@ -135,6 +138,5 @@ Field Bank 有两种编码变体(同一个 `scripts/run_field_bank.py`,不同 `-
 ## 相关脚本速查
 
 - `scripts/run_field_stats.py --landmark_time 0` + `scripts/run_field_filter.py --landmark_time 0` — 现行链两步:重算 t0 mask 统计 → 自动消费 landmark 统计过 R0–R6(写现行 `landmark_0/` 目录;R3/R4 阈值可命令行改)
-- `scripts/validate_t0stats_vs_masks.py` — 验收:t0 stats coverage vs t0 臂 .pt mask 逐字段比对(tol 1e-5)
 - `scripts/build_raw_field_bank.py` — Test_1a off 臂 raw bank(`outputs/_raw/.../no_mask/`)+ `raw_value_diff.json`
 - `scripts/Test_1a_audit_arms.py` — Test_1a 两臂患者集一致性审计

@@ -38,16 +38,13 @@ def queue_root_from_args(args) -> Path:
     raw = getattr(args, "queue_root", None)
     if raw:
         return Path(raw)
-    experiment = str(getattr(args, "experiment", "") or "").strip().lower()
     kind = str(getattr(args, "queue_kind", "") or "").strip().lower()
     if kind == "univariate":
-        if experiment == "longitudinal":
-            return DEFAULT_UNIVARIATE_QUEUE_ROOT.parent / "longitudinal_univariate"
         return DEFAULT_UNIVARIATE_QUEUE_ROOT
-    # D0 家族 Clinic_Analyzer/configs/greedy 已删除:greedy 队列根必须显式给出。
+    # 其余后端:队列根必须显式给出(无隐式默认)。
     raise ValueError(
-        "greedy 队列根必须显式传 --queue_root(例如 Clinic_Analyzer/configs/Test_3_search);"
-        "D0 家族 Clinic_Analyzer/configs/greedy 已删除,不再提供默认队列根"
+        "队列根必须显式传 --queue_root(例如 Clinic_Analyzer/configs/Test_3_search);"
+        "只有 univariate 有默认队列根"
     )
 
 

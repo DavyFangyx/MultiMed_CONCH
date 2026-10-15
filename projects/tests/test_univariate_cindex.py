@@ -57,7 +57,7 @@ def test_dataset_univariate_dir_prompt():
     assert path == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "univariate" / "prompt" / "landmark_365"
     assert path.as_posix().endswith("outputs/TCGA_LIHC/univariate/prompt/landmark_365")
     results = dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365")
-    assert results == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
+    assert results == PROJECT_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
 
 
 def test_parser_defaults_and_flags():
@@ -229,9 +229,8 @@ def test_univariate_queue_is_separate_from_greedy():
     root = queue_root_from_args(args)
     assert root == DEFAULT_UNIVARIATE_QUEUE_ROOT
     assert root != DEFAULT_QUEUE_ROOT
-    args.experiment = "longitudinal"
-    root = queue_root_from_args(args)
-    assert root == DEFAULT_UNIVARIATE_QUEUE_ROOT.parent / "longitudinal_univariate"
+    args.experiment = "longitudinal"   # 2026-10-13:longitudinal 独立队列根已随死链删除
+    assert queue_root_from_args(args) == DEFAULT_UNIVARIATE_QUEUE_ROOT
 
 
 def test_two_gpus_cannot_claim_the_same_univariate_dataset(tmp_path):

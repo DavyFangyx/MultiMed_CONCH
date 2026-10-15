@@ -3,15 +3,15 @@
 #
 # 只做两件事:
 #   ① verb 与其余参数逐字透传(环境变量原样传递:GPU 用 CUDA_VISIBLE_DEVICES,
-#     并发用 WORKERS,解释器用 PYTHON3——不再有任何按臂前缀展开)。
-#   ② 长驻 verb 后台化:scheduler / bank_bg 用 nohup 起。
+#     并发用 WORKERS,解释器用 PYTHON3)。
+#   ② 长驻 verb 后台化(run / bank_bg):nohup 起、输出全进日志文件,
+#     终端只回 PID / 日志路径 / 停止方式(同 SurvPGC bg_tune.sh 惯例)。
 #
 # 用法(projects/ 根目录):
 #   bash scripts/exp_queue.sh list
-#   bash scripts/exp_queue.sh status   --arm test_1a_off
+#   bash scripts/exp_queue.sh status
 #   bash scripts/exp_queue.sh enqueue  --arm test_1a_t0
-#   CUDA_VISIBLE_DEVICES=7 WORKERS=8 bash scripts/exp_queue.sh drain --arm test_1a_off
-#   bash scripts/exp_queue.sh scheduler
+#   CUDA_VISIBLE_DEVICES=7 WORKERS=16 bash scripts/exp_queue.sh run   # 后台;日志 RUN_LOG 可覆盖
 set -euo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,11 +23,16 @@ VERB="${1:-}"
 shift
 
 case "$VERB" in
-    scheduler)
-        log="results/Test_5_invariance/logs/scheduler.out"
+    run)
+        if [ -n "${RUN_LOG:-}" ]; then
+            log="$RUN_LOG"
+        else
+            log="results/logs/exp_queue_run_$(date +%F_%H%M%S)_$$.log"   # $$ 保证同秒多次启动不撞名
+        fi
         mkdir -p "$(dirname "$log")" 2>/dev/null || true
-        nohup "$PY" scripts/exp_queue.py scheduler "$@" >> "$log" 2>&1 &
-        echo "[exp_queue] scheduler PID $! (log: $log)"
+        # setsid = run 自成一个进程组:kill PID 时子进程(训练子进程)一起收尸
+        setsid "$PY" -u scripts/exp_queue.py run "$@" > "$log" 2>&1 &
+        echo "[exp_queue] run PID $! (log: $log;停止: kill $!)"
         ;;
     bank_bg)
         log="/tmp/raw_bank_build.log"

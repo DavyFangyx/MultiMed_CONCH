@@ -88,7 +88,7 @@ $PY run.py hgcn_clinic --dataset all --scheme all --force
 ## 增加数据集
 
 对话：claude --resume d15c134b-043b-4051-98d1-ded3319258f9
-以 2026-10-08 新增 TCGA-LUAD / TCGA-LUSC(肺癌)为例,步骤:
+### 以 2026-10-08 新增 TCGA-LUAD / TCGA-LUSC(肺癌)为例,步骤:
 
 1. **datasets.json 登记**(同文件按 `project_ids` 拆分,与肾癌三集同模式):
    `clinic_files` = `/data/lizhe/Medteam_projects/Lung/clinical/clinical.cart.2026-06-01.json`(956 例),
@@ -114,3 +114,24 @@ $PY run.py hgcn_clinic --dataset all --scheme all --force
 - 新词表:22 字段、245 类别,scope = 11 数据集、4860 患者(3904 + 956)。
 - 维度增长不止契约预估的 +6(17→22 字段):肺的 956 例把一批原本 <5 频次被合并进 OTHER 的类别顶过了 `min_count=5` 阈值,契约 §3「已知口径」那段(+6 维)可顺带更新。
 - HGCN L1–L5:每集 3 个 pkl(x_cli / ttt_cli_feas / t_cli_feas)随新词表变化。
+
+
+### 以 2026-10-13 新增 CPTAC-BRCA / CPTAC-COAD 为例(非 GDC 源,取值口径与 GDC 不同):
+
+1. **datasets.json 登记**:每个队列一份自己的 cart JSON,不设 `project_ids`——
+   `clinic_files` = `/data/lizhe/Medteam_projects/CPTAC_data/{cptac_brca,cptac_coad}/clinical/clinical.cart.2026-10-10.json`
+   (BRCA 121 例 / COAD 109 例)。
+2. **取值口径对齐**:同语义不同写法的取值在 `templates/value_alias_rules.json` 按字段登记别名
+   (CPTAC 分期裸罗马数字 `I..IV` → `Stage I..IV`,字面 `NA` → 空串、走既有 `Stage X` 兜底)。
+   映射在 extract 取值处生效,文本 prompt 与 D/HGCN 类别一次对齐;不命中的取值原样通过,
+   旧数据集不受影响。
+3. **按顺序运行**(同上):
+   ```bash
+   $PY run.py pipeline --force --dataset CPTAC-BRCA,CPTAC-COAD --scheme manual
+   $PY run.py baseline --force --dataset all --scheme all
+   $PY run.py hgcn_clinic --force --dataset all --scheme all
+   ```
+
+影响口径(2026-10-13 实测):词表总类别 245 → 246——多出的 1 个是 `project.project_id`
+的 `cptac-2` 词表条目,该字段不在 L0-L5 冻结方案里、无向量消费;分期字段类别不增不减,
+裸罗马数字被别名归一进既有的 `stage i..iv` 类别,D 维度与 10-08 口径一致。

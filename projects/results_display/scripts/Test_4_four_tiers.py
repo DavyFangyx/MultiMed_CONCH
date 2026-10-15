@@ -1,42 +1,39 @@
 #!/usr/bin/env python3
-"""Test_4 三档汇总表（报告值 / 去泄露值 / 可达值）——纯汇总，无训练。
+"""Test_4 四档对照汇总表（报告值 / 去泄露值 / 可达值 / 原始可达值）——纯汇总，无训练。
 
-口径(bank-only,2026-10-07;臂语义见 z_notes/experiment_list/arm_registry.md):
-  - 档 1 报告值   = results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv 的 {work} 行
-                    (论文报告原值 = work × raw,apipe 全量编码历史口径,已冻结;apipe 编码
-                     非 field bank 基座,路径已删除;待 report 臂重建(work × raw,
-                     field bank raw 切片 + 训练)后替换)
-  - 档 2 去泄露值 = deleak 臂(Test_3_{work}_{ds}__landmark_0 行,work × lm0,field bank 切片)
-  - 档 3 可达值   = two_arm.csv 的 C_c;缺失回退搜索 result.json 的 best_cv_c_mean
+口径(bank-only;臂语义见 z_notes/experiment_list/arm_registry.md):
+  - 档 1 报告值   = paper_raw/{dataset}[gdc]/cindex.csv 的 work_raw_{work}_{ds} 行
+                    (work × raw,field bank raw 切片,已重建)
+  - 档 2 去泄露值 = paper_lm0/{dataset}[gdc]/cindex.csv 的 work_lm0_{work}_{ds} 行(work × lm0)
+  - 档 3 可达值   = greedy_lm0/two_arm.csv 的 C_c;缺失回退搜索 result.json 的 best_cv_c_mean
                     (bank-only 口径下与 reach 臂同嵌入同模型同折同 seed,零训练)
-  - 档间 Δ:Δ1 = 报告 − 去泄露(泄露高估幅度;现混 apipe 历史基座差,干净口径 =
-    Test_2b_delta 的 A−B 同基座对照);Δ2 = 去泄露 − 可达(字段选择差距,同 field bank 基座)
+  - 档 4 原始可达值 = paper_raw/{dataset}[gdc]/cindex.csv 的 greedy_raw_{ds} 行
+                    (greedy × raw;未训 = pending,无搜索回退)
+  - 档间 Δ:Δ1 = 报告 − 去泄露;Δ2 = 去泄露 − 可达;Δ3 = 报告 − 原始可达;Δ4 = 原始可达 − 可达
   - 主口径 analyzer = mlp_clinic_flatten;clinic_cox 仅作报告值交叉列(论文历史数字)
-  - 缺臂哲学(与 Test_3_compare.py 一致):缺可达值(无搜索 result.json / 未 drain)的行
-    **整行保留**,C 相关列记 "pending",不中断;arm_A 无该 (dataset, work) 行时报告列记 "n/a"
+  - 缺臂哲学(与 Test_3_compare.py 一致):缺可达/原始可达(未训练)的行
+    **整行保留**,对应列记 "pending",不中断;源表无该 (dataset, work) 行时报告列记 "n/a"
     (该工作在论文中未报告该数据集,如 SURVPGC / MMSURV 的非原文数据集)。
-  - 数据集分层 = 协议 A 四档(n_event 从 Test_0 manifest / event_summary 读,不硬编码):
-    main ≥100 / main_ci 70–100(须带 CI,不排名)/ supp 30–70 / low <30。
+  - 范围 = 14 主集(label 患者集有效事件 ≥100);n_event 列从 event_summary 读,仅作信息标注。
 
 输入（全部只读）：
-  - results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv、results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv
-  - results/Test_3_greedy_vs_works/two_arm.csv（Test_3_compare.py 产物）
+  - results/paper_raw/{dataset}[gdc]/cindex.csv、results/paper_lm0/{dataset}[gdc]/cindex.csv
+  - results/greedy_lm0/two_arm.csv（Test_3_compare.py 产物）
   - scripts/Test_3_common.py（主集名单 / 方案绑定 / n_event；硬编码禁令 R13）
   - templates/manual_schemes/{work}/fields.json（工作组合字段数）
 
-输出（默认 results_display/Test_4_three_tiers/；Main_ 前缀 = 头条）：
-  - Main_three_tiers.csv   每 (dataset, work) 一行三档 + 档间 Δ（协议 A 档位 → 数据集 → 方案排序）
-  - Main_three_tiers.png   头条柱状图：逐数据集三档均值（橙=报告/蓝=去泄露/绿=可达，仅可达值就绪的数据集）
-  - Appx_three_tiers_by_work.png 附录柱状图：逐工作三档均值（跨可达值就绪数据集聚合）
-  - Main_tier_summary.csv  按协议 A 四档聚合（行数 / pending 数 / Δ 均值中位）
+输出（默认 results_display/Test_4_four_tiers/；Main_ 前缀 = 头条）：
+  - Main_four_tiers.csv   每 (dataset, work) 一行四档对照 + 档间 Δ(数据集 → 方案排序)
+  - Main_four_tiers.png   头条柱状图：逐数据集四档均值（报告/去泄露/可达/原始可达）
+  - Appx_four_tiers_by_work.png 附录柱状图：逐工作四档均值（跨可达值就绪数据集聚合）
   - README.md              口径与状态说明（手写，results_display/** 被 .gitignore 忽略，不入库）
 
 说明（预览版）：可达值产自 Test_3 **旧 sig 停点**（δ=0.005 + Wilcoxon 门控）；D4 修订
 （2026-10-04，stop_mode=gain_only）后如需重出，对应数据集 C 值会变。15 集齐后重出完整版。
 
 用法：
-  python3 results_display/scripts/Test_4_three_tiers.py            # 生成
-  python3 results_display/scripts/Test_4_three_tiers.py --audit    # 生成 + 前 2 行三档抽查
+  python3 results_display/scripts/Test_4_four_tiers.py            # 生成
+  python3 results_display/scripts/Test_4_four_tiers.py --audit    # 生成 + 前 2 行四档抽查
 """
 from __future__ import annotations
 
@@ -55,9 +52,10 @@ for _p in (REPO_ROOT, REPO_ROOT / "src", REPO_ROOT / "scripts"):
 
 from common.paths import remap_legacy_result_path, test_results_dir  # noqa: E402
 import Test_3_common as C3  # noqa: E402
+from manual_pipeline.arm_names import greedy_scheme_name  # noqa: E402
 
-ARM_A_ROOT = test_results_dir("Test_2b/arm_A")
-ARM_B_ROOT = test_results_dir("Test_2b/arm_B")
+ARM_A_ROOT = REPO_ROOT / "results" / "paper_raw"
+ARM_B_ROOT = REPO_ROOT / "results" / "paper_lm0"
 
 import matplotlib  # noqa: E402
 
@@ -65,7 +63,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-# ---- 视觉常量（与 Test_2b_delta_report.py 同一套 light 表面；三档配色）----
+# ---- 视觉常量（与 Test_2b_delta_report.py 同一套 light 表面；四档配色）----
 INK = "#0b0b0b"
 MUTED = "#898781"
 BASELINE = "#c3c2b7"
@@ -73,9 +71,10 @@ SURFACE = "#fcfcfb"
 COL_REPORT = "#eb6834"  # 报告值（橙）
 COL_DELEAKED = "#2a78d6"  # 去泄露值（蓝）
 COL_REACH = "#3d8b52"  # 可达值（绿）
+COL_REACH_RAW = "#a06a2c"  # 原始可达值（棕）
 
-OUT_MAIN_FIG = "Main_three_tiers.png"
-OUT_APPX_FIG = "Appx_three_tiers_by_work.png"
+OUT_MAIN_FIG = "Main_four_tiers.png"
+OUT_APPX_FIG = "Appx_four_tiers_by_work.png"
 TWO_ARM_CSV = C3.OUT_ROOT / "two_arm.csv"
 TEMPLATES = REPO_ROOT / "templates" / "manual_schemes"
 
@@ -84,42 +83,21 @@ COX = "clinic_cox"          # 交叉列
 PENDING = "pending"         # 缺可达值（与 Test_3_compare 同哲学）
 NA = "n/a"                  # 源表无该行（工作未报告该数据集）
 
-TIER_ORDER = {"main": 0, "main_ci": 1, "supp": 2, "low": 3}
-
 FIELDS = [
-    "dataset", "work", "tier", "n_event", "n_fields_work",
+    "dataset", "work", "n_event", "n_fields_work",
     "report_c", "report_std",
     "deleak_c", "deleak_std",
     "delta_report_minus_deleak",
     "reach_c", "reach_std", "reach_b_c", "reach_b_std",
     "delta_deleak_minus_reach", "delta_C_minus_B",
+    "reach_raw_c", "reach_raw_std",
+    "delta_report_minus_reach_raw", "delta_reach_raw_minus_reach",
     "n_fields_greedy", "n_missed",
     "report_cox_c",
     "status",
 ]
 
 
-# --------------------------------------------------------------------------- 分层
-def tier_for(n_event: int) -> str:
-    if n_event >= 100:
-        return "main"
-    if n_event >= 70:
-        return "main_ci"
-    if n_event >= 30:
-        return "supp"
-    return "low"
-
-
-def tier_label(tier: str) -> str:
-    return {
-        "main": "main (n_event>=100)",
-        "main_ci": "main_ci (70-100, CI required, no ranking)",
-        "supp": "supp (30-70, qualitative)",
-        "low": "low (<30, qualitative only)",
-    }[tier]
-
-
-# --------------------------------------------------------------------------- 读取
 def read_metric(csv_path: Path, scheme: str, modality: str) -> dict | None:
     """从 cindex.csv 取一行 (scheme, modality)；表缺失/无该行 -> None。
 
@@ -170,13 +148,8 @@ def search_best_c(dataset: str) -> dict | None:
     mean = data.get("best_cv_c_mean")
     if mean is None:
         return None
-    per_fold = data.get("best_cv_folds") or []
-    std = None
-    if len(per_fold) >= 2:
-        import math
-        m = sum(per_fold) / len(per_fold)
-        std = math.sqrt(sum((x - m) ** 2 for x in per_fold) / (len(per_fold) - 1))
-    return {"c": float(mean), "std": std}
+    # result.json 不持久化 best 子集折值(仅 best_cv_c_mean),std 记 n/a。
+    return {"c": float(mean), "std": None}
 
 
 def _num(value) -> float | None:
@@ -205,11 +178,12 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
                arm_a_root: Path = ARM_A_ROOT, arm_b_root: Path = ARM_B_ROOT,
                two_arm: dict[tuple[str, str], dict] | None = None,
                templates: Path = TEMPLATES) -> list[dict]:
-    """(dataset, work) × 三档;缺臂不中断(C -> pending,报告值缺 -> n/a)。
+    """(dataset, work) × 四档对照;缺臂不中断(reach/reach_raw -> pending,报告值缺 -> n/a)。
 
-    口径(bank-only,2026-10-07;臂语义 arm_registry.md):去泄露值 = deleak 臂
-    (Test_3_{work}_{ds},work × lm0,field bank 切片);可达值 = two_arm.csv 的 C,缺失时回退
-    搜索 result.json 的 best_cv_c_mean(与 reach 臂同嵌入同模型同折同 seed)。
+    口径(bank-only;臂语义 arm_registry.md):去泄露值 = deleak 臂
+    (work_lm0_{work}_{ds},work × lm0,训练时索引);可达值 = two_arm.csv 的 C,缺失时回退
+    搜索 result.json 的 best_cv_c_mean(与 reach 臂同嵌入同模型同折同 seed);
+    原始可达值 = greedy × raw(greedy_raw_{ds} 行,paper_raw 表,未训 = pending,无搜索回退)。
     """
     if two_arm is None:
         two_arm = load_two_arm(TWO_ARM_CSV)
@@ -218,12 +192,29 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
         if dataset not in n_event:
             raise SystemExit(f"[error] n_event 表缺 {dataset}(manifest/event_summary)")
         n_ev = n_event[dataset]
-        report = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, MLP)
-        report_cox = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
-        # 去泄露值:deleak 臂(work × lm0,field bank 切片;apipe scheme 分支已删 T31)
-        b_key = f"{C3.b_scheme_name(work, dataset)}__landmark_0"
+        # F×T 命名:报告值行 = work_raw_{work}_{ds};兼容 legacy 裸 work 名
+        from manual_pipeline.arm_names import work_scheme_name  # noqa: E402
+
+        report = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv",
+                             work_scheme_name(work, dataset, "raw"), MLP)
+        if report is None:
+            report = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, MLP)
+        report_cox = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv",
+                                 work_scheme_name(work, dataset, "raw"), COX)
+        if report_cox is None:
+            report_cox = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
+        # 去泄露值:deleak 臂(F×T:work_lm0_{work}_{ds});arm_B 表兼容 legacy {work}__landmark_0 行
+        b_key = C3.b_scheme_name(work, dataset)
         deleak = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv", b_key, MLP)
+        if deleak is None:
+            deleak = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv",
+                                 f"{work}__landmark_0", MLP)
         arm3 = two_arm.get((dataset, work))
+        # 原始可达值:greedy × raw(paper_raw 表 greedy_raw_{ds} 行;未训 = pending)
+        from manual_pipeline.arm_names import greedy_scheme_name  # noqa: E402
+
+        reach_raw = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv",
+                                greedy_scheme_name(dataset, t="raw"), MLP)
 
         d1 = None
         if report is not None and deleak is not None:
@@ -241,11 +232,12 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
                 reach = best["c"]
                 reach_std = best["std"]
         d2 = _r6(deleak["mean"] - reach) if (deleak is not None and reach is not None) else None
+        d3 = _r6(report["mean"] - reach_raw["mean"]) if (report is not None and reach_raw is not None) else None
+        d4 = _r6(reach_raw["mean"] - reach) if (reach_raw is not None and reach is not None) else None
 
         rows.append({
             "dataset": dataset,
             "work": work,
-            "tier": tier_for(n_ev),
             "n_event": n_ev,
             "n_fields_work": work_n_fields(work, templates),
             "report_c": _cell(report, "mean"),
@@ -259,29 +251,34 @@ def build_rows(datasets: list[str], pairs: list[tuple[str, str]],
             "reach_b_std": PENDING if reach_b is None else reach_b_std,
             "delta_deleak_minus_reach": PENDING if d2 is None else d2,
             "delta_C_minus_B": PENDING if d_c_b is None else d_c_b,
+            "reach_raw_c": PENDING if reach_raw is None else reach_raw["mean"],
+            "reach_raw_std": PENDING if reach_raw is None else reach_raw["std"],
+            "delta_report_minus_reach_raw": NA if d3 is None else d3,
+            "delta_reach_raw_minus_reach": PENDING if d4 is None else d4,
             "n_fields_greedy": PENDING if arm3 is None else int(arm3["n_fields_greedy"]),
             "n_missed": PENDING if arm3 is None else int(arm3["n_missed"]),
             "report_cox_c": _cell(report_cox, "mean"),
             
             "status": "ok" if reach is not None else "pending_C",
         })
-    rows.sort(key=lambda r: (TIER_ORDER[r["tier"]], r["dataset"], r["work"]))
+    rows.sort(key=lambda r: (r["dataset"], r["work"]))
     return rows
 
 
 # --------------------------------------------------------------------------- 图
 def _tier_means(rows: list[dict], group_key: str) -> dict[str, tuple[list[float], int]]:
-    """按 group_key 聚合三档均值；只取 status==ok 且三档齐全的行（报告 n/a 剔除）。"""
-    groups: dict[str, list[tuple[float, float, float]]] = {}
+    """按 group_key 聚合四档均值；只取 status==ok 且四档齐全的行（报告 n/a 剔除）。"""
+    groups: dict[str, list[tuple[float, float, float, float]]] = {}
     for r in rows:
         if r["status"] != "ok":
             continue
-        rep, de, rc = _num(r["report_c"]), _num(r["deleak_c"]), _num(r["reach_c"])
-        if rep is None or de is None or rc is None:
+        rep = _num(r["report_c"]); de = _num(r["deleak_c"])
+        rc = _num(r["reach_c"]); rr = _num(r["reach_raw_c"])
+        if rep is None or de is None or rc is None or rr is None:
             continue
-        groups.setdefault(r[group_key], []).append((rep, de, rc))
+        groups.setdefault(r[group_key], []).append((rep, de, rc, rr))
     return {
-        key: ([sum(v[i] for v in vals) / len(vals) for i in range(3)], len(vals))
+        key: ([sum(v[i] for v in vals) / len(vals) for i in range(4)], len(vals))
         for key, vals in groups.items()
     }
 
@@ -292,11 +289,12 @@ def _three_tier_bar_figure(names: list[str], agg: dict, *, n_label: str, title: 
     fig.patch.set_facecolor(SURFACE)
     ax.set_facecolor(SURFACE)
     x = np.arange(len(names))
-    w = 0.26
+    w = 0.2
     series = (
         (COL_REPORT, "report (paper fields)"),
         (COL_DELEAKED, "deleaked (landmark_0)"),
         (COL_REACH, "reachable (greedy)"),
+        (COL_REACH_RAW, "reachable raw (greedy, raw)"),
     )
     for i, (color, label) in enumerate(series):
         means = [agg[n][0][i] for n in names]
@@ -307,7 +305,7 @@ def _three_tier_bar_figure(names: list[str], agg: dict, *, n_label: str, title: 
             f"{n_label}={n}", xy=(xi, max(means)), xytext=(0, 4),
             textcoords="offset points", ha="center", fontsize=8.0, color=MUTED,
         )
-    all_means = [agg[n][0][i] for n in names for i in range(3)]
+    all_means = [agg[n][0][i] for n in names for i in range(4)]
     ax.axhline(0.5, color=BASELINE, linewidth=1.2, zorder=1)
     ax.set_ylim(min(0.5, min(all_means)) * 0.97, max(all_means) * 1.09)
     ax.set_xticks(x)
@@ -321,8 +319,8 @@ def _three_tier_bar_figure(names: list[str], agg: dict, *, n_label: str, title: 
     return out_path
 
 
-def figure_three_tiers_by_dataset(rows: list[dict], out_path: Path) -> Path | None:
-    """头条柱状图：逐数据集三档均值（报告/去泄露/可达），仅含可达值就绪的数据集。"""
+def figure_four_tiers_by_dataset(rows: list[dict], out_path: Path) -> Path | None:
+    """头条柱状图：逐数据集四档均值（报告/去泄露/可达/原始可达），仅含可达值就绪的数据集。"""
     agg = _tier_means(rows, "dataset")
     if not agg:
         return None
@@ -335,8 +333,8 @@ def figure_three_tiers_by_dataset(rows: list[dict], out_path: Path) -> Path | No
     )
 
 
-def figure_three_tiers_by_work(rows: list[dict], out_path: Path) -> Path | None:
-    """附录柱状图：逐工作三档均值（跨可达值就绪的数据集聚合）。"""
+def figure_four_tiers_by_work(rows: list[dict], out_path: Path) -> Path | None:
+    """附录柱状图：逐工作四档均值（跨可达值就绪的数据集聚合）。"""
     agg = _tier_means(rows, "work")
     if not agg:
         return None
@@ -347,43 +345,6 @@ def figure_three_tiers_by_work(rows: list[dict], out_path: Path) -> Path | None:
               "report (orange) vs deleaked (blue) vs reachable (green)",
         ylabel="mean c-index across datasets", out_path=out_path,
     )
-
-
-def tier_summary_rows(rows: list[dict]) -> list[dict]:
-    out: list[dict] = []
-    for tier in sorted(TIER_ORDER, key=TIER_ORDER.get):
-        sub = [r for r in rows if r["tier"] == tier]
-        if not sub:
-            continue
-        ok = [r for r in sub if r["status"] == "ok"]
-        d1 = [v for v in (_num(r["delta_report_minus_deleak"]) for r in sub) if v is not None]
-        d2 = [v for v in (_num(r["delta_deleak_minus_reach"]) for r in ok) if v is not None]
-
-        def _mean(values: list[float]):
-            return None if not values else _r6(sum(values) / len(values))
-
-        def _median(values: list[float]):
-            if not values:
-                return None
-            ordered = sorted(values)
-            mid = len(ordered) // 2
-            if len(ordered) % 2:
-                return _r6(ordered[mid])
-            return _r6((ordered[mid - 1] + ordered[mid]) / 2)
-
-        out.append({
-            "tier": tier,
-            "tier_label": tier_label(tier),
-            "n_pairs": len(sub),
-            "n_ok": len(ok),
-            "n_pending_C": len(sub) - len(ok),
-            "n_report_unavailable": sum(1 for r in sub if _num(r["report_c"]) is None),
-            "delta1_mean": "" if not d1 else _mean(d1),
-            "delta1_median": "" if not d1 else _median(d1),
-            "delta2_mean": "" if not d2 else _mean(d2),
-            "delta2_median": "" if not d2 else _median(d2),
-        })
-    return out
 
 
 # --------------------------------------------------------------------------- 写出
@@ -399,14 +360,7 @@ def _write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> Path:
 def write_tables(rows: list[dict], out_dir: Path) -> list[Path]:
     out_dir = Path(out_dir)
     written = [
-        _write_csv(out_dir / "Main_three_tiers.csv", rows, FIELDS),
-        _write_csv(
-            out_dir / "Main_tier_summary.csv",
-            tier_summary_rows(rows),
-            ["tier", "tier_label", "n_pairs", "n_ok", "n_pending_C",
-             "n_report_unavailable", "delta1_mean", "delta1_median",
-             "delta2_mean", "delta2_median"],
-        ),
+        _write_csv(out_dir / "Main_four_tiers.csv", rows, FIELDS),
     ]
     return written
 
@@ -428,11 +382,11 @@ def fold_mean_std(results_dir: str | Path) -> tuple[float, float, int]:
 
 def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
           arm_b_root: Path = ARM_B_ROOT, n_sample: int = 2) -> None:
-    """抽前 n_sample 个 status=ok 行：三档数值与各源表/折文件手算对照（逐位）。"""
+    """抽前 n_sample 个 status=ok 行：四档数值与各源表/折文件手算对照（逐位）。"""
     ok_rows = [r for r in rows if r["status"] == "ok"]
     sample = [r for r in ok_rows if _num(r["report_c"]) is not None][:n_sample]
     fallback = len(sample) < n_sample
-    if fallback:  # 报告值 n/a 的行也保留在表中，但不能做三档全查
+    if fallback:  # 报告值 n/a 的行也保留在表中，但不能做四档全查
         sample = (sample + [r for r in ok_rows if r not in sample])[:n_sample]
     if not sample:
         print("[audit] 无可达值行（全 pending），跳过抽查（这不等于失败）")
@@ -457,9 +411,12 @@ def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
                 mean, _, n = fold_mean_std(remap_legacy_result_path(ra["results_dir"]))
                 checks["报告值=arm_A折文件重算"] = (abs(float(r["report_c"]) - mean) < 1e-12
                                           and n == 5)
-        # 2) 去泄露值：arm_B 表重读 + 折文件重算
+        # 2) 去泄露值：arm_B 表重读 + 折文件重算(F×T 行;兼容 legacy 行)
         rb = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv",
-                         f"{work}__landmark_0", MLP)
+                         C3.b_scheme_name(work, dataset), MLP)
+        if rb is None:
+            rb = read_metric(Path(arm_b_root) / f"{dataset}[gdc]" / "cindex.csv",
+                             f"{work}__landmark_0", MLP)
         if rb is None:
             checks["去泄露值存在"] = False
         else:
@@ -473,6 +430,19 @@ def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
         checks["可达值=two_arm.csv"] = (
             arm3 is not None and abs(float(r["reach_c"]) - float(arm3["C_c"])) == 0.0
             and abs(float(r["reach_b_c"]) - float(arm3["B_c"])) == 0.0)
+        # 3.5) 原始可达值：paper_raw 表 greedy_raw_{ds} 行重读（未训 = pending）
+        rr = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv",
+                         greedy_scheme_name(dataset, t="raw"), MLP)
+        if rr is None:
+            checks["原始可达值 pending（源表确无该行）"] = (
+                str(r["reach_raw_c"]) == PENDING
+                and str(r["delta_reach_raw_minus_reach"]) == PENDING)
+        else:
+            checks["原始可达值=arm_A表"] = abs(float(r["reach_raw_c"]) - rr["mean"]) == 0.0
+            if rr["results_dir"]:
+                mean, _, n = fold_mean_std(remap_legacy_result_path(rr["results_dir"]))
+                checks["原始可达值=arm_A折文件重算"] = (
+                    abs(float(r["reach_raw_c"]) - mean) < 1e-12 and n == 5)
         # 4) 档间 Δ 与手算差值一致（同为 6 位舍入）；报告值缺时 Δ1 = n/a
         if _num(r["report_c"]) is None:
             checks["Δ1=n/a（报告值缺）"] = str(r["delta_report_minus_deleak"]) == NA
@@ -482,6 +452,20 @@ def audit(rows: list[dict], *, arm_a_root: Path = ARM_A_ROOT,
                 abs(float(r["delta_report_minus_deleak"]) - d1_hand) == 0.0)
         d2_hand = _r6(float(r["deleak_c"]) - float(r["reach_c"]))
         checks["Δ2=手算(去泄露−可达)"] = abs(float(r["delta_deleak_minus_reach"]) - d2_hand) == 0.0
+        if _num(r["reach_raw_c"]) is None:
+            checks["Δ3/Δ4=pending（原始可达未训）"] = (
+                str(r["delta_report_minus_reach_raw"]) in (NA, PENDING)
+                and str(r["delta_reach_raw_minus_reach"]) == PENDING)
+        else:
+            if _num(r["report_c"]) is None:
+                checks["Δ3=n/a（报告值缺）"] = str(r["delta_report_minus_reach_raw"]) == NA
+            else:
+                checks["Δ3=手算(报告−原始可达)"] = (
+                    abs(float(r["delta_report_minus_reach_raw"])
+                        - _r6(float(r["report_c"]) - float(r["reach_raw_c"]))) == 0.0)
+            checks["Δ4=手算(原始可达−可达)"] = (
+                abs(float(r["delta_reach_raw_minus_reach"])
+                    - _r6(float(r["reach_raw_c"]) - float(r["reach_c"]))) == 0.0)
         # 5) cox 交叉列同源
         rc = read_metric(Path(arm_a_root) / f"{dataset}[gdc]" / "cindex.csv", work, COX)
         if rc is None:
@@ -516,10 +500,10 @@ def check_out_dir_inventory(out_dir: Path, written: list[Path]) -> None:
 
 # --------------------------------------------------------------------------- 主流程
 def main(argv=None) -> None:
-    ap = argparse.ArgumentParser(description="Test_4 三档汇总表（纯汇总）")
-    ap.add_argument("--out", default=str(REPO_ROOT / "results_display" / "Test_4_three_tiers"),
-                    help="产物目录（默认 results_display/Test_4_three_tiers）")
-    ap.add_argument("--audit", action="store_true", help="生成后抽查前 2 行三档数值")
+    ap = argparse.ArgumentParser(description="Test_4 四档对照汇总表（纯汇总）")
+    ap.add_argument("--out", default=str(REPO_ROOT / "results_display" / "Test_4_four_tiers"),
+                    help="产物目录（默认 results_display/Test_4_four_tiers）")
+    ap.add_argument("--audit", action="store_true", help="生成后抽查前 2 行四档数值")
     args = ap.parse_args(argv)
 
     out_dir = Path(args.out)
@@ -533,20 +517,18 @@ def main(argv=None) -> None:
     pending_ds = sorted({r["dataset"] for r in rows if r["status"] == "pending_C"})
     print(f"[build] 主集 {len(datasets)} × 工作组合 = {len(rows)} 行；"
           f"可达值 {len(ok)} 行 / pending_C {len(rows) - len(ok)} 行")
-    print(f"[build] tier 分布: "
-          f"{ {t: sum(1 for r in rows if r['tier'] == t) for t in TIER_ORDER} }")
     print(f"[build] pending 数据集（{len(pending_ds)}）: {', '.join(pending_ds)}")
 
     written = write_tables(rows, out_dir)
     for path in written:
         print(f"[csv] {path.name}")
-    for fn in (figure_three_tiers_by_dataset, figure_three_tiers_by_work):
-        path = fn(rows, out_dir / (OUT_MAIN_FIG if fn is figure_three_tiers_by_dataset else OUT_APPX_FIG))
+    for fn in (figure_four_tiers_by_dataset, figure_four_tiers_by_work):
+        path = fn(rows, out_dir / (OUT_MAIN_FIG if fn is figure_four_tiers_by_dataset else OUT_APPX_FIG))
         if path is not None:
             written.append(path)
             print(f"[png] {path.name}")
         else:
-            print(f"[png] {OUT_MAIN_FIG if fn is figure_three_tiers_by_dataset else OUT_APPX_FIG}: skipped (no reachable rows)")
+            print(f"[png] {OUT_MAIN_FIG if fn is figure_four_tiers_by_dataset else OUT_APPX_FIG}: skipped (no reachable rows)")
 
     if args.audit:
         audit(rows)

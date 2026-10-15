@@ -34,9 +34,9 @@ MANIFEST_CSV = ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 EVENT_SUMMARY_CSV = ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 
 # --- Test_3 产物路径 --------------------------------------------------------
-OUT_ROOT = ROOT / "results" / "Test_3_greedy_vs_works"
+OUT_ROOT = ROOT / "results" / "greedy_lm0"
 SEARCH_ROOT = OUT_ROOT / "search"           # 搜索 run 落盘（evaluations.jsonl / result.json）
-SEARCH_CACHE = test_results_dir("Test_3_search") / "cache.sqlite"
+SEARCH_CACHE = ROOT / "results" / "greedy_lm0" / "cache.sqlite"
 COMPARE_ROOT = OUT_ROOT                     # Test_3_compare.py 的两臂 json/csv
 
 ANALYZER = "mlp_clinic_flatten"             # E2 唯一搜索目标模型（spec §7.1）
@@ -138,11 +138,17 @@ def search_evaluations_jsonl(dataset: str, *, analyzer: str = ANALYZER, seed: in
 
 
 def b_scheme_name(work: str, dataset: str) -> str:
-    return f"Test_3_{work}_{dataset}"
+    """deleak 臂(论文组合 × lm0)方案名——F×T 因子口径,与 Test_2b 臂 B 同一产物。"""
+    from manual_pipeline.arm_names import work_scheme_name  # noqa: E402
+
+    return work_scheme_name(work, dataset, "lm0")
 
 
 def c_scheme_name(dataset: str, *, kind: str = "ksig") -> str:
-    return f"Test_3_greedy_{dataset}" if kind == "ksig" else f"Test_3_greedybest_{dataset}"
+    """reach 臂(贪婪最优 × lm0)方案名。kind: ksig = recommended_subset, best = best_subset。"""
+    from manual_pipeline.arm_names import greedy_scheme_name  # noqa: E402
+
+    return greedy_scheme_name(dataset, kind=kind)
 
 
 if __name__ == "__main__":  # 自检：python3 scripts/Test_3_common.py

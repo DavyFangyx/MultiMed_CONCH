@@ -13,7 +13,7 @@ Covers the three classical landmark requirements of z_notes/Test_series_spec.md
    historical self-check).
 
 Plus the routing: landmark arms write to their own output / results / queue /
-conf paths and never touch the reported-value arm (`Test_2b/arm_A`).
+conf paths and never touch the reported-value arm (`paper_raw`).
 
 No real CONCH encoding and no real Clinic_Analyzer run happen here.
 """
@@ -33,9 +33,9 @@ from common.constants import DAYS_PER_MONTH  # noqa: E402
 from common.paths import RESULTS_ROOT, test_results_dir as _resolve_results_dir  # noqa: E402
 
 # Test 系列命名公约: 结果臂目录(迁移前 = A_manual/A_manual_landmark,
-# 迁移后 = Test_2b/arm_A/arm_B;断言随解析,两种状态都成立)
-ARM_A = _resolve_results_dir("Test_2b/arm_A").relative_to(RESULTS_ROOT)
-ARM_B = _resolve_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT)
+# 迁移后 = paper_raw/arm_B;断言随解析,两种状态都成立)
+ARM_A = _resolve_results_dir("paper_raw").relative_to(RESULTS_ROOT)
+ARM_B = _resolve_results_dir("paper_lm0").relative_to(RESULTS_ROOT)
 
 
 from manual_pipeline.baseline import baseline_scheme_output_dir, load_baseline_scheme_fields  # noqa: E402
@@ -567,7 +567,7 @@ def test_landmark_label_path_is_under_own_subtree(tmp_path):
         label_file=_write_label_csv(tmp_path / "metadata" / "tcga_xx.csv"),
         results_root=tmp_path / "results",
     )
-    assert out_file == tmp_path / "results" / ARM_B / "labels" / "tcga_xx__landmark_0.csv"
+    assert out_file == tmp_path / "results" / "labels" / "tcga_xx__landmark_0.csv"
 
 
 # --------------------------------------------------------------------------

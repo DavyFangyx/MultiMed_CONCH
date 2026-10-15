@@ -14,9 +14,9 @@ for _p in (PROJECT_ROOT, PROJECT_ROOT / "src"):
 from common.paths import RESULTS_ROOT, test_results_dir as _resolve_results_dir  # noqa: E402
 
 # Test 系列命名公约: 结果臂目录(迁移前 = A_manual/A_manual_landmark,
-# 迁移后 = Test_2b/arm_A/arm_B;断言随解析,两种状态都成立)
-ARM_A = _resolve_results_dir("Test_2b/arm_A").relative_to(RESULTS_ROOT)
-ARM_B = _resolve_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT)
+# 迁移后 = paper_raw/arm_B;断言随解析,两种状态都成立)
+ARM_A = _resolve_results_dir("paper_raw").relative_to(RESULTS_ROOT)
+ARM_B = _resolve_results_dir("paper_lm0").relative_to(RESULTS_ROOT)
 
 from manual_pipeline.baseline import (  # noqa: E402
     BASELINE_CONTINUOUS_FIELDS,
@@ -368,7 +368,7 @@ def test_hgcn_keeps_old_field_types_and_cli():
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
     # 静态 Test_3_* 注册已删（2026-10-08）：arms_generate 动态登记后才可点名
     with pytest.raises(ValueError):
-        resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML")
+        resolve_hgcn_schemes("paper_MULTISURV_TCGA-LAML")
     try:
         resolve_hgcn_schemes("NOT_A_SCHEME")
         raise AssertionError("unknown scheme should be rejected")

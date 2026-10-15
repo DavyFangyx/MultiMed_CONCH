@@ -5,18 +5,18 @@
 本步纯分析，**不新增训练**。
 
 两臂（同患者集，唯一差异 = 取值 mask 状态）：
-  - t0 臂：results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
-  - off 臂：results/Test_1a/arm_off/univariate/prompt/no_mask/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - t0 臂：results/single_lm0/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - off 臂：results/single_raw/univariate/prompt/no_mask/{dataset}/mlp_clinic_flatten/field_cindex.csv
     （no_mask = 原 static_only，2026-10-08 更名，见 src/common/paths.py LANDMARK_OFF_TAG）
-  - merged t0 臂（噪声本底归零变体）：results/Test_1a/arm_t0_merged/univariate/prompt/landmark_0/
+  - merged t0 臂（噪声本底归零变体）：待补跑（历史产物已随旧树清理，BRCA/GBM 待 raw bank 重建）
   - Δc_field = c(off) − c(t0)
 
-数据集名单不硬编码：从 results/Test_0_dataset_availability/manifest.csv 的 n_event_label 派生
+数据集名单不硬编码：主集 = label 患者集有效事件 >= 100（event_summary 派生）
 （R13：n_event_label >= 100，2026-10-09 口径），veriyfier 与 off 臂队列口径同源（统一入口
 `python3 scripts/exp_queue.py status --arm test_1a_off`；原 s5b_univariate_enqueue.py 已退休）。
 
 leak_rate 列（Test_2a 审计）：
-  - 来源 results/Test_2a_leak_audit/{dataset}/{scheme}.json（scheme = G1_{md5(field_idx)}，逐字段条目）；
+  - 来源 results/leak_audit/{dataset}/{scheme}.json（scheme = G1_{md5(field_idx)}，逐字段条目）；
     该逐字段审计（用户新 Test_2a）尚未运行时，leak_rate 列留空并标 pending_test_2a，
     脚本可在审计出数后直接重跑填列（无需改代码）。
   - 「理论上能动组合 Δc 的字段清单」= leak_rate > --leak_threshold 且 |Δc_field| >= --delta_threshold。
@@ -24,7 +24,7 @@ leak_rate 列（Test_2a 审计）：
 landmark-first 字段准入（规格 §5bis.1，2026-10-05）：
   - coverage_off 来自raw 统计 rawdata_stats/{dataset}/field_stats.csv；coverage_t0 来自
     t0 口径统计 rawdata_stats/{dataset}/landmark_0/field_stats.csv（Field Bank 同款 mask 提取，
-    run_field_stats --landmark_time 0 → run_field_filter --landmark_time 0 生成，scripts/validate_t0stats_vs_masks.py 验收）。
+    run_field_stats --landmark_time 0 → run_field_filter --landmark_time 0 生成）。
   - t0_filter_status 来自 landmark-first 筛选排除日志
     rawdata_stats/{dataset}/landmark_0/fliter_log/exclusion_log.csv(现行目录,已扶正;历史
     t0stats 后缀可用 --t0_filter_suffix 显式覆盖)
@@ -91,11 +91,10 @@ from common.paths import LANDMARK_OFF_TAG, test_results_dir
 
 CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
-DEFAULT_T0_ROOT = test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
+DEFAULT_T0_ROOT = REPO_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_0"
 DEFAULT_OFF_ROOT = (
-    test_results_dir("Test_1a/arm_off") / "univariate" / "prompt" / LANDMARK_OFF_TAG
+    REPO_ROOT / "results" / "single_raw" / "univariate" / "prompt" / LANDMARK_OFF_TAG
 )
-DEFAULT_MANIFEST = REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 DEFAULT_LEAK_ROOT = test_results_dir("Test_2a_leak_audit")
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1a_field_level"
@@ -156,11 +155,6 @@ LEAK_STATUS_UNDEFINED = "undefined"
 
 
 # --------------------------------------------------------------------------- 输入
-def load_manifest(path: Path) -> dict[str, dict]:
-    with Path(path).open(encoding="utf-8", newline="") as handle:
-        return {row["dataset"]: row for row in csv.DictReader(handle)}
-
-
 def load_event_summary(path: Path) -> dict[str, dict]:
     if not Path(path).exists():
         return {}
@@ -225,19 +219,18 @@ def load_t0_filter_exclusions(path: Path) -> dict[str, dict]:
     return out
 
 
-def main_datasets(manifest: dict[str, dict], events: dict[str, dict]) -> list[str]:
-    """R13 主集:label 患者集有效事件 >= 100 的 TCGA 数据集
-    (2026-10-09 口径:n_event_label 优先,旧产物无该列时回退 raw n_event)。"""
+def main_datasets(events: dict[str, dict]) -> list[str]:
+    """R13 主集:label 患者集有效事件 >= 100 的 TCGA 数据集(2026-10-09 口径,
+    n_event_label 优先,旧产物无该列时回退 raw n_event;Test_0 已退役)。"""
     for key in ("n_event_label", "n_event"):
         table = {}
-        for source in (manifest, events):
-            for name, row in source.items():
-                if str(name).startswith(("TCGA-", "TCGA_")) and str(row.get(key) or "").strip():
-                    table.setdefault(name, int(float(row[key])))
+        for name, row in events.items():
+            if str(name).startswith(("TCGA-", "TCGA_")) and str(row.get(key) or "").strip():
+                table.setdefault(name, int(float(row[key])))
         if table:
             break
     if not table:
-        raise FileNotFoundError("no n_event source (manifest / event_summary)")
+        raise FileNotFoundError("no n_event source (event_summary)")
     return sorted(name for name, n in table.items() if int(n) >= MIN_EVENT)
 
 
@@ -303,7 +296,6 @@ def assemble(
     t0_root: Path,
     off_root: Path,
     analyzer: str,
-    manifest: dict[str, dict],
     events: dict[str, dict],
     leak_root: Path,
     raw_stats_root: Path,
@@ -357,10 +349,9 @@ def assemble(
         if not t0_filter:
             pending.append({"dataset": dataset, "reason": "missing_t0_filter_log", "path": str(excl_path)})
         ev = events.get(dataset, {})
-        man = manifest.get(dataset, {})
-        n_event = int(float(ev.get("n_event") or man.get("n_event") or 0))
-        n_patients = int(float(ev.get("n_patients") or man.get("n_patients") or 0))
-        event_rate = ev.get("event_rate") or man.get("event_rate") or ""
+        n_event = int(float(ev.get("n_event") or 0))
+        n_patients = int(float(ev.get("n_patients") or 0))
+        event_rate = ev.get("event_rate") or ""
         for idx in sorted(idx_to_field):
             field = idx_to_field[idx]
             t0 = t0_rows.get(field)
@@ -1123,7 +1114,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--t0_root", default=str(DEFAULT_T0_ROOT))
     parser.add_argument("--off_root", default=str(DEFAULT_OFF_ROOT))
     parser.add_argument("--analyzer", default=DEFAULT_ANALYZER)
-    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--event_summary", default=str(DEFAULT_EVENT_SUMMARY))
     parser.add_argument("--leak_root", default=str(DEFAULT_LEAK_ROOT))
     parser.add_argument("--out_dir", default=str(DEFAULT_OUT_DIR))
@@ -1147,15 +1137,13 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    manifest = load_manifest(Path(args.manifest))
     events = load_event_summary(Path(args.event_summary))
-    datasets = main_datasets(manifest, events)
+    datasets = main_datasets(events)
     rows, pending, coverage = assemble(
         datasets,
         t0_root=Path(args.t0_root),
         off_root=Path(args.off_root),
         analyzer=args.analyzer,
-        manifest=manifest,
         events=events,
         leak_root=Path(args.leak_root),
         raw_stats_root=Path(args.raw_stats_root),
@@ -1277,7 +1265,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_leak_available": coverage["n_leak_available"],
         "leak_rate_status": coverage["leak_rate_status"],
         "leak_rate_todo": (
-            "TODO: 用户新版 Test_2a 逐字段审计（results/Test_2a_leak_audit/{dataset}/G1_*.json）出数后重跑本脚本，"
+            "TODO: 用户新版 Test_2a 逐字段审计（results/leak_audit/{dataset}/G1_*.json）出数后重跑本脚本，"
             "leak_rate 列与 leak × Δc 散点自动补齐"
             if coverage["leak_rate_status"] != LEAK_STATUS_OK
             else ""

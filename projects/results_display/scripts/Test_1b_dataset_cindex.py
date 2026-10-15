@@ -8,15 +8,14 @@
 （Test_3 贪婪选字段的存在理由）。本步纯分析，**不新增训练**。
 
 三个量化指标：
-  a. 各数据集单字段 c-index 分布（原 E1 Fig2 升级版），按协议 A 四档分层标注；
+  a. 各数据集单字段 c-index 分布（原 E1 Fig2 升级版）；
   b. 同一字段跨数据集 c-index 分布（公共字段 = 出现于 >= --min_datasets 个数据集）；
   c. top-k 字段重叠度（k ∈ --top_k）：两两交集矩阵 + 聚合重叠率。
 
 输入（只读）：
-  - results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
+  - results/single_lm0/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv
     （S5 univariate 补跑，33/33，5 折 × seed 0，与 Test_1a t0 臂同源）
   - datasets.json（数据集清单：TCGA 前缀，**禁止硬编码**）
-  - results/Test_0_dataset_availability/manifest.csv（tier 列 + provisional 标注）
   - rawdata_stats/_shared/event_summary.csv（n_event / n_patients / event_rate）
 
 分档口径（协议 A，用户 2026-09-30，spec §12 U1）：n_event >= 100 main（干净集）/
@@ -27,7 +26,7 @@
 输出（默认 results_display/Test_1b_dataset_cindex/；gitignore 产物，不入库）：
   文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
   Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据；本目录平铺，无子目录。
-  表：Main_dataset_summary.csv     每数据集分布统计 + tier + top-1 字段
+  表：Main_dataset_summary.csv     每数据集分布统计 + top-1 字段
       Appx_field_summary.csv       每字段跨数据集统计（n_datasets/median/range/...）
       Raw_cindex_matrix.csv        dataset × field 对齐矩阵（原始 c_index_mean）
       Appx_topk_members.csv        各数据集 top-k 成员（长表）
@@ -82,11 +81,9 @@ from common.paths import test_results_dir
 CSV_NAME = "field_cindex.csv"
 DEFAULT_ANALYZER = "mlp_clinic_flatten"
 DEFAULT_UNIV_ROOT = (
-    test_results_dir("Test_1a/arm_t0") / "prompt" / "landmark_0"
+    REPO_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_0"
 )
-DEFAULT_MANIFEST = (
-    REPO_ROOT / "results" / "Test_0_dataset_availability" / "manifest.csv"
-)
+
 DEFAULT_EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 DEFAULT_DATASETS_CONFIG = REPO_ROOT / "datasets.json"
 DEFAULT_OUT_DIR = REPO_ROOT / "results_display" / "Test_1b_dataset_cindex"
@@ -142,36 +139,10 @@ SEQ_BLUE = [
 ]
 BLUE_CMAP = LinearSegmentedColormap.from_list("seq_blue", SEQ_BLUE, N=256)
 
-TIER_ORDER = {"main": 0, "main_ci": 1, "supp": 2, "low": 3}
-TIER_LABEL = {
-    "main": "main  (n_event >= 100, clean set)",
-    "main_ci": "main_ci  (70-100, CI required, no ranking)",
-    "supp": "supp  (30-70, supplementary)",
-    "low": "low  (< 30, qualitative only)",
-}
-TIER_SOURCE_MANIFEST = "manifest"
-TIER_SOURCE_PROTOCOL_A = "protocolA_provisional_manifest"
 
 
-# --------------------------------------------------------------------------- 分层
-def tier_for(n_event: int) -> str:
-    """协议 A 四档（spec §12 U1）。"""
-    if n_event >= 100:
-        return "main"
-    if n_event >= 70:
-        return "main_ci"
-    if n_event >= 30:
-        return "supp"
-    return "low"
 
 
-def resolve_tier(manifest_row: dict | None, n_event: int) -> tuple[str, str]:
-    """返回 (tier, tier_source)。manifest 标 provisional → 按协议 A 由 n_event 重算。"""
-    note = str((manifest_row or {}).get("note", "") or "")
-    provisional = "provisional" in note.lower()
-    if manifest_row and not provisional:
-        return str(manifest_row["tier"]), TIER_SOURCE_MANIFEST
-    return tier_for(int(n_event)), TIER_SOURCE_PROTOCOL_A
 
 
 # --------------------------------------------------------------------------- 输入
@@ -182,11 +153,6 @@ def tcga_dataset_names(config_path: Path) -> list[str]:
     if not names:
         raise ValueError(f"no TCGA datasets in {config_path}")
     return names
-
-
-def load_manifest(path: Path) -> dict[str, dict]:
-    with Path(path).open(encoding="utf-8", newline="") as handle:
-        return {row["dataset"]: row for row in csv.DictReader(handle)}
 
 
 def load_event_summary(path: Path) -> dict[str, dict]:
@@ -203,7 +169,6 @@ def assemble_dataset(
     dataset: str,
     univ_root: Path,
     analyzer: str,
-    manifest: dict[str, dict],
     events: dict[str, dict],
 ) -> dict:
     csv_path = Path(univ_root) / dataset / analyzer / CSV_NAME
@@ -226,24 +191,16 @@ def assemble_dataset(
         stds[name] = float(row["c_index_std"])
 
     ev = events.get(dataset, {})
-    # 2026-10-09 口径: 分层计数 = label 宇宙有效事件(n_event_label 优先)
+    # 计数口径 = label 患者集有效事件(n_event_label 优先)
     label_event = ev.get("n_event_label")
-    n_event = int(label_event if pd.notna(label_event) else ev.get("n_event", (manifest.get(dataset) or {}).get("n_event", 0)))
-    n_patients = int(
-        ev.get("n_patients", (manifest.get(dataset) or {}).get("n_patients", 0))
-    )
-    event_rate = float(
-        ev.get("event_rate", (manifest.get(dataset) or {}).get("event_rate", 0.0))
-    )
-    tier, tier_source = resolve_tier(manifest.get(dataset), n_event)
+    n_event = int(label_event if label_event not in (None, "") else ev.get("n_event", 0))
+    n_patients = int(ev.get("n_patients", 0))
+    event_rate = float(ev.get("event_rate", 0.0))
     values = sorted(fields.values())
     top1_field = max(sorted(fields), key=lambda f: (fields[f], f))
     return {
         "dataset": dataset,
         "src": csv_path,
-        "tier": tier,
-        "tier_source": tier_source,
-        "manifest_tier": str((manifest.get(dataset) or {}).get("tier", "")),
         "n_patients": n_patients,
         "n_event": n_event,
         "event_rate": event_rate,
@@ -269,10 +226,7 @@ def assemble_dataset(
 
 # --------------------------------------------------------------------------- 排版
 def order_datasets(records: list[dict]) -> list[dict]:
-    return sorted(
-        records,
-        key=lambda r: (TIER_ORDER[r["tier"]], -r["n_event"], r["dataset"]),
-    )
+    return sorted(records, key=lambda r: (-r["n_event"], r["dataset"]))
 
 
 def field_leaf(field: str) -> str:
@@ -381,61 +335,6 @@ def row_positions(n: int) -> list[float]:
     return [float(n - 1 - idx) for idx in range(n)]
 
 
-def row_positions_gapped(records: list[dict], gap: float = 0.9) -> list[float]:
-    """同 row_positions，但在档与档之间多留 gap（剖面图里给档位文字留白）。"""
-    ys: list[float] = []
-    y = 0.0
-    prev = None
-    for record in records:
-        if prev is not None and record["tier"] != prev:
-            y -= gap
-        ys.append(y)
-        y -= 1.0
-        prev = record["tier"]
-    return ys
-
-
-def tier_group_bounds(records: list[dict]) -> list[tuple[str, int]]:
-    """返回 [(tier, 该 tier 组首行的下标)]，行序 = order_datasets 的输出序。"""
-    bounds: list[tuple[str, int]] = []
-    prev = None
-    for idx, record in enumerate(records):
-        if record["tier"] != prev:
-            bounds.append((record["tier"], idx))
-            prev = record["tier"]
-    return bounds
-
-
-def annotate_tiers(
-    ax,
-    records: list[dict],
-    ys: list[float],
-    *,
-    gap: float = 0.0,
-    fontsize: float = 7.5,
-):
-    """在每档首行上方画分隔线 + 档位文字（x 为轴比例、y 为数据坐标）。
-
-    gap>0 时档间比档内多留 gap 的行距（剖面图用，避免档位文字压到上一行的高柱）。
-    """
-    transform = ax.get_yaxis_transform()
-    sep_offset = (1.0 + gap) / 2.0 if gap else 0.5
-    text_offset = 0.45 if gap else 0.42
-    for i, (tier, idx) in enumerate(tier_group_bounds(records)):
-        if i > 0:
-            ax.axhline(ys[idx] + sep_offset, color=BASELINE, linewidth=1.1, zorder=1)
-        ax.text(
-            0.004,
-            ys[idx] + text_offset,
-            TIER_LABEL[tier],
-            transform=transform,
-            ha="left",
-            va="bottom",
-            fontsize=fontsize,
-            color=MUTED,
-        )
-
-
 def figure_per_dataset_profile(
     records: list[dict],
     all_fields: list[str],
@@ -444,7 +343,6 @@ def figure_per_dataset_profile(
     out_path: Path,
     *,
     analyzer: str,
-    tier_note: str,
 ) -> Path:
     """E1 Fig2 升级版：逐数据集一行，共用字段轴（>= min_datasets），
     字段按 (覆盖数据集数, 跨数据集中位 c-index) 降序；缺字段 = 该数据集 bank 里没有。"""
@@ -455,8 +353,7 @@ def figure_per_dataset_profile(
     index = {f: i for i, f in enumerate(ordered)}
     labels = short_field_labels(ordered)
     n_rows, n_cols = len(records), len(ordered)
-    tier_gap = 0.9
-    ys = row_positions_gapped(records, tier_gap)
+    ys = row_positions(n_rows)
     bar_span = 0.72
     fig_w = max(16.0, n_cols * 0.45)
     fig_h = max(7.0, n_rows * 0.34 + 4.2)
@@ -482,7 +379,6 @@ def figure_per_dataset_profile(
         ax.axhline(yi - bar_span / 2.0, color=BASELINE, lw=0.5, zorder=1)
         ax.axhline(yi - bar_span / 2.0 + CHANCE * bar_span,
                    color=GRIDLINE, lw=0.5, ls="--", zorder=2)
-    annotate_tiers(ax, records, ys, gap=tier_gap, fontsize=8.0)
     ax.set_xlim(-0.5, n_cols - 0.5)
     ax.set_ylim(min(ys) - 0.55, max(ys) + 0.62)
     ax.set_yticks(ys)
@@ -504,8 +400,7 @@ def figure_per_dataset_profile(
         "Test_1b — single-field c-index profile per dataset on the shared field axis  |  "
         f"{analyzer} / landmark_0\n"
         "bar height proportional to c-index within each row (row baseline = 0, "
-        "dashed line = 0.5, full row = 1.0); a gap = field not in that bank\n"
-        f"{tier_note}",
+        "dashed line = 0.5, full row = 1.0); a gap = field not in that bank\n",
         fontsize=10,
         color=INK,
         pad=10,
@@ -521,11 +416,11 @@ def figure_per_dataset_ridge(
     records: list[dict], out_path: Path, *, analyzer: str
 ) -> Path:
     """新头条:33 数据集山脊图。逐行 KDE(单字段 c-index 分布,Silverman×2,
-    确定性无随机),行序/档间隙复用 row_positions_gapped + annotate_tiers;
+    确定性无随机);
     每座山脊标 top-1 菱形 + 字段 leaf 短名 —— 18 个不同的 top-1 字段一眼可见。
     原共享字段轴画像 Main_per_dataset_profile.png 保留。
     构图:单行标题 + 一行副标题(编码说明);右侧留白按最长 top-1 标注估算,
-    全部标注完整入图;档位说明在图中左侧由 annotate_tiers 承担,不再重复。
+    全部标注完整入图。
     """
     try:
         from scipy.stats import gaussian_kde
@@ -539,11 +434,10 @@ def figure_per_dataset_ridge(
     )
     hi = max(all_vals) + 0.012 + longest_label * 0.0040
     grid = np.linspace(lo, hi, 360)
-    ys = row_positions_gapped(records)
     n = len(records)
+    ys = row_positions(n)
     fig, ax = plt.subplots(figsize=(9.6, max(6.0, 0.32 * n + 3.6)))
     fig.patch.set_facecolor(SURFACE)
-    tier_fill = {"main": COL_NEG, "main_ci": "#86b6ef", "supp": MUTED, "low": BASELINE}
     ridge_scale = 0.62  # 山脊最大高度(数据坐标;行距 1.0,不重叠)
     top1_texts: list = []
     for yi, record in zip(ys, records):
@@ -559,7 +453,7 @@ def figure_per_dataset_ridge(
         ax.axhline(yi, color=GRIDLINE, lw=0.6, zorder=1)
         px = np.concatenate([[grid[0]], grid, [grid[-1]]])
         py = np.concatenate([[yi], yi + dens, [yi]])
-        fill_color = tier_fill.get(record["tier"], MUTED)
+        fill_color = COL_NEG
         ax.fill(
             px, py, color=fill_color,
             alpha=0.55, edgecolor=fill_color, linewidth=0.6, zorder=3,
@@ -577,7 +471,6 @@ def figure_per_dataset_ridge(
             ha="left", va="center", fontsize=6.8, color=INK, zorder=6,
         ))
     ax.axvline(CHANCE, color=BASELINE, lw=1.1, ls="--", zorder=1)
-    annotate_tiers(ax, records, ys, gap=0.9, fontsize=7.5)
     ax.set_yticks(ys)
     ax.set_yticklabels(
         [f'{r["dataset"]}  (n_event={r["n_event"]})' for r in records],
@@ -614,7 +507,7 @@ def figure_per_dataset_ridge(
 
 
 def figure_per_dataset_distribution(
-    records: list[dict], out_path: Path, *, analyzer: str, tier_note: str
+    records: list[dict], out_path: Path, *, analyzer: str
 ) -> Path:
     """指标 a：各数据集单字段 c-index 分布（四档分层 + top-1 标记）。"""
     n = len(records)
@@ -651,7 +544,6 @@ def figure_per_dataset_distribution(
         fontsize=7.2,
         color=INK,
     )
-    annotate_tiers(ax, records, list(y))
     ax.set_ylim(-0.7, n - 0.3)
     ax.set_xlim(0.05, 1.14)
     ax.set_xlabel("single-field c-index (5-fold mean, per field); right label = dataset top-1")
@@ -679,8 +571,6 @@ def figure_per_dataset_distribution(
         f"{analyzer} / landmark_0  (n={n} datasets)",
         ha="center", va="top", fontsize=10.5, color=INK,
     )
-    fig.text(0.5, 0.958, tier_note, ha="center", va="top", fontsize=8.0,
-             color=MUTED)
     fig.savefig(out_path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
     return out_path
@@ -693,7 +583,6 @@ def figure_cross_dataset_fields(
     out_path: Path,
     *,
     analyzer: str,
-    tier_note: str,
     min_datasets: int,
 ) -> Path:
     """指标 b：同一字段跨数据集 c-index 分布（公共字段）。"""
@@ -749,8 +638,7 @@ def figure_cross_dataset_fields(
     ax.set_title(
         "Test_1b — same field across datasets: single-field c-index distribution  |  "
         f"{analyzer} / landmark_0\nfields present in >= {min_datasets} datasets "
-        f"(n={n}); sorted by cross-dataset median; right label = range (max-min)\n"
-        f"{tier_note}",
+        f"(n={n}); sorted by cross-dataset median; right label = range (max-min)\n",
         fontsize=10,
         color=INK,
         pad=12,
@@ -776,8 +664,6 @@ def figure_topk_matrices(
     overlap_by_k: dict[int, np.ndarray],
     summary: dict[int, dict],
     out_path: Path,
-    *,
-    tier_note: str,
 ) -> Path:
     ks = sorted(overlap_by_k)
     short = [d.replace("TCGA-", "").replace("TCGA_", "") for d in datasets]
@@ -828,7 +714,6 @@ def figure_topk_matrices(
         fontsize=11,
         color=INK,
     )
-    fig.text(0.5, 0.955, tier_note, ha="center", va="top", fontsize=8.0, color=MUTED)
     fig.savefig(out_path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
     return out_path
@@ -969,7 +854,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--univariate_root", default=str(DEFAULT_UNIV_ROOT),
                         help="S5 univariate root: .../{dataset}/{analyzer}/field_cindex.csv")
     parser.add_argument("--analyzer", default=DEFAULT_ANALYZER)
-    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--event_summary", default=str(DEFAULT_EVENT_SUMMARY))
     parser.add_argument("--datasets_config", default=str(DEFAULT_DATASETS_CONFIG))
     parser.add_argument("--out_dir", default=str(DEFAULT_OUT_DIR))
@@ -1052,40 +936,19 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     ks = parse_top_k(args.top_k)
 
-    names = tcga_dataset_names(Path(args.datasets_config))
-    manifest = load_manifest(Path(args.manifest))
+    from common.patient_set import main_datasets_by_label_events  # noqa: E402
+
+    names = main_datasets_by_label_events(threshold=100)   # 只做主集(2026-10-13 拍板)
     events = load_event_summary(Path(args.event_summary))
 
     records = [
-        assemble_dataset(name, univ_root, args.analyzer, manifest, events)
+        assemble_dataset(name, univ_root, args.analyzer, events)
         for name in names
     ]
     records = order_datasets(records)
     stats = field_stats(records)
     datasets, fields = matrix_axes(records)
     matrix = build_matrix(records, fields)
-
-    tier_sources = {r["tier_source"] for r in records}
-    tier_counts = Counter(r["tier"] for r in records)
-    counts_txt = ", ".join(
-        f"{t}={tier_counts[t]}" for t in sorted(tier_counts, key=TIER_ORDER.get)
-    )
-    if tier_sources == {TIER_SOURCE_PROTOCOL_A}:
-        tier_note = (
-            "Tiers: protocol A on n_event (main >=100 / main_ci 70-100 / supp 30-70 / "
-            f"low <30) — {counts_txt}; Test_0 manifest is provisional(D1) for all 33 "
-            "TCGA rows, so tiers come from n_event (tier_source column in the CSV)."
-        )
-    elif tier_sources == {TIER_SOURCE_MANIFEST}:
-        tier_note = (
-            "Tiers: Test_0 manifest (confirmed, not provisional) — " + counts_txt
-        )
-    else:
-        tier_note = (
-            "Tiers: mixed source (per-dataset tier_source in the CSV) — " + counts_txt
-        )
-    # 图题里的 tier 注记统一切行（避免标题超宽被裁切）
-    tier_note = "\n".join(textwrap.wrap(tier_note, 110))
 
     wrote: list[Path] = []
 
@@ -1094,9 +957,6 @@ def main(argv: list[str] | None = None) -> int:
     for r in records:
         ds_rows.append({
             "dataset": r["dataset"],
-            "tier": r["tier"],
-            "tier_source": r["tier_source"],
-            "manifest_tier": r["manifest_tier"],
             "n_patients": r["n_patients"],
             "n_event": r["n_event"],
             "event_rate": "%.4f" % r["event_rate"],
@@ -1236,7 +1096,7 @@ def main(argv: list[str] | None = None) -> int:
     wrote.append(figure_per_dataset_profile(
         records, fields, shared_fields, stats,
         out_dir / OUT_MAIN_PER_DATASET_PROFILE,
-        analyzer=args.analyzer, tier_note=tier_note,
+        analyzer=args.analyzer,
     ))
     wrote.append(figure_per_dataset_ridge(
         records, out_dir / OUT_MAIN_PER_DATASET_RIDGE,
@@ -1244,16 +1104,16 @@ def main(argv: list[str] | None = None) -> int:
     ))
     wrote.append(figure_per_dataset_distribution(
         records, out_dir / OUT_APPX_PER_DATASET_DISTRIBUTION,
-        analyzer=args.analyzer, tier_note=tier_note,
+        analyzer=args.analyzer,
     ))
     wrote.append(figure_cross_dataset_fields(
         records, stats, shared_fields,
         out_dir / OUT_APPX_CROSS_DATASET_FIELD_SPREAD,
-        analyzer=args.analyzer, tier_note=tier_note, min_datasets=args.min_datasets,
+        analyzer=args.analyzer, min_datasets=args.min_datasets,
     ))
     wrote.append(figure_topk_matrices(
         datasets, overlap_by_k, summary,
-        out_dir / OUT_APPX_TOPK_OVERLAP_MATRIX, tier_note=tier_note,
+        out_dir / OUT_APPX_TOPK_OVERLAP_MATRIX,
     ))
     wrote.append(figure_topk_overlap_rate(
         summary, out_dir / OUT_MAIN_TOPK_OVERLAP_RATE,
@@ -1284,8 +1144,6 @@ def main(argv: list[str] | None = None) -> int:
             "n_datasets": len(records),
             "n_dataset_field_values": int(sum(r["n_fields"] for r in records)),
             "n_distinct_fields": len(fields),
-            "tier_source": sorted(tier_sources),
-            "tier_counts": {t: tier_counts[t] for t in sorted(tier_counts, key=TIER_ORDER.get)},
             "min_datasets_for_common_field": args.min_datasets,
             "top_k": ks,
         },
@@ -1348,8 +1206,6 @@ def main(argv: list[str] | None = None) -> int:
     # --- 控制台摘要 ---
     print(f"Test_1b — {len(records)} datasets, {len(fields)} distinct fields, "
           f"{metrics['provenance']['n_dataset_field_values']} (dataset, field) values")
-    print("  tiers (protocol A on n_event): "
-          + ", ".join(f"{t}={tier_counts[t]}" for t in sorted(tier_counts, key=TIER_ORDER.get)))
     print(f"  (a) top-1 c-index across datasets: "
           f"{metrics['a_per_dataset']['top1_min']:.3f} .. "
           f"{metrics['a_per_dataset']['top1_max']:.3f} "

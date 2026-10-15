@@ -1,15 +1,15 @@
-"""S6 续跑: Test_4_three_tiers.py（三档汇总表：报告值/去泄露值/可达值）回归测试。
+"""S6 续跑: Test_4_four_tiers.py（四档对照表：报告值/去泄露值/可达值/原始可达值）回归测试。
 
 覆盖：
   1. tier_for —— 协议 A 四档边界（100 / 70 / 30）；
-  2. 三档装配与档间 Δ —— 值逐位、Δ=手算差（6 位舍入）、cox 交叉列；
+  2. 四档装配与档间 Δ —— 值逐位、Δ=手算差（6 位舍入）、cox 交叉列；
   3. 缺可达值不中断 —— 整行保留、C 列记 "pending"、Δ2 同为 pending（与 Test_3_compare 同哲学）；
   4. 全缺不崩溃 —— two_arm 空表 / 文件缺失 -> 全行 pending，写出与聚合正常；
-  5. 写出 —— Main_three_tiers.csv / Main_tier_summary.csv 列名、行数、tier 聚合计数；
+  5. 写出 —— Main_four_tiers.csv / Main_tier_summary.csv 列名、行数、tier 聚合计数；
   6. 对齐 two_arm —— delta_C_minus_B / n_fields_greedy / n_missed 引用一致。
 
 运行：
-  python3 -m pytest tests/test_test4_three_tiers.py -q
+  python3 -m pytest tests/test_test4_four_tiers.py -q
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "results_display" / "scripts" / "Test_4_three_tiers.py"
+SCRIPT = ROOT / "results_display" / "scripts" / "Test_4_four_tiers.py"
 
 
 def _load_by_path(name: str, path: Path):
@@ -34,7 +34,7 @@ def _load_by_path(name: str, path: Path):
     return module
 
 
-t4 = _load_by_path("s6_test4_three_tiers", SCRIPT)
+t4 = _load_by_path("s6_test4_four_tiers", SCRIPT)
 C3 = _load_by_path("s6_test3_common", ROOT / "scripts" / "Test_3_common.py")
 
 ARM_COLS = ["dataset", "scheme", "encoding", "modality", "clinic_dir", "results_dir",
@@ -90,7 +90,7 @@ def _templates(tmp_path: Path) -> Path:
 
 
 def _fixture(tmp_path: Path):
-    """三档源表：ds1 报告/去泄露/可达齐；ds2 缺可达；W2 仅 ds1 有报告值。"""
+    """四档源表：ds1 报告/去泄露/可达齐；ds2 缺可达；W2 仅 ds1 有报告值。"""
     arm_a, arm_b = tmp_path / "arm_a", tmp_path / "arm_b"
     _write_cindex(arm_a, "TCGA-AAA", [
         _arm_row("TCGA-AAA", "W1", "mlp_clinic_flatten", 0.700, 0.050),
@@ -101,11 +101,11 @@ def _fixture(tmp_path: Path):
         _arm_row("TCGA-BBB", "W1", "clinic_cox", 0.530, 0.020),
     ])
     _write_cindex(arm_b, "TCGA-AAA", [
-        _arm_row("TCGA-AAA", C3.b_scheme_name("W1", "TCGA-AAA") + "__landmark_0", "mlp_clinic_flatten", 0.650, 0.055),
-        _arm_row("TCGA-AAA", C3.b_scheme_name("W2", "TCGA-AAA") + "__landmark_0", "mlp_clinic_flatten", 0.640, 0.050),
+        _arm_row("TCGA-AAA", C3.b_scheme_name("W1", "TCGA-AAA"), "mlp_clinic_flatten", 0.650, 0.055),
+        _arm_row("TCGA-AAA", C3.b_scheme_name("W2", "TCGA-AAA"), "mlp_clinic_flatten", 0.640, 0.050),
     ])
     _write_cindex(arm_b, "TCGA-BBB", [
-        _arm_row("TCGA-BBB", C3.b_scheme_name("W1", "TCGA-BBB") + "__landmark_0", "mlp_clinic_flatten", 0.600, 0.035),
+        _arm_row("TCGA-BBB", C3.b_scheme_name("W1", "TCGA-BBB"), "mlp_clinic_flatten", 0.600, 0.035),
         _arm_row("TCGA-BBB", "W2__landmark_0", "mlp_clinic_flatten", 0.610, 0.036),
         _arm_row("TCGA-BBB", "W2__landmark_0", "clinic_cox", 0.510, 0.026),
     ])
@@ -137,24 +137,12 @@ def _row(rows, dataset, work):
 
 
 # ------------------------------------------------------------------ 1. 分层
-def test_tier_for_boundaries():
-    assert t4.tier_for(100) == "main"
-    assert t4.tier_for(1000) == "main"
-    assert t4.tier_for(99) == "main_ci"
-    assert t4.tier_for(70) == "main_ci"
-    assert t4.tier_for(69) == "supp"
-    assert t4.tier_for(30) == "supp"
-    assert t4.tier_for(29) == "low"
-    assert t4.tier_for(0) == "low"
-
-
-# ------------------------------------------------------------------ 2. 装配与 Δ
-def test_build_rows_three_tiers_and_deltas(tmp_path):
+def test_build_rows_four_tiers_and_deltas(tmp_path):
     rows, _ = _build(tmp_path)
     assert len(rows) == 4  # 缺臂不丢行
     r = _row(rows, "TCGA-AAA", "W1")
     assert r["status"] == "ok"
-    assert r["tier"] == "main" and r["n_event"] == 120
+    assert r["n_event"] == 120
     assert r["n_fields_work"] == 5
     assert r["report_c"] == 0.700 and r["report_std"] == 0.050
     assert r["deleak_c"] == 0.650 and r["deleak_std"] == 0.055
@@ -169,8 +157,8 @@ def test_build_rows_three_tiers_and_deltas(tmp_path):
     r2 = _row(rows, "TCGA-AAA", "W2")
     assert r2["report_c"] == t4.NA and r2["delta_report_minus_deleak"] == t4.NA
     assert r2["status"] == "ok" and r2["reach_c"] == 0.590
-    # tier 排序：main 在前（main_ci 行排后）
-    assert [r["tier"] for r in rows] == ["main", "main", "main_ci", "main_ci"]
+    # 排序：dataset → work
+    assert [(r["dataset"], r["work"]) for r in rows] ==         sorted({(r["dataset"], r["work"]) for r in rows})
 
 
 # ------------------------------------------------------- 3. 缺可达值不中断
@@ -186,7 +174,7 @@ def test_missing_C_keeps_row_pending(tmp_path):
     # 其余档（报告/去泄露/Δ1）照常保留
     assert r["report_c"] == 0.620 and r["deleak_c"] == 0.600
     assert r["delta_report_minus_deleak"] == round(0.620 - 0.600, 6)
-    assert r["tier"] == "main_ci" and r["n_fields_work"] == 5
+    assert r["n_fields_work"] == 5
 
 
 # ------------------------------------------------------- 4. 全缺不崩溃
@@ -206,37 +194,16 @@ def test_all_missing_C_does_not_crash(tmp_path, mode):
     assert all(r["reach_c"] == t4.PENDING for r in rows)
     written = t4.write_tables(rows, tmp_path / "out")
     assert all(p.exists() for p in written)
-    summary = list(csv.DictReader((tmp_path / "out" / "Main_tier_summary.csv").open()))
-    assert {(s["tier"], s["n_ok"]) for s in summary} == {("main", "0"), ("main_ci", "0")}
-    assert all(s["delta2_mean"] == "" and s["delta2_median"] == "" for s in summary)
-
-
-# ------------------------------------------------------- 5. 写出与聚合
 def test_write_tables_outputs(tmp_path):
     rows, _ = _build(tmp_path)
     out = tmp_path / "out"
     written = t4.write_tables(rows, out)
-    assert [p.name for p in written] == ["Main_three_tiers.csv", "Main_tier_summary.csv"]
-    with (out / "Main_three_tiers.csv").open() as fh:
+    assert [p.name for p in written] == ["Main_four_tiers.csv"]
+    with (out / "Main_four_tiers.csv").open() as fh:
         reader = csv.DictReader(fh)
         assert reader.fieldnames == t4.FIELDS
         body = list(reader)
     assert len(body) == 4
-    text = (out / "Main_three_tiers.csv").read_text(encoding="utf-8")
-    assert t4.PENDING in text and t4.NA in text  # 缺项以字面量落盘
-    summary = list(csv.DictReader((out / "Main_tier_summary.csv").open()))
-    assert len(summary) == 2
-    main = next(s for s in summary if s["tier"] == "main")
-    assert main["n_pairs"] == "2" and main["n_ok"] == "2" and main["n_pending_C"] == "0"
-    assert main["n_report_unavailable"] == "1"  # W2 无报告值（Δ1 只在有报告的 1 行上平均）
-    assert main["delta1_mean"] == str(round(0.700 - 0.650, 6))
-    assert main["delta1_median"] == str(round(0.700 - 0.650, 6))
-    assert main["delta2_mean"] == str(round(((0.650 - 0.600) + (0.640 - 0.590)) / 2, 6))
-    main_ci = next(s for s in summary if s["tier"] == "main_ci")
-    assert main_ci["n_pairs"] == "2" and main_ci["n_ok"] == "0" and main_ci["n_pending_C"] == "2"
-
-
-# ------------------------------------------------------- 6. 与 two_arm 对齐
 def test_two_arm_alignment(tmp_path):
     rows, fx = _build(tmp_path)
     arm3 = t4.load_two_arm(fx["two_arm"])

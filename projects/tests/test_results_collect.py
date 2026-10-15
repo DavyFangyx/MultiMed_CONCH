@@ -13,23 +13,19 @@ for path in (SRC, SCRIPTS):
 from common.paths import (
     PROJECT_ROOT,
     dataset_greedy_results_dir,
-    dataset_linear_probe_results_dir,
     dataset_univariate_results_dir,
     display_results_dir,
 )
 from collect_common import collect_named_files, write_combined_csv
 from collect_greedy_cindex import locate_dataset as locate_greedy
-from collect_linear_probe_r2 import locate_dataset as locate_probe
 from collect_univariate_cindex import iter_univariate_records, locate_dataset as locate_univariate
 
 
 def test_collectors_read_results_not_outputs():
     greedy = locate_greedy("TCGA-BRCA", "prompt", "landmark_0")["src_dir"]
     univariate = locate_univariate("TCGA_LIHC", "prompt", "landmark_365")["src_dir"]
-    probe = locate_probe("TCGA_LIHC", "prompt", "landmark_730")["src_dir"]
     assert greedy == dataset_greedy_results_dir("TCGA-BRCA", "prompt", "landmark_0")
     assert univariate == dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365")
-    assert probe == dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "landmark_730")
     assert greedy.parts[-5:] == ("results", "greedy", "prompt", "landmark_0", "TCGA-BRCA")
     assert "outputs" not in greedy.as_posix()
     assert display_results_dir("univariate", "prompt", "no_mask") == PROJECT_ROOT / "results_display" / "univariate" / "prompt" / "no_mask"

@@ -6,6 +6,8 @@ PGC 线：无 landmark 协议,`extract_values` 不再接收 landmark_time ——
 
 from __future__ import annotations
 
+import json
+
 from common.fields import (
     get_follow_ups,
     get_other_clinical_attributes,
@@ -16,9 +18,43 @@ from common.fields import (
 from common.missingness import clean_value
 from common.types import to_numeric
 
+from .paths import A_PIPELINE_PGC_ROOT
+
 
 PHARMA_TREATMENT_TYPE = "pharmaceutical therapy, nos"
 RADIATION_TREATMENT_TYPE = "radiation therapy, nos"
+
+# 取值别名映射（借鉴 gdc 线 R5_alias 的声明式规则机制）：同语义、不同源表口径的取值
+# 对齐到 GDC/TCGA canonical 口径。规则文件随 templates/ 冻结；无规则命中时原样返回。
+_VALUE_ALIAS_RULES_PATH = A_PIPELINE_PGC_ROOT / "templates" / "value_alias_rules.json"
+_value_alias_rules_cache: dict | None = None
+
+
+def _load_value_alias_rules() -> dict:
+    global _value_alias_rules_cache
+    if _value_alias_rules_cache is None:
+        if _VALUE_ALIAS_RULES_PATH.exists():
+            with open(_VALUE_ALIAS_RULES_PATH, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            _value_alias_rules_cache = raw.get("aliases", {})
+        else:
+            _value_alias_rules_cache = {}
+    return _value_alias_rules_cache
+
+
+def _normalize_alias_key(value) -> str:
+    return " ".join(str(value).strip().lower().split())
+
+
+def _apply_value_alias(field: str, raw_value) -> str:
+    """源表取值 → canonical 取值;空串映射 = 缺失,由调用处既有 fallback 链兜底。"""
+    text = "" if raw_value is None else str(raw_value)
+    rules = _load_value_alias_rules().get(field) or {}
+    mapping = rules.get("map", {})
+    key = _normalize_alias_key(text)
+    if key in mapping:
+        return mapping[key]
+    return text.strip()
 
 
 def _first_nonempty(values: list, fallback: str) -> str:
@@ -118,7 +154,11 @@ def extract_values(case: dict) -> dict:
         "not reported",
     )
     primary_diagnosis = clean_value(diag.get("primary_diagnosis", ""), "Unknown Neoplasm")
-    pathologic_stage = clean_value(diag.get("ajcc_pathologic_stage", ""), "")
+    pathologic_stage = _apply_value_alias(
+        "diagnoses[].ajcc_pathologic_stage",
+        diag.get("ajcc_pathologic_stage", ""),
+    )
+    pathologic_stage = clean_value(pathologic_stage, "")
     staging_edition = clean_value(diag.get("ajcc_staging_system_edition", ""), "")
 
     return {

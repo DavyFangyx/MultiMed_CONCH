@@ -44,11 +44,14 @@ DEFAULT_ANALYZER_DIR = PROJECT_ROOT / "Clinic_Analyzer"
 
 
 def label_out_subdir() -> Path:
-    """labels 目录相对 results/ 的路径：新名优先、旧名回退（命名公约同 common.paths）。
+    """labels 目录相对 results/ 的路径 = 中性命名 results/labels/(2026-10-13 拍板)。
 
-    旧名 results/A_manual_landmark = Test_1b landmark 臂（对应结果树的 arm B）。
+    landmark 派生结局是患者线共享资产(Test_1a off / Test_2b 臂 B / Test_3 lm0 /
+    Test_5 都消费),不再以首个消费它的实验命名(旧 results/Test_2b/arm_B/labels 退役)。
     """
-    return test_results_dir("Test_2b/arm_B").relative_to(RESULTS_ROOT) / "labels"
+    from common.paths import LANDMARK_LABELS_DIR
+
+    return LANDMARK_LABELS_DIR.relative_to(RESULTS_ROOT)
 
 
 def resolve_label_file(

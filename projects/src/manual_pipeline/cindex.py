@@ -22,6 +22,14 @@ from greedy.clinic import (
 )
 from greedy.data import DEFAULT_ANALYZER_SPLIT_ROOT, display_to_study
 
+from .arm_names import (
+    bank_dir,
+    bank_embeddings,
+    bank_fingerprint,
+    greedy_result_json,
+    parse_arm_scheme,
+    template_json,
+)
 from .baseline import resolve_baseline_schemes
 from .config import PAPER_SCHEMES, SCHEME_CONFIG, resolve_scheme_names, schemes_for_dataset
 from .landmark import landmark_dir
@@ -31,8 +39,8 @@ from .paths import PROJECT_ROOT, dataset_baseline_embedding_dir, dataset_embeddi
 
 DEFAULT_ANALYZER_MODALITY = DEFAULT_INNER_MODALITY
 DEFAULT_RESULTS_ROOT = RESULTS_ROOT
-ARM_A_RESULTS = "Test_2b/arm_A"       # 无 landmark 臂（旧 results/A_manual）
-ARM_B_RESULTS = "Test_2b/arm_B"       # Test_1b landmark 臂（旧 results/A_manual_landmark，独立子树不污染 arm A）
+ARM_A_RESULTS = "paper_raw"           # 配置口径:F=paper × T=raw（旧 Test_2b/arm_A）
+ARM_B_RESULTS = "paper_lm0"           # 配置口径:F=paper × T=lm0（旧 Test_2b/arm_B，共享 deleak 臂）
 
 
 def _arm_exp_group(arm: str) -> str:
@@ -81,9 +89,9 @@ def expand_cindex_jobs(schemes: list[str], encoding: str) -> list[dict[str, str]
             if encoding in {"all", "baseline"}:
                 candidates.append({"encoding": "baseline", "scheme": f"baseline__{name}", "bound_scheme": name})
         elif name in SCHEME_CONFIG:
-            # 已注册的自定义方案（templates/manual_schemes/{scheme}，如 Test_3_*）：与论文方案
+            # 已注册的自定义方案（templates/manual_schemes/{scheme}，如 paper_*）：与论文方案
             # 同款展开（text + baseline__ 双条）。此前只认静态 PAPER_SCHEMES，Test_3 只能靠
-            # 进程内 append 绕过（Test_3_pipeline_one 补丁），吸收后白名单直接放开。
+            # 吸收后白名单直接放开（无需进程内补丁）。
             if encoding in {"all", "text"}:
                 candidates.append({"encoding": "prompt", "scheme": name, "bound_scheme": name})
             if encoding in {"all", "baseline"}:
@@ -231,11 +239,14 @@ def _bash_quote(value: str) -> str:
 
 
 def conf_filename(study: str, scheme: str, modality: str, landmark_tag: str = "",
-                  family: str = "") -> str:
+                  family: str = "", encoding: str = "") -> str:
     name = f"{family}{study}__{scheme}"
     if landmark_tag:
         name = f"{name}__{landmark_tag}"
-    return f"{name}__{modality}.conf"
+    name = f"{name}__{modality}"
+    if encoding:
+        name = f"{name}__{encoding}"
+    return f"{name}.conf"
 
 
 def conf_text(
@@ -251,7 +262,9 @@ def conf_text(
     landmark_tag: str = "",
     exp_group: str | None = None,
     label_file: Path | str | None = None,
-    gpu_policy: str = "",
+    field_template: Path | str | None = None,
+    field_greedy: Path | str | None = None,
+    bank_fp: str | None = None,
 ) -> str:
     run_name = f"{study}__{scheme}"
     if landmark_tag:
@@ -268,8 +281,15 @@ def conf_text(
         "WANDB_MODE=disabled",
         f"SEED={int(seed)}",
     ]
-    if gpu_policy:
-        lines.append(f"GPU_POLICY={_bash_quote(str(gpu_policy))}")
+    if field_template is not None:
+        # 训练时索引:字段名单 = 论文模板 fields.json,run 时现场解析
+        lines.append(f"FIELD_TEMPLATE={_bash_quote(str(Path(field_template)))}")
+    if field_greedy is not None:
+        # 训练时索引:字段名单 = 搜索 result.json 的 recommended_subset
+        lines.append(f"FIELD_GREEDY={_bash_quote(str(Path(field_greedy)))}")
+    if bank_fp is not None:
+        # bank 指纹:bank 重建后 conf 语义漂移 → 训练时失败
+        lines.append(f"BANK_FP={_bash_quote(str(bank_fp))}")
     if label_file is not None:
         # Test_1b risk set + time-origin shift: run.sh prefers LABEL_FILE_PATH over
         # the default metadata CSV; the split files stay untouched.
@@ -401,15 +421,24 @@ def iter_cindex_jobs(
 ) -> list[dict]:
     if not dataset_name:
         raise ValueError("cindex 需要 --dataset，不能走单 JSON 模式")
+    # F×T 臂方案(训练时索引,bank 模式)与 legacy 方案(baseline__*/D*/L0-L5,物化目录)分线。
+    arm_schemes: list[tuple[str, dict]] = []
+    legacy_schemes: list[str] = []
+    for scheme in schemes:
+        parsed = parse_arm_scheme(scheme)
+        if parsed is not None:
+            arm_schemes.append((scheme, parsed))
+        else:
+            legacy_schemes.append(scheme)
     bound_schemes = schemes_for_dataset(
-        [bound_scheme_name(scheme) for scheme in schemes],
+        [bound_scheme_name(scheme) for scheme in legacy_schemes],
         dataset_name,
         datasets,
     )
-    skipped = [scheme for scheme in schemes if bound_scheme_name(scheme) not in bound_schemes]
+    skipped = [scheme for scheme in legacy_schemes if bound_scheme_name(scheme) not in bound_schemes]
     if skipped:
         print(f"  skip unbound schemes: {skipped}")
-    jobs = expand_cindex_jobs(bound_schemes, encoding)
+    jobs = expand_cindex_jobs(bound_schemes, "text" if encoding == "onehot" else encoding)
     if isinstance(modalities, str):
         modality_list = parse_modalities(modalities)
     else:
@@ -428,6 +457,73 @@ def iter_cindex_jobs(
         results_root=results_root,
     )
     out = []
+    # ① F×T 臂方案:clinic_dir = bank embeddings/pt,字段名单训练时解析(不物化切片)。
+    for scheme, info in arm_schemes:
+        if info["dataset"] != dataset_name:
+            raise ValueError(f"{scheme} 绑定的数据集 {info['dataset']} != 作业数据集 {dataset_name}")
+        t = info["t"]
+        if t == "lm0" and landmark_time is None:
+            raise ValueError(f"{scheme} 是 lm0 臂,但 landmark_time=None(应为 0)")
+        if t == "raw" and landmark_time is not None:
+            raise ValueError(f"{scheme} 是 raw 臂,但 landmark_time={landmark_time}(应为 None)")
+        bank_encoding = "onehot" if encoding == "onehot" else "prompt"
+        clinic_dir = bank_embeddings(bank_dir(dataset_name, t, encoding=bank_encoding))
+        if not clinic_dir.is_dir():
+            print(f"  skip missing bank: {scheme} -> {clinic_dir}")
+            continue
+        field_template = field_greedy = None
+        if info["kind"] == "work":
+            field_template = template_json(info["work"])
+            if not field_template.exists():
+                print(f"  skip missing template: {scheme} -> {field_template}")
+                continue
+        else:
+            field_greedy = greedy_result_json(dataset_name)
+            if not field_greedy.exists():
+                print(f"  skip missing search result: {scheme} -> {field_greedy}（先跑 Test_3 搜索）")
+                continue
+        bank_fp = bank_fingerprint(bank_dir(dataset_name, t, encoding=bank_encoding))
+        for modality in modality_list:
+            if modality in MULTIMODAL_MODALITIES and study not in MULTIMODAL_STUDIES:
+                print(f"  skip {modality} for {dataset_name}: multimodal models are {MULTIMODAL_DISPLAY} only")
+                continue
+            out.append(
+                {
+                    "dataset": dataset_name,
+                    "study": study,
+                    "scheme": scheme,
+                    "row_scheme": scheme,       # T 已在名里,不叠 __landmark 后缀
+                    "bound_scheme": scheme,
+                    "encoding": bank_encoding,
+                    "modality": modality,
+                    "clinic_dir": clinic_dir,
+                    "split_dir": split_dir,
+                    "results_base": results_base,
+                    "exp_group": exp_group,
+                    "landmark_tag": landmark_tag,
+                    "landmark_run_tag": run_tag,
+                    "landmark_time": landmark_time,
+                    "label_file": label_file,
+                    "label_stats": label_stats,
+                    "field_template": field_template,
+                    "field_greedy": field_greedy,
+                    "bank_fp": bank_fp,
+                    "run_name": f"{study}__{scheme}__{run_tag}" if run_tag else f"{study}__{scheme}",
+                    "conf_name": conf_filename(study, scheme, modality, run_tag,
+                                                family=conf_prefix,
+                                                encoding="" if bank_encoding == "prompt" else bank_encoding),
+                    "seed": int(seed),
+                    "max_epochs": max_epochs,
+                    "out_dir": results_dir(
+                        DEFAULT_ANALYZER_DIR,
+                        exp_group,
+                        f"{study}__{scheme}__{run_tag}" if run_tag else f"{study}__{scheme}",
+                        modality,
+                        results_dir_base=results_base,
+                    ),
+                }
+            )
+    # ② legacy 物化目录线(baseline__*/D*/L0-L5):scheme_output_dir + 注册表门。
     for job in jobs:
         clinic_dir = scheme_output_dir(
             dataset_name,
@@ -531,7 +627,9 @@ def enqueue_cindex_jobs(
             landmark_tag=job.get("landmark_run_tag", job.get("landmark_tag", "")),
             exp_group=job.get("exp_group"),
             label_file=job.get("label_file"),
-            gpu_policy=job.get("gpu_policy", ""),
+            field_template=job.get("field_template"),
+            field_greedy=job.get("field_greedy"),
+            bank_fp=job.get("bank_fp"),
         )
         failed = root / "failed" / name
         dest = root / "queue" / name

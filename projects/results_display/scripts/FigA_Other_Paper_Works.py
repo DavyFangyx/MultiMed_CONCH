@@ -36,7 +36,7 @@ CSV_STEM = "cindex_by_n_fields"
 SOURCE_COLUMNS = ["step", "n_fields", "added", "c_index_mean", "c_index_std", "c_index_se", "subset"]
 DEFAULT_MODALITY = "mlp_clinic_flatten"
 DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates" / "manual_schemes"
-DEFAULT_PAPER_RESULTS_ROOT = test_results_dir("Test_2b/arm_A")
+DEFAULT_PAPER_RESULTS_ROOT = test_results_dir("paper_raw")
 FIG_DIRNAME = "FigA_Other_Paper_Works"
 
 PAPER_SCHEMES = [
@@ -148,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--paper_results_root",
         default=str(DEFAULT_PAPER_RESULTS_ROOT),
-        help="Root of paper-scheme cindex.csv files. Default: results/Test_2b/arm_A.",
+        help="Root of paper-scheme cindex.csv files. Default: results/paper_raw.",
     )
     parser.add_argument(
         "--template_dir",

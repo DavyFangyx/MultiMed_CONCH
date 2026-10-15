@@ -17,8 +17,6 @@ from common.paths import (
     dataset_greedy_dir,
     dataset_greedy_results_dir,
     dataset_greedy_run_dir,
-    dataset_linear_probe_dir,
-    dataset_linear_probe_results_dir,
     dataset_univariate_dir,
     dataset_univariate_results_dir,
     dataset_univariate_run_dir,
@@ -610,14 +608,10 @@ def test_dataset_univariate_dir_prompt():
     assert dataset_univariate_dir("TCGA_LIHC", "prompt", "landmark_365") == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "univariate" / "prompt" / "landmark_365"
 
 
-def test_dataset_linear_probe_dir_prompt():
-    assert dataset_linear_probe_dir("TCGA_LIHC", "prompt", "no_mask") == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "no_mask"
-
 
 def test_dataset_results_dirs():
     assert dataset_greedy_results_dir("TCGA-BRCA", "onehot", "landmark_0") == PROJECT_ROOT / "results" / "greedy" / "onehot" / "landmark_0" / "TCGA-BRCA"
-    assert dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365") == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
-    assert dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "no_mask") == PROJECT_ROOT / "results" / "linear_probe" / "prompt" / "no_mask" / "TCGA_LIHC"
+    assert dataset_univariate_results_dir("TCGA_LIHC", "prompt", "landmark_365") == PROJECT_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC"
     assert dataset_greedy_results_dir(
         "TCGA-BRCA", "onehot", "no_mask", experiment="longitudinal"
     ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "no_mask" / "TCGA-BRCA"
@@ -626,7 +620,7 @@ def test_dataset_results_dirs():
     ) == PROJECT_ROOT / "results" / "greedy" / "prompt" / "landmark_730" / "CPTAC" / "runs" / "G4_37770ad1bc" / "mlp_clinic_flatten"
     assert dataset_univariate_run_dir(
         "TCGA_LIHC", "prompt", "landmark_365", "G1_deadbeef12", "mlp_clinic_flatten"
-    ) == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
+    ) == PROJECT_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
     assert dataset_greedy_run_dir(
         "TCGA-BRCA", "onehot", "no_mask", "G2_abc", "mlp_clinic_flatten", experiment="longitudinal"
     ) == PROJECT_ROOT / "results" / "longitudinal_greedy" / "onehot" / "no_mask" / "TCGA-BRCA" / "runs" / "G2_abc" / "mlp_clinic_flatten"
@@ -648,9 +642,6 @@ def test_dataset_dirs_include_longitudinal_experiment():
     assert dataset_univariate_dir(
         "TCGA_LIHC", "prompt", "landmark_365", experiment="longitudinal"
     ) == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "longitudinal" / "univariate" / "prompt" / "landmark_365"
-    assert dataset_linear_probe_dir(
-        "TCGA_LIHC", "prompt", "no_mask"
-    ) == PROJECT_ROOT / "outputs" / "TCGA_LIHC" / "linear_probe" / "prompt" / "no_mask"
     assert normalize_experiment("") == ""
     assert normalize_experiment("longitudinal") == "longitudinal"
 
@@ -665,15 +656,7 @@ def test_invalid_encoding_raises():
     with pytest.raises(ValueError, match="unsupported encoding"):
         dataset_univariate_dir("TCGA-BRCA", "hash")
     with pytest.raises(ValueError, match="unsupported encoding"):
-        dataset_linear_probe_dir("TCGA-BRCA", "hash")
-    with pytest.raises(ValueError, match="unsupported encoding"):
         dataset_greedy_results_dir("TCGA-BRCA", "hash", "no_mask")
-    with pytest.raises(ValueError, match="unsupported encoding"):
-        dataset_linear_probe_results_dir("TCGA-BRCA", "hash", "no_mask")
-    with pytest.raises(ValueError, match="no longitudinal results tree"):
-        dataset_linear_probe_results_dir("TCGA_LIHC", "prompt", "no_mask", experiment="longitudinal")
-
-
 def test_field_bank_main_rejects_unknown_encoding():
     parser = build_field_bank_parser()
     with pytest.raises(SystemExit):
@@ -929,7 +912,6 @@ if __name__ == "__main__":
     test_dataset_field_bank_dir_onehot()
     test_dataset_greedy_dir_onehot()
     test_dataset_univariate_dir_prompt()
-    test_dataset_linear_probe_dir_prompt()
     test_dataset_dirs_include_longitudinal_experiment()
     test_invalid_encoding_raises()
     test_field_bank_main_rejects_unknown_encoding()

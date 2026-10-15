@@ -2,14 +2,14 @@
 
 两臂（全部 landmark_0 × mlp_clinic_flatten × seed 0 × 5 折, bank 切片链路;
 臂语义见 z_notes/experiment_list/arm_registry.md）:
-  deleak = 工作完整组合 × bank 切片（自定义方案 Test_3_{work}_{dataset}）
-  reach  = 贪婪最优组合 × bank 切片（自定义方案 Test_3_greedy_{dataset}, field 取搜索 result.json;
+  deleak = 工作完整组合 × lm0（方案 work_lm0_{work}_{ds},与 Test_2b 臂 B 同一产物）
+  reach  = 贪婪最优组合 × lm0（方案 greedy_lm0_{ds}, field 取搜索 result.json recommended_subset;
            其 c-index 即搜索 best_cv_c_mean, 同嵌入同模型同折同 seed）
 
 输出:
-  * results/Test_3_greedy_vs_works/compare/{dataset}__{work}.json  逐 (dataset, work) 明细
-  * results/Test_3_greedy_vs_works/two_arm.csv                    两臂 c-index 总表
-  * results/Test_3_greedy_vs_works/missed_fields.csv              遗漏字段清单(C \\ 工作组合)
+  * results/greedy_lm0/compare/{dataset}__{work}.json  逐 (dataset, work) 明细
+  * results/greedy_lm0/two_arm.csv                    两臂 c-index 总表
+  * results/greedy_lm0/missed_fields.csv              遗漏字段清单(C \\ 工作组合)
   头条 Δc = C − B（编码、模型、划分全同, 唯一差异 = 字段集）。
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ import Test_3_common as C  # noqa: E402
 from common.paths import test_results_dir  # noqa: E402
 
 A_TEMPLATES = ROOT / "templates" / "manual_schemes"
-ARM_B_RESULTS = test_results_dir("Test_2b/arm_B")  # 臂 B 汇总表根（Test_3_* 行所在）
+ARM_B_RESULTS = ROOT / "results" / "paper_lm0"  # 臂 B 汇总表根（Test_3_* 行所在）
 OUT_ROOT = C.OUT_ROOT
 DISPLAY_ROOT = ROOT / "results_display" / "Test_3_greedy_vs_works"
 HEADLINE_MODALITY = C.ANALYZER                      # mlp_clinic_flatten（E2 唯一搜索目标模型）
@@ -42,10 +42,24 @@ class MissingArm(RuntimeError):
 
 
 def load_fields(scheme: str) -> list[str]:
-    path = A_TEMPLATES / scheme / "fields.json"
-    if not path.exists():
-        raise MissingArm(f"方案不存在: {scheme}")
-    return [str(f).strip() for f in json.loads(path.read_text(encoding="utf-8")).get("fields", [])]
+    """方案字段名单:F×T 臂方案训练时解析——work → 论文模板;greedy → 搜索 result.json。"""
+    from manual_pipeline.arm_names import (  # noqa: E402
+        greedy_fields,
+        greedy_result_json,
+        parse_arm_scheme,
+        template_fields,
+        template_json,
+    )
+
+    parsed = parse_arm_scheme(scheme)
+    if parsed is None:
+        raise MissingArm(f"非臂方案: {scheme}")
+    if parsed["kind"] == "work":
+        return template_fields(template_json(parsed["work"]))
+    result = greedy_result_json(parsed["dataset"])
+    if not result.exists():
+        raise MissingArm(f"缺搜索 result.json: {result}")
+    return greedy_fields(result, kind=parsed["kind2"])
 
 
 def bank_sentences(dataset: str, landmark_tag: str = f"landmark_{C.LANDMARK_TIME}") -> dict[str, str]:
@@ -66,9 +80,9 @@ def rows_for(dataset: str, scheme: str) -> pd.DataFrame:
     if not path.exists():
         raise MissingArm(f"缺 cindex 表: {path}")
     df = pd.read_csv(path)
-    mask = df["scheme"] == f"{scheme}__landmark_0"
+    mask = df["scheme"] == scheme
     if not mask.any():
-        raise MissingArm(f"表内无 {scheme}__landmark_0 行: {path}")
+        raise MissingArm(f"表内无 {scheme} 行: {path}")
     return df[mask]
 
 
@@ -83,11 +97,29 @@ def cindex_by_modality(rows: pd.DataFrame) -> dict[str, dict[str, float]]:
     return out
 
 
+def reach_from_search(dataset: str) -> dict[str, dict[str, float]]:
+    """reach 臂值回退:搜索 result.json 的 best_cv_c_mean(std 记 n/a)。"""
+    result = C.search_result_json(dataset)
+    if not result.exists():
+        raise MissingArm(f"缺搜索 result.json: {result}")
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    mean = payload.get("best_cv_c_mean")
+    if mean is None:
+        raise MissingArm(f"result.json 无 best_cv_c_mean: {result}")
+    # result.json 不持久化 best 子集折值(仅 best_cv_c_mean),std 记 n/a。
+    return {HEADLINE_MODALITY: {"c": float(mean), "std": None}}
+
+
 def compare(dataset: str, work: str, name_b: str | None = None, name_c: str | None = None) -> dict:
     name_b = name_b or C.b_scheme_name(work, dataset)
     name_c = name_c or C.c_scheme_name(dataset)
     b = cindex_by_modality(rows_for(dataset, name_b))
-    c = cindex_by_modality(rows_for(dataset, name_c))
+    try:
+        c = cindex_by_modality(rows_for(dataset, name_c))
+    except MissingArm:
+        # reach 臂未独立训练时按 spec §7.2 回退搜索 result.json 的 best_cv_c_mean
+        # (同嵌入同模型同折同 seed,与 reach 训练同口径;Test 无依赖化 2026-10-14)。
+        c = reach_from_search(dataset)
     work_fields = load_fields(name_b)
     c_fields = load_fields(name_c)
     sentences = bank_sentences(dataset)

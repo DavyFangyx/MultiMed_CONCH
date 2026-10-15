@@ -19,7 +19,7 @@ Test_ 系列实验按两条论证链展开，**Test_1 是动机层**，分别指
 - **Test_1b**（字段轴链动机）：字段在各个数据集中的预测能力各不相同 → 每个数据集在理论上存在属于自己的最优字段组合 → 针对数据集做合适的字段选择是**应该的**；之前的工作从文献/经验直接拿组合（这正是 Test_3 要展示的"次优"）。
 - **Test_2**（时间轴链主体）证明高估存在：2a 审计（定量泄露占比）+ 2b 去泄露对照（控制变量，唯一差异 = landmark mask）。
 - **Test_3**（字段轴链主体）在去泄露字段池上证明低估存在：贪婪搜索最优组合 vs 各工作去泄露后的组合——**收回** Test_1b 提出的"各数据集有各自最优组合"。
-- **Test_4 三档汇总表**（非实验）：报告值 / 去泄露值 / 可达值三档对照，两个档差分别收口两条链——报告值−去泄露值 = 时间轴链收口（高估量），去泄露值−可达值 = 字段轴链收口（低估量）。
+- **Test_4 四档对照表**（非实验）：报告值 / 去泄露值 / 可达值 / 原始可达值四档对照，分别收口两条链——报告−去泄露与原始可达−可达 = 时间轴链收口（高估量），报告−原始可达与去泄露−可达 = 字段轴链收口（低估量）。
 - **Test_5** 不变性（编码 / 模型 / 指标轴）——规格见 §8bis（用户 2026-10-03 确认后落地）；数据轴（外部数据集 CPTAC、MMRF 等）不在本阶段（§2.4）。
 
 本阶段执行 Test_0、Test_1（动机）、Test_2（高估）、Test_3（低估）、Test_5（不变性，§8bis）；Test_4 是 Test_2+Test_3 的汇总产物表。
@@ -45,20 +45,21 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
 - 一切评估沿用现有口径：5 折 val c-index（`cv_c_mean`，5 折均值），不伪造独立测试集，`prefer_val=True`。
 - **max_epochs 全链统一 12（2026-10-09 用户拍板）**：搜索/单变量链（`selection/runner.py`、`greedy/cli.py`、`greedy/univariate_cli.py`、`run_selection_queue.py` 默认 12，`evaluate_clinic_dir` 恒显式传参）与 cindex 链（`Clinic_Analyzer/configs/defaults.conf` MAX_EPOCHS=12）同一训练配置；旧 20 轮默认已废止，§7.2 "reach 的 c-index 即搜索 best_cv_c_mean" 由此按构造成立。历史 20 轮口径产物已随 2026-10-09 全链清洗一并删除。
 
-### 2.3 三档定义
+### 2.3 四档定义
 
 | 档 | 含义 | 来源 |
 |---|---|---|
-| 报告值 | 含泄露（文献口径） | report 臂（no_mask bank 切片；重跑期间 n/a——冻结 apipe 历史不恢复，T40 补，待 report 臂重建补齐） |
-| 去泄露值 | 同字段集 + landmark_0 mask（bank 切片，T31） | deleak 臂（`results/Test_2b/arm_B/` 的 `Test_3_{work}_{ds}` 行） |
-| 可达值 | 去泄露池上的贪婪搜索最优 | reach 臂 |
+| 报告值 | 含泄露（文献口径） | report 臂（raw bank 切片，`results/paper_raw/` 的 `work_raw_{work}_{ds}` 行） |
+| 去泄露值 | 同字段集 + landmark_0 mask（bank 切片） | deleak 臂（`results/paper_lm0/` 的 `work_lm0_{work}_{ds}` 行） |
+| 可达值 | 去泄露池上的贪婪搜索最优 | reach 臂（`greedy_lm0_{ds}`，训练行同 paper_lm0 表；缺臂回退搜索 best_cv_c_mean） |
+| 原始可达值 | 含泄露口径下的贪婪搜索最优 | reach_raw 臂（`greedy_raw_{ds}`，训练行同 paper_raw 表） |
 
 ### 2.4 工作与数据集
 
 - "各工作" = A_pipeline 的 10 个论文方案：`MULTISURV`、`SURVPGC`、`MMSURV`、`INTEGRATIVE_DNN`、`HGCN_KIRC`、`HGCN_LIHC`、`HGCN_ESCA`、`HGCN_LUSC`、`HGCN_LUAD`、`HGCN_UCEC`（字段表在 `templates/manual_schemes/{scheme}/fields.json`，句式模板已删除 T31）。
 - 数据集（**本阶段**）= `projects/datasets.json` 中的 **33 个 TCGA** 队列。**TCGA 之外的外部数据集（CPTAC、MMRF 等）本阶段一律不纳入**（用户指令 2026-09-29），Test_5c 数据轴阶段再议。S1/S2 已产出的 CPTAC/MMRF 描述性记录保留在磁盘（gitignore 内）但不进入任何训练/选择实验。
 - **方案 × 数据集绑定**：HGCN_* 六个方案各绑定其**对应癌种**（HGCN_KIRC→KIRC、HGCN_LIHC→LIHC、HGCN_ESCA→ESCA、HGCN_LUSC→LUSC、HGCN_LUAD→LUAD、HGCN_UCEC→UCEC），禁止把它们塞进其他数据集（用户纠正 2026-09-30）；泛癌种方案（MULTISURV、SURVPGC、MMSURV、INTEGRATIVE_DNN）暂按全部 33 TCGA，但记录为未解决问题 U2（见 §12）。
-- **数据集选集一律读 Test_0 manifest，禁止在代码或计划中硬编码名单。**
+- **数据集选集一律从数据派生（数据集分档协议 label 患者集有效事件 ≥ 100 的主集），禁止在代码或计划中硬编码名单。**
 
 ### 2.5 时间点与 landmark 口径
 
@@ -67,36 +68,34 @@ leak_rate(f, D) = #{患者: 该患者实际进入模型的值来自 t_hi > 0 的
   2. **时间原点平移**：终点时间改为 `gt − T`（c-index 对平移不变，但仍实现并做不变性自检，以符合规范）；
   3. **只用 T 前信息**：协变量取值仅保留 `t_hi ≤ T` 的槽位（现有值级 mask 已实现这一条）。
 - **三要件已全部落地（P1，2026-09-30）**：① mask 在 `src/manual_pipeline/landmark.py`（值级 `t_hi <= T`，复用 `src/time_stats.py` 槽位；原 A_pipeline 已吸收，2026-10-09 订正）；② 风险集与 ③ 平移在 `src/manual_pipeline/landmark_labels.py`（派生 label 文件排除 `gt <= T`、终点改为 `gt − T`，split 文件不动；平移为固定协议动作，无开关——不变性已由历史自检证实，`--landmark_shift` 自检开关已移除）。口径总表见 `z_notes/protocol1_landmark/time_axis.md` §3。
-- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（Test_2b 臂 B、Test_3 搜索与两臂）默认 t0。
+- **默认 landmark = `landmark_0`**（t0 约束）：后续所有评估实验（deleak 臂、Test_3 搜索与两臂）默认 t0。
 - **患者资格（2026-10-05 用户拍板）**：`ground_truth_time ≤ 0` 的患者（`days_to_death=0` 占位坑 + 负末次随访，见 `time_axis.md` §2.3）从**所有实验的所有臂**（含报告值对照臂 `landmark_none`）中全局剔除；split 文件不动。实现落点 `Clinic_Analyzer/datasets/dataset_survival.py`（读 label 后即过滤，NaN 保留）；与 landmark 要件②的区别：要件②只作用于 landmark 臂（按 T），本条是跨臂全局数据质量过滤。
 - **主诊断判定（2026-10-06 修正）**：`get_primary_diagnosis` 按 `days_to_diagnosis` 最小锚定主诊断（flag 仅同 days 时 tie-break）——GDC `diagnosis_is_primary_disease` 是"研究重点疾病"归属标记而非时间锚点（SKCM 75% 错位，见 `time_axis.md` §2.3）。所有臂（含报告值对照臂）与泄露审计共用该判定。
 - 365 / 730 作为敏感性；原 `landmark_none`（landmark off，取值不裁剪）**现名 `no_mask`（2026-10-08 更名；2026-10-05—10-08 间曾被误称 `static_only`）**，**移出主图**，仅进补充材料。
 - 两个概念澄清（勿混用；字段线内部再分两模式）：
-  1. **取值 mask 状态**：`off`（无 mask，取值全集）/ `0` / `365` / `730`。Test_2a 审计的 leak_rate 用 off 与 0 对比；Test_2b 臂 A = off（报告值对照臂）。
+  1. **取值 mask 状态**：`off`（无 mask，取值全集）/ `0` / `365` / `730`。Test_2a 审计的 leak_rate 用 off 与 0 对比；report 臂 = off（报告值对照臂）。
   2. **field-bank 字段线两模式（2026-10-08 拍板，互斥；2026-10-12 static_only 删除——无消费者）**：`landmark_{0,365,730}`（数值 landmark，要件① t_hi≤T 裁剪）/ `no_mask`（landmark off，不裁剪，diagnoses/follow_ups 全量 raw 取值；`--landmark_time none` 为其别名）。Test_3 搜索池 = `landmark_0`；历史 `rawdata_stats/{dataset}/landmark_none` 目录已随更名迁移。
 
 ## 3. 步骤注册表与决策点
 
 | 步 | 内容 | 关键产物 | 决策点 |
 |---|---|---|---|
-| 编号 | 内容 | 关键产物 | 决策点 |
-|---|---|---|---|
 | T3 | 枚举并删除 E 系列结果文件 | 删除清单 | **决策点 T3** 删除范围 |
-| T1 | **Test_0** 可用数据集评估 | `results/Test_0_dataset_availability/manifest.csv` | **D4** 门槛规则数值；**D1/D2** landmark 有效事件口径与数据集范围 |
-| T2 | Test_2a 泄露审计（无训练） | `results/Test_2a_leak_audit/` | 口径已锁定，轻确认 |
+| T1 | Test_0 可用数据集评估（已退役：分层统计由 event_summary 覆盖） | `rawdata_stats/_shared/event_summary.csv` | **D4** 门槛规则数值 |
+| T2 | Test_2a 泄露审计（无训练） | `results/leak_audit/` | 口径已锁定，轻确认 |
 | P1 | A_pipeline `--landmark_time` 扩展 + 冒烟自检 | 自检报告 | **决策点 P1** 自检通过后放量 |
-| T4 | Test_2b 批跑（选集 = manifest 主集+扩展集） | `results/Test_2b/arm_B` | 异常 → 回推 Test_0 |
-| T11/T13 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑（t0 臂，Test_1a/1b 数据源） | `outputs/*/field_bank/`、`results/Test_1a/arm_t0/` | 模板人工填写进度 |
-| T13 | **Test_1a** 对照臂（mask off，`raw` 变体）+ Δc_field 表 | `results/Test_1a/arm_off/`、`results_display/Test_1a_field_level/` | 依赖 Test_2a 审计出 leak_rate 列 |
+| T4 | Test_2b 批跑（14 主集） | `results/{paper_raw,paper_lm0}/` | 异常 → 回推事件统计 |
+| T11/T13 | Field Bank 模板补全 + landmark 变体生成 + univariate 补跑（t0 臂，Test_1a/1b 数据源） | `outputs/*/field_bank/`、`results/single_lm0/univariate/` | 模板人工填写进度 |
+| T13 | **Test_1a** 对照臂（mask off，`raw` 变体）+ Δc_field 表 | `results/single_raw/`、`results_display/Test_1a_field_level/` | 依赖 Test_2a 审计出 leak_rate 列 |
 | T11 | **Test_1b** 各数据集 Cindex 分布 + 跨数据集字段分布 + top-k 重叠度 | `results_display/Test_1b_dataset_cindex/` | top-k 的 k 取值 |
 | T14 | Test_3 贪婪批跑（主集）+ 两臂对照（原三臂，T31 更名） | Δc、遗漏字段清单 | **T5/T25** 最优组合口径（sig_stop vs best → gain-only） |
-| T23 | Test_4 三档汇总表（收口，非独立实验） | `results_display/Test_4_three_tiers/` | — |
+| T23 | Test_4 四档对照表（收口，非独立实验） | `results_display/Test_4_four_tiers/` | — |
 | D9 | 回推 Test_0 manifest v2（Test_5 规格已提前落地，见 §8bis） | manifest v2 | **D9** 数据集降级/剔除逐项确认 |
 | T20 | **Test_5 规格落地 + HGCN 产物备份**（§8bis） | 仓库外备份 + 校验记录 | **T21** 路线 A、多模态子集 4 个——已确认（2026-10-03） |
 | P3/P4/P7 | Q 指标修复（对齐 SurvPGC）+ 离线重算 | `Clinic_Analyzer/utils/survival_metrics.py`、`results_display/scripts/Test_5_q_recompute.py`、`q_metrics.csv` | 在线 vs 离线 diff=0 |
 | P5 | HGCN 编码落地（hgcn_clinic 任意 scheme + landmark 支持，pkl 格式不变）+ L0-L5 等价性回归 | 扩展后的 hgcn_clinic.py、L0-L5 diff=0 报告 | **P6** 等价→放行 / 不等价→冻结 |
-| P8/T22 | baseline 编码产物 + Test_5 conf 批跑（5E_2b/5E_3/5M_2b/5M_3）——训练限 **GPU 0–3**（公共服务器 4 卡上限，用户 2026-10-03），Test_3 收尾后启动 | `outputs/*/A_manual/baseline/`、`configs/Test_5_*/`、`results/Test_5_invariance/` | — |
-| T28 | Test_5 报告（不变性矩阵收口） | `results_display/Test_5_invariance/` | **T28** 与 Test_4 三档表衔接 |
+| P8/T22 | onehot_ordinary 编码产物 + Test_5 conf 批跑（E_time/E_field/M_time/M_field）——训练限 **GPU 0–3**（公共服务器 4 卡上限，用户 2026-10-03），Test_3 收尾后启动 | `outputs/*/field_bank/onehot/`、`Clinic_Analyzer/configs/`、`results/Test_5_invariance/` | — |
+| T28 | Test_5 报告（不变性矩阵收口） | `results_display/Test_5_invariance/` | **T28** 与 Test_4 四档表衔接 |
 
 依赖：T3 → T1 → T2 → P1 → T4；T1 →（数据源 T11/T13）→ T14 → T23；T4/T14 异常 → D9。Test_1a 的 leak_rate 交叉列依赖 Test_2a 出数——**编号顺序 ≠ 执行顺序**，Test_1a 先出 c(off)/c(t0)/Δc_field，leak_rate 列后填。Test_5 链：T20 → P3/P4/P7 → P5 → P8/T22 → T28；T20 不依赖 T14/T23 收尾，但 P8/T22 批跑与 Test_3 续跑共享 GPU/队列资源，执行时协调。
 
@@ -228,7 +227,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 - **产物（已扶正为现行链，2026-10-05 用户拍板）**：
   - t0 口径统计：`rawdata_stats/{dataset}/landmark_0/field_stats.csv` + `rawdata_stats/_shared/landmark_0/field_stats.csv`（根级 `field_stats.csv` 保持 raw 口径，作为 off 臂覆盖度对照）；
   - 现行筛选产物：`rawdata_stats/{dataset}/landmark_0/{kept_fields.json, fliter_log/...}` + `_shared/landmark_0/kept_fields.json`——由 landmark-first 统计筛得；`run_field_filter` 在 landmark 开启且对应 landmark 统计存在时默认消费它（显式 `--stats_csv` 仍可覆盖）；
-  - 运行：`scripts/run_field_stats.py --landmark_time 0` → `scripts/run_field_filter.py --landmark_time 0`（两步开放接口，R3/R4 阈值可命令行覆盖）；验收器 `scripts/validate_t0stats_vs_masks.py`；
+  - 运行：`scripts/run_field_stats.py --landmark_time 0` → `scripts/run_field_filter.py --landmark_time 0`（两步开放接口，R3/R4 阈值可命令行覆盖）；
   - raw-first 旧口径产物已移走（`z_notes/backup/landmark_first_promotion_20261005/`），旧下游运行已删除，清理清单 `z_notes/cleaned_runs_landmark_first_20261005.md`。
 - **Test_1a 报表联动**：`Appx_field_delta.csv` 新增 `coverage_off / coverage_t0 / t0_filter_status / t0_filter_rule / t0_filter_trigger` 列（全部行）；头条统计、Main_ 图、`Main_field_ranking.csv`、influential 清单、`Raw_delta_matrix.csv`、Meta 头条数字只在准入集上计算；被排除字段单列 `Appx_excluded_fields.csv`。
 - **存在性头条图**（用户指令 2026-10-05）：新增 `Main_field_existence.png`（两面板：coverage(off)→coverage(landmark_0) 崩塌散点 + 逐数据集准入/R3/R4 构成），承载修正后的头条命题「时间口径决定单字段是否存在」。
@@ -238,7 +237,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 ## 5ter. Test_1b 各数据集 Cindex 情况（字段轴链动机）
 
 - **动机**（用户指令 2026-10-02）：字段在各个数据集中的预测能力各不相同 → 每个数据集在理论上存在属于自己的最优字段组合 → 针对数据集做合适的字段选择是应该的。Test_1b 用单字段 c-index 量化这种不均衡，作为 Test_3（选字段）的存在理由。
-- **数据源**：univariate 补跑结果（Test_1a t0 臂数据源） `results/Test_1a/arm_t0/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv`（33/33 已完成；5 折 × seed 0，同 Test_1a t0 臂）。**不新增训练**。
+- **数据源**：univariate 补跑结果（Test_1a t0 臂数据源） `results/single_lm0/univariate/prompt/landmark_0/{dataset}/mlp_clinic_flatten/field_cindex.csv`（14/14；5 折 × seed 0，同 Test_1a t0 臂）。**不新增训练**。
 - **分析（三个量化指标）**：
   1. **各数据集单字段 c-index 分布**（原 E1 Fig2 升级版）：per-dataset 单字段 c-index 条形/分布图（仅 14 主集，T40 补降级，不再分层）；
   2. **同一字段跨数据集 c-index 分布**：量化字段能力随数据集的变异（对公共字段）；
@@ -252,7 +251,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 
 - `A_pipeline/src/extract.py` 支持 `--landmark_time {0,365,730,none}`（默认 `none`，**行为与现有完全一致**）：按经典 landmark 三要件（§2.5）实现——① 协变量 mask：timed family 槽位只保留 `t_hi <= T` 的取值，其余按现有缺失规则处理（复用 `projects/src/discovery/landmark.py` 的患者级时间记录与 mask，A_pipeline 内通过 sys.path 接入 projects 的 `src`）；② 风险集：`ground_truth_time <= T` 的患者从训练/评估集排除；③ 时间原点：label 时间改为 `gt − T`，并做一次 c-index 平移不变性自检（365 上验证重 base 与不重 base 数值一致）。
 - `pipeline` / `json2prompt` / `encode` / `baseline` 命令透传该参数；产物落 `outputs/{dataset}/A_manual/{scheme}/landmark_{T}/`（`none` 时维持现有目录不变）。
-- cindex 结果落 `results/Test_2b/arm_B/{dataset}/cindex.csv`，**不覆盖** `results/Test_2b/arm_A/`；走现有 Test_3_arms 队列调度（`A_pipeline/run.py cindex`）。
+- cindex 结果落 `results/paper_lm0/{dataset}[gdc]/cindex.csv`（去泄露值）与 `results/paper_raw/{dataset}[gdc]/cindex.csv`（报告值），互不覆盖；经统一队列调度。
 
 ### 6.2 两臂定义
 
@@ -263,7 +262,7 @@ results_display/Test_2a_leak_audit/ # 图: 每工作×癌种泄露占比、逐�
 
 ### 6.3 自检（P1 的放量前提，决策点 P1）
 
-BRCA × MULTISURV：臂 A 经新链路跑通后与旧 `results/Test_2b/arm_A/TCGA-BRCA[gdc]/cindex.csv` 数值**必须完全一致**（diff=0）。不一致不允许放量，排查原因后重跑。
+BRCA × MULTISURV：两臂同字段集、同 bank 基座、同划分/seed，**唯一差异 = mask 取值**——控制变量审计在 Test_2b 验收中执行（Δc = 报告 − 去泄露）。
 
 ### 6.4 范围
 
@@ -290,42 +289,41 @@ reach  : 贪婪最优组合 × landmark_0   (可达值;fields 由搜索结果生
 > 先编码,后实验:field bank 是一次性统一编码基座,臂条件 = {F 字段组合, T 时间口径} 二元组,
 > "bank 切片"是装配操作而非条件因子(见 arm_registry.md 核心模型)。
 
-- **T31 修订（2026-10-07，用户拍板）**：编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；原"臂 B（scheme 模板）"随之退役，原"臂 B′（bank 模板）"更名为**臂 B**（现名 `deleak`）。三臂变两臂。
+- 编码统一为 field bank 一种模板源——论文方案的句式模板（template.csv）分支整体删除，`manual_schemes` 只保留 fields.json 字段登记（元数据）；两臂 = `deleak` / `reach`。
 - **编码路径**：任何字段组合（论文的、贪婪的）一律按字段索引**切片 bank 嵌入矩阵**（零 CONCH 重编码，与 E2 搜索评估器同路径，切片与 bank 行逐位一致）。`--landmark_time` 值域：`0|365|730`（mask 开）、`none`/`no_mask`（landmark off，mask 关 + 与 landmark_0 同字段集，时间轴对照用；Test_3 侧 bank 变体名 `raw`）。两者不可混用。
 - deleak 字段集 = 论文方案 fields.json ∩ bank 字段索引；不在 bank 的字段记入遗漏清单（"无依据导致遗漏"的物证）。
 - 头条 Δc = reach − deleak（模板、编码、模型、划分全同，唯一差异 = 字段集）。
-- 时间轴对照（mask 效应） = report（工作组合 × `raw` bank）− deleak（landmark_0）；报告值 = 论文历史报告数（外部数字，不复跑）。
+- 时间轴对照（mask 效应） = report（工作组合 × `raw` bank）− deleak（landmark_0），两臂均 bank 基座已训练；字段轴对照 = deleak − reach（同为 lm0，唯一差异 = 字段集）。
 - reach 的 c-index 即搜索 result.json 的 `best_cv_c_mean`（同嵌入、同模型、同 5 折、同 seed）；如需独立落表训练，走与 deleak 相同的切片流程。
 
 ### 7.3 产物
 
-`results/Test_3_greedy_vs_works/`（两臂 c-index 表、Δc、遗漏清单）+ `results_display/Test_3_greedy_vs_works/`（图）。
+`results/greedy_lm0/`（搜索 result.json 树、cache.sqlite、compare/、two_arm.csv、missed_fields.csv）+ `results_display/Test_3_greedy_vs_works/`（图）。
 
-## 8. Test_4 三档汇总表（非实验，收口 Test_2+Test_3）
+## 8. Test_4 四档对照表（非实验，收口 Test_2+Test_3）
 
-- **定位**（用户指令 2026-10-02）：Test_4 不是独立实验，只是 Test_2（高估链）与 Test_3（低估链）的**汇总产物表**——一个 Test 可以对应多张表，表本身不占实验命题。两个档差分别收口两条链：报告值−去泄露值 = 时间轴链收口；去泄露值−可达值 = 字段轴链收口。
-- **3a 三档表**：每 (dataset, work) 一行（dataset = 14 主集——纯消费 Test_2b/Test_3 产物，低档无生产方 → 无行）：报告值（重跑期间 n/a——冻结 apipe 历史不恢复，T40 补，待 report 臂 bank 重建补齐）、去泄露值（deleak 臂 = Test_3_{work}_{ds} bank 行）、可达值（reach 臂 = 搜索 best_cv_c_mean）、档间 Δ；并列 n_event / event_rate / 每折事件数。
-- 产物：`results_display/Test_4_three_tiers/`。
+- **定位**（用户指令 2026-10-02）：Test_4 不是独立实验，只是 Test_2（高估链）与 Test_3（低估链）的**汇总产物表**——一个 Test 可以对应多张表，表本身不占实验命题。四个对照分别收口两条链：报告−去泄露与原始可达−可达 = 时间轴链收口；报告−原始可达与去泄露−可达 = 字段轴链收口。
+- **3a 四档表**：每 (dataset, work) 一行（dataset = 14 主集——纯消费 2b/3 产物，低档无生产方 → 无行）：报告值（`work_raw_{work}_{ds}`）、去泄露值（`work_lm0_{work}_{ds}`）、可达值（`greedy_lm0_{ds}`，缺臂回退搜索 best_cv_c_mean）、原始可达值（`greedy_raw_{ds}`，未训 = pending）、档间 Δ；并列 n_event / event_rate / 每折事件数。
+- 产物：`results_display/Test_4_four_tiers/`。
 
 ## 8bis. Test_5 规格（不变性：编码 / 模型 / 指标轴）
 
 > 臂（实验条件）定义唯一来源 = `z_notes/experiment_list/arm_registry.md`。Test_5 子检查 =
-> 轴 × 臂对：{5E_2b,5M_2b} 重复 {`report`, `deleak`}，{5E_3,5M_3} 重复 {`deleak`, `reach`}。
-> 历史字母代号 A/B/Bp/C 已退役；apipe 全量编码路径已删除（T31 + 2026-10-09 收尾），
-> 5E_2b/5M_2b 的历史产物基于已删编码，bank 重建批次待排期。
+> 轴 × 链对照：{E_time,M_time} 重复 {`report`, `deleak`}，{E_field,M_field} 重复 {`deleak`, `reach`}。
+> E_time/M_time 的历史产物基于已删 apipe 编码，bank 重建批次待排期。
 
 ### 8bis.1 命题与三轴
 
-Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（字段轴链）的结论在换编码、换分析器、换指标后依然成立**。被检验的两个结论：
+Test_5 = 一个命题（不变性）：**两条链（时间轴链 / 字段轴链）的结论在换编码、换分析器、换指标后依然成立**。被检验的两个结论：
 
-- 2b 结论：无数据集级系统性高估（臂 A−B 的 Δc 模式与方向一致率）；
-- 3 结论：贪婪可达 > 工作组合（Δc = C − B）。
+- 时间轴链结论：无数据集级系统性高估（报告−去泄露的 Δc 模式与方向一致率）；
+- 字段轴链结论：贪婪可达 > 工作组合（Δc = 可达 − 去泄露）。
 
 三轴候选（基线加粗）：
 
 | 轴 | 候选 | 来源 |
 |---|---|---|
-| E 编码 | **prompt**（CONCH 文本塔 `(n_fields,512)`）/ baseline（onehot_ordinary D-向量）/ hgcn_clinic（全连接图节点,1024 pad） | A_pipeline `--encoding text/baseline`、`hgcn_clinic` 子命令 |
+| E 编码 | **prompt**（CONCH 文本塔 `(n_fields,512)`）/ onehot_ordinary（临床值按 GDC 字典定型）/ hgcn_clinic（全连接图节点,1024 pad） | `run_field_bank --encoding prompt/onehot`、`hgcn_clinic` 子命令 |
 | M 分析器 | **mlp_clinic_flatten** / snn_clinic_flatten / clinic_cox / survgc_f、survpgc_f（多模态） | Clinic_Analyzer `--modality` |
 | Q 指标 | **cv_c_mean**（5 折 val c-index）/ IBS（月网格 1–60）/ 时依 AUC@24/60 / IPCW c-index | 修复后的 sksurv 指标层（§8bis.4） |
 
@@ -335,10 +333,10 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 
 | 子检查 | 换的轴 | 重复什么 | 范围（14 主集） | 新 confs（估计） |
 |---|---|---|---|---|
-| 5E_2b | E→baseline（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | Test_2b 臂对 {`report`（mask 关）/`deleak`（lm0）}，字段集、模板、划分全同 | 60 绑定 combos × 2 臂 × 2 编码 | ≈240（本轮 ≈120） |
-| 5E_3 | E→baseline（本轮）；E→hgcn_clinic（同上，待模型） | Test_3 臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 14 主集 × (4 deleak + 1 reach) | ≈70（本轮 ≈35） |
-| 5M_2b | M→snn_clinic_flatten；M→survgc_f/survpgc_f | Test_2b 臂对 {`report`/`deleak`}（prompt 复用既有编码产物） | 60 × 2 臂 × snn；3 多模态主集（BRCA/LIHC/KIRC）× 绑定 × 2 臂 × 2 模型 | ≈120 + ≈56（默认 parked） |
-| 5M_3 | M→clinic_cox | Test_3 臂对 {`deleak`/`reach`}（prompt 复用） | 14 主集 × (4 deleak + 1 reach) | ≈70 |
+| E_time | E→onehot_ordinary（本轮）；E→hgcn_clinic（编码先落地，评估臂待 HGCN 模型接入后补跑） | 时间轴链臂对 {`report`（mask 关）/`deleak`（lm0）}，字段集、模板、划分全同 | 60 绑定 combos × 2 臂 × 2 编码 | ≈240（本轮 ≈120） |
+| E_field | E→onehot_ordinary（本轮）；E→hgcn_clinic（同上，待模型） | 字段轴链臂对 {`deleak`/`reach`}（固定字段组合重评，不重跑贪婪搜索） | 14 主集 × (4 deleak + 1 reach) | ≈70（本轮 ≈35） |
+| M_time | M→snn_clinic_flatten；M→survgc_f/survpgc_f | 时间轴链臂对 {`report`/`deleak`}（prompt 复用既有编码产物） | 60 × 2 臂 × snn；3 多模态主集（BRCA/LIHC/KIRC）× 绑定 × 2 臂 × 2 模型 | ≈120 + ≈56（默认 parked） |
+| M_field | M→clinic_cox | 字段轴链臂对 {`deleak`/`reach`}（prompt 复用） | 14 主集 × (4 deleak + 1 reach) | ≈70 |
 
 **本轮合计 ≈436 confs**（prompt 臂全部复用 Test_2b/Test_3 既有产物，零新增）；hgcn 评估臂 ≈190 confs 待模型接入后补跑，全量 ≈626。
 
@@ -347,7 +345,7 @@ Test_5 = 一个命题（不变性）：**Test_2b（时间轴链）与 Test_3（�
 ### 8bis.3 HGCN：编码先落地、模型暂不接入（用户指令 2026-10-03）
 
 - **编码保留并先落地**：hgcn_clinic（全连接图节点,1024 pad）为 E 轴第三档；P5 完成编码侧扩展——任意 scheme（fields.json 驱动 + GDC 字典类型分类）+ landmark 支持（现 CLI 明确不支持 `--landmark_time`，cli.py:155-156）——产物沿用既有 pkl 格式（`x_cli.pkl`/`edge_index_cli.pkl`），**不加模型消费方**。
-- **模型暂不接入**：用户已移植进 Clinic_Analyzer 的 HGCN 训练器为独立工作；E=hgcn 的评估臂（5E_2b/5E_3 的 hgcn 行）**待模型接入后再跑**，届时另定对接协议。本轮 M 轴不含 HGCN 模型。
+- **模型暂不接入**：用户已移植进 Clinic_Analyzer 的 HGCN 训练器为独立工作；E=hgcn 的评估臂（E_time/E_field 的 hgcn 行）**待模型接入后再跑**，届时另定对接协议。本轮 M 轴不含 HGCN 模型。
 - **L0-L5 等价性回归（原要求继续有效）**：P5 修改 hgcn_clinic.py 后，重跑 L0-L5 编码与冻结备份 `diff -r` = 0 才放行；否则既有 `outputs/{9 数据集}/A_manual/HGCN_clinic/`（L0–L5）冻结（不覆盖、不重跑），新产物另立命名空间。备份在仓库外 `/data/fangyuxuan/projects/medical_dl/backups/HGCN_clinic_2026-10-03/`（1.4G，S9 日志）。
 - Clinic_Analyzer 侧零改动。
 
@@ -361,7 +359,7 @@ Clinic_Analyzer 现有 `utils/core_utils.py::_calculate_metrics`（:535-617）6 
 
 - 控制变量审计：每 conf 唯一差异 = 被换轴；重跑 diff=0。
 - 统计口径：方向一致率（Test_2b 的 10/15 同款）+ paired Wilcoxon（Test_3 sig_stop 同款）。
-- 产物：`results/Test_5_invariance/{5E_2b,5E_3,5M_2b,5M_3}/`、`results_display/Test_5_invariance/`（每子检查对照表 + Q 四指标并排表 + 2×3 不变性矩阵收口）；命名全程 `Test_5_*`（configs / results / results_display）。
+- 产物：`results/Test_5_invariance/{E_time,E_field,M_time,M_field}/`、`results_display/Test_5_invariance/`（每子检查对照表 + Q 四指标并排表 + 2×3 不变性矩阵收口）；命名全程 `test_5_{子检查}`（configs / results / results_display）。
 
 ## 9. Git 提交协议
 
@@ -395,7 +393,7 @@ Clinic_Analyzer 现有 `utils/core_utils.py::_calculate_metrics`（:535-617）6 
 
 ## 11. 禁止事项
 
-- 不删除、不覆盖 `results/Test_2b/arm_A/`、`outputs/*/A_manual/`、`outputs/*/field_bank/`、`rawdata_stats/`。
+- 不删除、不覆盖 `results/{paper_raw,paper_lm0,greedy_lm0,single_lm0,single_raw}/`、`outputs/*/field_bank/`、`rawdata_stats/`。
 - 不修改现有 5 折 split；不伪造独立测试集；不把 val 称为 test。
 - 不修改 E 组代码（`src/selection` 的 SEAS/A3–A6/ANCHOR 等）——其去留由用户与执行方协商，本系列只读复用 A2_greedy/evaluator/cache/queue。
 - 不在代码或配置中硬编码数据集分层名单（一律读 Test_0 manifest）。

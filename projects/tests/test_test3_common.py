@@ -83,11 +83,11 @@ def test_work_pairs_binding_rule():
 
 def test_paths_and_scheme_names():
     assert C.search_seed_dir("TCGA-LAML").as_posix().endswith(
-        "results/Test_3_greedy_vs_works/search/TCGA-LAML/mlp_clinic_flatten/seed_0")
+        "results/greedy_lm0/search/TCGA-LAML/mlp_clinic_flatten/seed_0")
     assert C.search_result_json("TCGA-LAML").name == "result.json"
     assert C.search_evaluations_jsonl("TCGA-LAML").name == "evaluations.jsonl"
-    assert C.b_scheme_name("MULTISURV", "TCGA_LIHC") == "Test_3_MULTISURV_TCGA_LIHC"
-    assert C.c_scheme_name("TCGA-LAML") == "Test_3_greedy_TCGA-LAML"
-    assert C.c_scheme_name("TCGA-LAML", kind="best") == "Test_3_greedybest_TCGA-LAML"
+    assert C.b_scheme_name("MULTISURV", "TCGA_LIHC") == "work_lm0_MULTISURV_TCGA_LIHC"
+    assert C.c_scheme_name("TCGA-LAML") == "greedy_lm0_TCGA-LAML"
+    assert C.c_scheme_name("TCGA-LAML", kind="best") == "greedy_lm0_best_TCGA-LAML"
     assert C.ANALYZER == "mlp_clinic_flatten" and C.ALGO == "A2_greedy" and C.SEED == 0
     assert C.LANDMARK_TIME == "0"

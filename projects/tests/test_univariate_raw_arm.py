@@ -49,7 +49,7 @@ RAW_ARGV = [
     "--embeddings_root",
     "outputs/_raw",
     "--results_dir",
-    "results/univariate_raw",
+    "results/single_raw",
     "--encoding",
     "prompt",
     "--analyzer",
@@ -59,7 +59,7 @@ RAW_ARGV = [
     "--workers",
     "8",
     "--queue_root",
-    "Clinic_Analyzer/configs/univariate_raw",
+    "Clinic_Analyzer/configs",
 ]
 
 
@@ -100,7 +100,7 @@ def test_parser_accepts_raw_arm_argv():
     assert args.landmark_time == "none"
     assert args.label_tag == "landmark_0"
     assert args.field_bank_root == "outputs/_raw"
-    assert args.results_dir == "results/univariate_raw"
+    assert args.results_dir == "results/single_raw"
 
 
 def test_resolve_extraction_mask_follows_tag_by_default():
@@ -188,12 +188,12 @@ def test_raw_job_key_ignores_worker_local_args():
 
 def test_raw_enqueue_uses_no_mask_suffix_and_separate_root(tmp_path):
     argv = list(RAW_ARGV)
-    argv[argv.index("--queue_root") + 1] = str(tmp_path / "univariate_raw")
+    argv[argv.index("--queue_root") + 1] = str(tmp_path / "single_raw")
     args = parse(argv)
     args.landmark_tag = "no_mask"
     args.landmark_time = "none"
     queued = enqueue_jobs(args, ["TCGA-ACC"])
-    assert queued["root"] == tmp_path / "univariate_raw"
+    assert queued["root"] == tmp_path / "single_raw"
     names = [p.name for p in queued["created"]]
     assert len(names) == 1 and names[0].endswith("__TCGA-ACC__no_mask.conf")
     again = enqueue_jobs(args, ["TCGA-ACC"])
@@ -216,10 +216,10 @@ def test_raw_arm_patient_set_uses_label_tag(tmp_path):
 def test_raw_arm_output_namespace_is_separate():
     args = parse(RAW_ARGV)
     out_dir = univariate_out_dir(args, "TCGA-ACC", "prompt", "no_mask", "", "mlp_clinic_flatten")
-    assert out_dir == Path("results/univariate_raw") / "univariate/prompt/no_mask/TCGA-ACC/mlp_clinic_flatten"
+    assert out_dir == Path("results/single_raw") / "univariate/prompt/no_mask/TCGA-ACC/mlp_clinic_flatten"
     t0 = parse(["--dataset", "TCGA-ACC", "--landmark_time", "0", "--analyzer", "mlp_clinic_flatten"])
     t0_dir = univariate_out_dir(t0, "TCGA-ACC", "prompt", "landmark_0", "", "mlp_clinic_flatten")
-    assert t0_dir == PROJECT_ROOT / "results" / "univariate" / "prompt" / "landmark_0" / "TCGA-ACC" / "mlp_clinic_flatten"
+    assert t0_dir == PROJECT_ROOT / "results" / "single_lm0" / "univariate" / "prompt" / "landmark_0" / "TCGA-ACC" / "mlp_clinic_flatten"
     assert t0_dir != out_dir
     assert "landmark_0" not in out_dir.parts and "no_mask" in out_dir.parts
 

@@ -1,4 +1,4 @@
-"""派生 landmark 臂 label(风险集 + 时间平移),写 results/Test_2b/arm_B/labels/。
+"""派生 landmark 臂 label(风险集 + 时间平移),写 results/labels/(患者线共享资产)。
 
 Test_1a t0 臂(univariate)训练要求 S4 派生 label 已存在(greedy/univariate_cli.py
 强制与臂 B 同患者集);cindex 路径评估时自动派生,univariate 不自动 → 本脚本是
@@ -24,7 +24,7 @@ from manual_pipeline.landmark_labels import build_landmark_label_file, format_ri
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="派生 landmark 臂 label(写 results/Test_2b/arm_B/labels/)")
+    parser = argparse.ArgumentParser(description="派生 landmark 臂 label(写 results/labels/(患者线共享资产))")
     parser.add_argument("--dataset", default=None, help="逗号分隔或单个;默认 = 分档协议主集(自动派生)")
     parser.add_argument("--landmark_time", type=int, default=0)
     args = parser.parse_args(argv)

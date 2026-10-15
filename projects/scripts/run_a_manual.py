@@ -10,7 +10,7 @@ pipeline 三子命令已随句式模板退役（T31，2026-10-07）整体删除�
   # D 向量（baseline one-hot / 连续 / 有序）
   python scripts/run_a_manual.py baseline --dataset all --scheme paper
 
-  # HGCN clinic 图节点 pkl（论文方案 / Test_3_* 自定义方案请显式点名）
+  # HGCN clinic 图节点 pkl（论文方案 / paper_* 自定义方案请显式点名）
   python scripts/run_a_manual.py hgcn_clinic --dataset TCGA-KIRC --scheme HGCN_KIRC
 
   # cindex 投递：conf 写 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed}，

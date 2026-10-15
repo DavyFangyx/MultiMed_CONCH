@@ -1,7 +1,6 @@
 """Test_3 两臂链路测试：bank 模板方案生成 / greedy 字段读取 / 两臂 Δc 与遗漏字段。
 
 覆盖 scripts/Test_3_custom_scheme.py 与 scripts/Test_3_compare.py；
-Test_3_pipeline_one 的 thin wrapper（白名单 / GPU 已在 manual_pipeline 源头）以子进程方式验证。
 """
 from __future__ import annotations
 
@@ -92,25 +91,43 @@ def _arm_table_rows(dataset: str, values: dict[str, dict[str, float]]) -> list[d
     rows = []
     for scheme, per_modality in values.items():
         for modality, (mean, std) in per_modality.items():
-            rows.append({"dataset": dataset, "scheme": f"{scheme}__landmark_0", "modality": modality,
+            # F×T 口径:表行 scheme = 臂方案名(work_lm0_* / greedy_lm0_*),不再叠 __landmark_0 后缀
+            rows.append({"dataset": dataset, "scheme": scheme, "modality": modality,
                          "val_c_index_mean": mean, "val_c_index_std": std})
     return rows
+
+
+def _redirect_arm_sources(tmp_path, monkeypatch, *, work_fields, greedy_fields):
+    """字段名单来源重定向到 tmp_path(训练时索引口径:work → 论文模板,greedy → result.json)。"""
+    import manual_pipeline.arm_names as AN  # noqa: E402
+
+    def _tpl(work: str) -> Path:
+        p = tmp_path / "templates" / work / "fields.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"fields": work_fields[work]}), encoding="utf-8")
+        return p
+
+    def _greedy(dataset: str) -> Path:
+        p = tmp_path / "search" / dataset / "result.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"recommended_subset": greedy_fields[dataset]}), encoding="utf-8")
+        return p
+
+    monkeypatch.setattr(AN, "template_json", _tpl)
+    monkeypatch.setattr(AN, "greedy_result_json", _greedy)
 
 
 def test_compare_math_and_missed_fields(tmp_path, monkeypatch):
     dataset, work = "TCGA-XX", "MULTISURV"
     name_b, name_c = C.b_scheme_name(work, dataset), C.c_scheme_name(dataset)
-    work_fields = ["a", "b"]
-    c_fields = ["a", "c"]
     monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
-    monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
+    _redirect_arm_sources(tmp_path, monkeypatch,
+                          work_fields={work: ["a", "b"]}, greedy_fields={dataset: ["a", "c"]})
     _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      name_b: {"mlp_clinic_flatten": (0.60, 0.01), "clinic_cox": (0.57, 0.02)},
                      name_c: {"mlp_clinic_flatten": (0.65, 0.01), "clinic_cox": (0.58, 0.02)},
                  }))
-    _write_fields(CMP.A_TEMPLATES / name_b, work_fields)
-    _write_fields(CMP.A_TEMPLATES / name_c, c_fields)
 
     report = CMP.compare(dataset, work)
 
@@ -124,13 +141,12 @@ def test_compare_math_and_missed_fields(tmp_path, monkeypatch):
 def test_compare_raises_when_arm_missing(tmp_path, monkeypatch):
     dataset, work = "TCGA-XX", "MULTISURV"
     monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
-    monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
+    _redirect_arm_sources(tmp_path, monkeypatch,
+                          work_fields={work: ["a"]}, greedy_fields={dataset: ["a"]})
     _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      C.b_scheme_name(work, dataset): {"mlp_clinic_flatten": (0.60, 0.01)},
                  }))
-    _write_fields(CMP.A_TEMPLATES / C.b_scheme_name(work, dataset), ["a"])
-    _write_fields(CMP.A_TEMPLATES / C.c_scheme_name(dataset), ["a"])
     with pytest.raises(CMP.MissingArm):
         CMP.compare(dataset, work)
 
@@ -138,19 +154,18 @@ def test_compare_raises_when_arm_missing(tmp_path, monkeypatch):
 def test_batch_writes_table_missed_and_figure(tmp_path, monkeypatch):
     dataset, work = "TCGA-XX", "MULTISURV"
     monkeypatch.setattr(CMP, "ARM_B_RESULTS", tmp_path / "results" / "arm_B")
-    monkeypatch.setattr(CMP, "A_TEMPLATES", tmp_path / "templates")
     monkeypatch.setattr(CMP, "OUT_ROOT", tmp_path / "out")
     monkeypatch.setattr(CMP, "DISPLAY_ROOT", tmp_path / "display")
     monkeypatch.setattr(C, "PAN_CANCER_WORKS", (work,))
     monkeypatch.setattr(C, "HGCN_BINDING", {})
     monkeypatch.setattr(C, "main_datasets", lambda *a, **k: [dataset])
+    _redirect_arm_sources(tmp_path, monkeypatch,
+                          work_fields={work: ["a", "b"]}, greedy_fields={dataset: ["a", "c"]})
     _write_table(CMP.ARM_B_RESULTS / f"{dataset}[gdc]" / "cindex.csv",
                  _arm_table_rows(dataset, {
                      C.b_scheme_name(work, dataset): {"mlp_clinic_flatten": (0.60, 0.01)},
                      C.c_scheme_name(dataset): {"mlp_clinic_flatten": (0.66, 0.01)},
                  }))
-    _write_fields(CMP.A_TEMPLATES / C.b_scheme_name(work, dataset), ["a", "b"])
-    _write_fields(CMP.A_TEMPLATES / C.c_scheme_name(dataset), ["a", "c"])
 
     result = CMP.batch([dataset])
 
@@ -164,45 +179,3 @@ def test_batch_writes_table_missed_and_figure(tmp_path, monkeypatch):
     if result["figure"] is not None:
         assert Path(result["figure"]).exists()
 
-
-def test_pipeline_one_is_thin_wrapper():
-    """Test_3_pipeline_one 已退化为 thin wrapper：白名单 / GPU 都在 manual_pipeline 源头，无进程内补丁。
-
-    子进程验证 --print-schemes 列出 schemes.json 登记的 Test_3_* 方案且磁盘零改动；
-    进程内验证 cindex 白名单直接接受已注册自定义方案（不再需要 append 补丁）。
-    """
-    import Test_3_pipeline_one as P
-    assert not hasattr(P, "apply_patches")                   # 补丁入口已退休
-
-    schemes_json = ROOT / "templates" / "manual_schemes" / "schemes.json"
-    before = schemes_json.read_bytes()
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "Test_3_pipeline_one.py"), "--print-schemes"],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    assert proc.returncode == 0, proc.stderr[-800:]
-    registered = json.loads(proc.stdout.strip().splitlines()[-1])
-    # 静态 Test_3_* 注册已删（2026-10-08）：--print-schemes 只列 schemes.json 现值，
-    # arms_generate 之后才会出现；这里断言"与注册表一致且磁盘零改动"。
-    assert all(name.startswith("Test_3") for name in registered)
-    assert schemes_json.read_bytes() == before               # 磁盘文件零改动
-
-    from manual_pipeline.cindex import expand_cindex_jobs
-    from manual_pipeline.config import SCHEME_CONFIG, load_custom_schemes
-    from manual_pipeline.paths import DEFAULT_TEMPLATE_DIR
-    load_custom_schemes(DEFAULT_TEMPLATE_DIR)
-    # 白名单放行验证：临时注入自定义方案（不写盘），expand_cindex_jobs 应直接放行
-    custom = "Test_3_MULTISURV_TCGA-LAML"
-    SCHEME_CONFIG[custom] = {
-        "fields": ["demographic.sex_at_birth"],
-        "output_cols": [],
-        "datasets": None,
-        "source": "gdc",
-        "config_path": "",
-    }
-    try:
-        jobs = expand_cindex_jobs([custom], encoding="text")
-        assert [job["scheme"] for job in jobs] == [custom]       # 开到源头后白名单直接放行
-        assert all(job["encoding"] == "prompt" for job in jobs)
-    finally:
-        del SCHEME_CONFIG[custom]

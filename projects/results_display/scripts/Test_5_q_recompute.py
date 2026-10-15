@@ -43,7 +43,7 @@ self-check are untouched.
 Usage (SurvPGC env):
   /data/fangyuxuan/miniconda3/envs/SurvPGC/bin/python \
     results_display/scripts/Test_5_q_recompute.py \
-    --results-root results/Test_2b/arm_B --limit 3 --folds 0,1
+    --results-root results/paper_lm0 --limit 3 --folds 0,1
 
 Cox runs (clinic_cox, ...) are only forward-passed on --cox-device cpu by
 default; never point this at a busy GPU.
@@ -90,7 +90,7 @@ from utils.survival_metrics import (  # noqa: E402
     survival_columns_from_logits,
 )
 
-DEFAULT_RESULTS_ROOTS = ("results/Test_2b/arm_B",)
+DEFAULT_RESULTS_ROOTS = ("results/paper_lm0", "results/paper_raw")
 DEFAULT_OUT = "results_display/Test_5_invariance/q_metrics.csv"
 DEFAULT_MODALITIES = (
     "mlp_clinic_flatten",

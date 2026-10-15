@@ -3,7 +3,7 @@
 
 搜索 runner(selection/runner.py)对 SEAS 系算法只 load 缓存、不再现场编码
 (load_only=True);缓存 key = (tag, dataset),落
-results/Test_3_search/prompt/{tag}/{ds}/field_semantics.npy(+ .json 身份元数据)。
+results/greedy_lm0/semantics/prompt/{tag}/{ds}/field_semantics.npy(+ .json 身份元数据)。
 
 anchor 变体(--anchor_p)的缓存不在本脚本范围:anchor 依赖 univariate prior,
 现行搜索网格(Test_3 / Test_6)不使用 anchor 变体;runner 缺缓存会报错并指向本脚本。
@@ -33,7 +33,7 @@ from greedy.clinic_evaluator import DEFAULT_CONCH_PYTHON  # noqa: E402
 from greedy.data import load_field_bank  # noqa: E402
 from selection.search.seas import load_or_encode_field_semantics  # noqa: E402
 
-TAGS = ["0"]  # Test_3 / Test_6 搜索统一 --landmark_time 0
+TAGS = ["landmark_0"]  # Test_3 / Test_6 搜索统一 --landmark_time 0(tag 规范 = landmark_0,不是 "0")
 
 
 def main() -> int:
@@ -43,7 +43,7 @@ def main() -> int:
         for tag in TAGS:
             bank = load_field_bank(dataset_field_bank_dir(ds, "prompt", tag), encoding="prompt")
             fields = tuple(bank["fields"])
-            cache = test_results_dir("Test_3_search") / "prompt" / tag / ds / "field_semantics.npy"
+            cache = test_results_dir("greedy_lm0/semantics") / "prompt" / tag / ds / "field_semantics.npy"
             try:
                 matrix = load_or_encode_field_semantics(
                     fields,

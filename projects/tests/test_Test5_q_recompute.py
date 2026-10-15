@@ -10,7 +10,7 @@
      （IBS 支持/不支持、AUC 事件数守卫、NaN risk、负时间四种场景），
      metrics_from_dump（diff=0 路径）同样一致；
   5. 行构造 - make_q_row 的列 / NaN 表示 / abs_diff；
-  6. 端到端冒烟 - 若 results/Test_2b/arm_B 里存在离散模型 conf，用 --limit 1 重算
+  6. 端到端冒烟 - 若 results/paper_lm0 里存在离散模型 conf，用 --limit 1 重算
      一圈，断言 cindex 与 test_result.csv 的差 <= 1e-8（工件缺失则 skip）。
 
 环境：需要 sksurv + torch（SurvPGC env）；base 环境整体 skip 不产生假失败。
@@ -139,9 +139,9 @@ def test_parse_conf_name_keeps_landmark_token():
         "tcga_acc",
         "INTEGRATIVE_DNN",
     )
-    assert qrec.parse_conf_name("tcga_laml__Test_3_SURVPGC_TCGA-LAML__landmark_0") == (
+    assert qrec.parse_conf_name("tcga_laml__paper_SURVPGC_TCGA-LAML__landmark_0") == (
         "tcga_laml",
-        "Test_3_SURVPGC_TCGA-LAML__landmark_0",
+        "paper_SURVPGC_TCGA-LAML__landmark_0",
     )
 
 
@@ -581,7 +581,7 @@ SMOKE_ROOT = ROOT / "results" / "Test_2b" / "arm_B"
 
 
 @pytest.mark.skipif(
-    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no Test_2b/arm_B artifacts"
+    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no paper_lm0 artifacts"
 )
 def test_recompute_end_to_end_discrete_conf(tmp_path):
     rows = qrec.recompute(
@@ -606,7 +606,7 @@ def test_recompute_end_to_end_discrete_conf(tmp_path):
 
 
 @pytest.mark.skipif(
-    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no Test_2b/arm_B artifacts"
+    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no paper_lm0 artifacts"
 )
 def test_recompute_prefers_metrics_input_dump(tmp_path):
     """A fold with fold{fold}_metrics_input.pkl must take the diff=0 dump path
@@ -958,7 +958,7 @@ def test_merge_rows_replaces_by_key_and_keeps_order():
 
 
 @pytest.mark.skipif(
-    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no Test_2b/arm_B artifacts"
+    not any(SMOKE_ROOT.rglob("split_0_results.pkl")), reason="no paper_lm0 artifacts"
 )
 def test_recompute_merge_into_existing_csv_has_no_duplicate_rows(tmp_path):
     out_csv = tmp_path / "q_metrics.csv"

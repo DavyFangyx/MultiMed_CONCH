@@ -206,8 +206,8 @@ def main(argv=None):
             if args.semantic_embeddings:
                 semantic = np.load(args.semantic_embeddings)
             else:
-                semantic_root = (test_results_dir("Test_3_search") / "anchor" / "prompt" if args.anchor_p is not None
-                                 else test_results_dir("Test_3_search") / "prompt")
+                semantic_root = (test_results_dir("greedy_lm0/semantics") / "anchor" / "prompt" if args.anchor_p is not None
+                                 else test_results_dir("greedy_lm0/semantics") / "prompt")
                 cache_name = f"field_semantics__{modality}.npy" if args.anchor_p is not None else "field_semantics.npy"
                 semantic = load_or_encode_field_semantics(
                     fields,

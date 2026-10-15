@@ -9,7 +9,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from greedy.cli import build_parser, resolve_dataset_list
+from greedy.univariate_cli import make_parser as build_parser, resolve_dataset_list
 from greedy.queue import claim_job, enqueue_jobs, load_job
 
 
@@ -58,27 +58,17 @@ def test_two_gpus_cannot_claim_the_same_running_dataset(tmp_path):
     assert first.name not in still_queued and second.name not in still_queued
 
 
-def test_longitudinal_queue_root_is_separate(tmp_path):
-    args = build_parser().parse_args(
-        [
-            "--dataset",
-            "TCGA-BRCA",
-            "--landmark_time",
-            "none",
-            "--experiment",
-            "longitudinal",
-        ]
-    )
-    from greedy.queue import queue_root_from_args
+def test_no_implicit_queue_root_without_kind(tmp_path):
+    """只有 univariate 有默认队列根;其余(含旧 greedy/longitudinal)必须显式 --queue-root。"""
+    import argparse
 
-    # D0 家族 Clinic_Analyzer/configs/greedy 已删除：greedy（含 longitudinal 变体）不再有隐式队列根
+    from greedy.queue import DEFAULT_UNIVARIATE_QUEUE_ROOT, queue_root_from_args
+
+    uni = argparse.Namespace(queue_kind="univariate", queue_root=None)
+    assert queue_root_from_args(uni) == DEFAULT_UNIVARIATE_QUEUE_ROOT
+    other = argparse.Namespace(queue_kind="", queue_root=None)
     with pytest.raises(ValueError):
-        queue_root_from_args(args)
-    queued = enqueue_jobs(args, ["TCGA-BRCA"], root=tmp_path / "longitudinal")
-    created = {p.name.split("__", 1)[1].removesuffix(".conf") for p in queued["created"]}
-    assert created == {"TCGA-BRCA__no_mask"}
-    payload = load_job(queued["created"][0])
-    assert payload["args"]["experiment"] == "longitudinal"
+        queue_root_from_args(other)
 
 
 def test_scheduler_generates_one_conf_per_dataset_and_landmark(tmp_path):

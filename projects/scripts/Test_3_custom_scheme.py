@@ -227,3 +227,33 @@ def main(argv=None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def ensure_scheme_slice(dataset: str, scheme: str, out_pt_dir: Path | str,
+                        *, variant: str = "landmark_0") -> str:
+    """训练前的数据加载(切片 = dataloader):确保方案切片目录与 bank 一致。
+
+    指纹守卫:已有切片必须与方案字段位号一致且患者数 = bank 患者数,
+    否则重切(防字段表改动后静默复用旧切片)。零 CONCH,纯矩阵索引。
+    返回 "skip ..."/"ok ..." 状态行。
+    """
+    import json
+
+    out_pt_dir = Path(out_pt_dir)
+    fields = load_scheme(scheme)  # fields.json 已只含 bank 内字段
+    bank_fields = load_bank_field_list(dataset, variant=variant)
+    desired = sorted(bank_fields.index(f) for f in fields if f in bank_fields)
+    if out_pt_dir.is_dir() and any(out_pt_dir.glob("*")):
+        meta_path = out_pt_dir.parent / "fields.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            bank_pt = bank_variant_dir(dataset, variant) / "embeddings" / "pt"
+            n_bank = len(list(bank_pt.glob("*.pt")))
+            if (n_bank > 0 and meta.get("subset_idx") == desired
+                    and len(list(out_pt_dir.glob("*.pt"))) == n_bank):
+                return f"skip {dataset}/{scheme} (切片与方案字段/患者数一致)"
+        except (json.JSONDecodeError, OSError):
+            pass
+        print(f"[slice] stale {dataset}/{scheme}: 切片字段/患者数与 bank 不一致,重切", flush=True)
+    payload = materialize_bank_subset(dataset, fields, out_pt_dir, variant=variant, overwrite=True)
+    return f"ok   {dataset}/{scheme} (bank 切片 {len(fields)} 字段, {payload})"

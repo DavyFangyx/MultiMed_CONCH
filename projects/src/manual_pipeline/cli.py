@@ -13,7 +13,6 @@ import argparse
 from pathlib import Path
 
 from common.clinical_io import load_clinical_cases
-from common.patient_set import restrict_cases_to_label_patients
 from .datasets import expand_source_jobs, load_source_dataset_configs
 from .paths import (
     DEFAULT_BASELINE_OUT_ROOT,
@@ -25,16 +24,7 @@ from .paths import (
     dataset_hgcn_clinic_dir,
 )
 
-from .baseline import (
-    build_baseline_feature_schema,
-    build_patient_rows,
-    fit_onehot_mappings,
-    global_mapping_dir,
-    load_baseline_scheme_fields,
-    resolve_baseline_schemes,
-    run_baseline_encode,
-    save_global_baseline_metadata,
-)
+from .baseline import load_baseline_scheme_fields
 from .config import load_custom_schemes
 from .hgcn_clinic import (
     load_hgcn_scheme_fields,
@@ -140,7 +130,7 @@ def main(argv=None):
         epilog=(
             "人工方案通路（原 A_pipeline gdc 线，已吸收进主项目；入口 scripts/run_a_manual.py）。\n"
             "--scheme / --dataset / --encoding 在所有命令里定义相同。scheme: paper=论文方案，all=论文方案；manual=L0-L5 已随 PGC 线独立化移除（PGC 线入口 A_pipeline_pgc/run.py）。"
-            "encoding: text=bank 切片（Test_3_* / Test_2b_* 等 custom scheme），baseline=D 向量，all=两种都处理。\n"
+            "encoding: text=bank 切片（paper_* / Test_2b_* 等 custom scheme），baseline=D 向量，all=两种都处理。\n"
             "数据集只有 gdc 一个来源：projects/datasets.json（官方 33 队列）；方案在 templates/manual_schemes/{scheme}/fields.json 写 source=gdc。\n"
             "产物写到 outputs/{dataset}/A_manual；cindex 把 conf 写入 Clinic_Analyzer/configs/Test_3_arms/{queue,running,done,failed} 再抢活；"
             "汇总表写到 results/Test_2b/arm_A（landmark 臂 arm_B）。Field Bank / greedy 请使用 projects/scripts 下的 B 通路入口。\n"
@@ -149,7 +139,6 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, help_text in [
-        ("baseline", "JSON → D 向量（one-hot / 连续 / 有序）"),
         ("hgcn_clinic", "JSON → HGCN clinic graph-node pkl"),
         ("cindex", "A_manual embeddings → Clinic_Analyzer queue → 5-fold val c-index"),
     ]:
@@ -170,12 +159,7 @@ def main(argv=None):
     except ValueError as exc:
         parser.error(str(exc))
 
-    if args.cmd == "baseline":
-        try:
-            schemes = resolve_baseline_schemes(args.scheme)
-        except ValueError as exc:
-            parser.error(str(exc))
-    elif args.cmd == "hgcn_clinic":
+    if args.cmd == "hgcn_clinic":
         try:
             schemes = resolve_hgcn_schemes(args.scheme)
         except ValueError as exc:
@@ -204,59 +188,6 @@ def main(argv=None):
         )
     except ValueError as exc:
         parser.error(str(exc))
-
-    baseline_mappings_by_source = {}
-    if args.cmd == "baseline" and not args.baseline_stats_dir and not landmark_setting.use_landmark:
-        jobs_by_source = {}
-        for job in jobs:
-            if not job.get("name"):
-                continue
-            jobs_by_source.setdefault(job.get("source") or "gdc", []).append(job)
-        for source, source_jobs in jobs_by_source.items():
-            if len(source_jobs) <= 1:
-                continue
-            dataset_names = [job["name"] for job in source_jobs]
-            print(f"\n{'='*55}")
-            print("[baseline] 构建多数据集共享混合编码 metadata")
-            print(f"  来源     : {source}")
-            print(f"  统计范围 : {dataset_names}")
-            print(f"  频次阈值 : >= {args.baseline_nominal_min_count}")
-            print(f"{'='*55}")
-
-            merged_rows = []
-            for job in source_jobs:
-                print(f"  -> 收集 {job['name']} 患者用于共享 nominal 词表")
-                cases = load_clinical_cases(job["json_paths"], project_ids=job["project_ids"])
-                # 患者级前置过滤(2026-10-09 用户拍板):共享词表拟合只在 label 患者集上。
-                cases, _ = restrict_cases_to_label_patients(cases, job["name"])
-                merged_rows.extend(build_patient_rows(cases))
-
-            mappings = fit_onehot_mappings(
-                merged_rows,
-                min_count=args.baseline_nominal_min_count,
-                collapse_rare=True,
-            )
-            scope = {
-                "type": "global_selected_datasets",
-                "source": source,
-                "datasets": dataset_names,
-                "patient_count": len(merged_rows),
-            }
-            source_mapping_dir = global_mapping_dir(source)
-            save_global_baseline_metadata(
-                metadata_dir=source_mapping_dir,
-                nominal_mappings=mappings,
-                feature_schema=build_baseline_feature_schema(mappings),
-                nominal_min_count=args.baseline_nominal_min_count,
-                dataset_names=dataset_names,
-                patient_count=len(merged_rows),
-            )
-            print(f"  共享 mapping 已保存: {source_mapping_dir / 'category_mapping.json'}")
-            baseline_mappings_by_source[source] = {
-                "mappings": mappings,
-                "scope": scope,
-                "mapping_dir": source_mapping_dir,
-            }
 
     if args.cmd == "cindex":
         named_jobs = [job for job in jobs if job["name"]]
@@ -293,26 +224,6 @@ def main(argv=None):
         if not job_schemes:
             print("  当前 dataset 没有可跑的绑定方案，跳过。")
             continue
-
-        if args.cmd == "baseline":
-            source = job.get("source") or "gdc"
-            source_meta = baseline_mappings_by_source.get(source) or {}
-            run_baseline_encode(
-                json_paths=job["json_paths"],
-                schemes=job_schemes,
-                out_root=job["baseline_out_dir"],
-                project_ids=job["project_ids"],
-                stats_dir=args.baseline_stats_dir,
-                nominal_min_count=args.baseline_nominal_min_count,
-                shared_nominal_mappings=source_meta.get("mappings"),
-                mapping_scope=source_meta.get("scope"),
-                global_metadata_dir=(
-                    str(source_meta["mapping_dir"]) if source_meta.get("mapping_dir") is not None else None
-                ),
-                landmark_time=landmark_setting.landmark_time,
-                landmark_subdir=landmark_setting.encode_subdir,
-                dataset_name=job["name"],
-            )
 
         if args.cmd == "hgcn_clinic":
             if job["name"]:

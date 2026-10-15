@@ -84,7 +84,7 @@ def test_resolve_hgcn_schemes_accepts_registered():
     assert resolve_hgcn_schemes("MULTISURV") == ["MULTISURV"]
     # 静态 Test_3_* 注册已删（2026-10-08）：arms_generate 动态登记后才可点名
     with pytest.raises(ValueError):
-        resolve_hgcn_schemes("Test_3_MULTISURV_TCGA-LAML")
+        resolve_hgcn_schemes("paper_MULTISURV_TCGA-LAML")
     with pytest.raises(ValueError):
         resolve_hgcn_schemes("NOT_A_REGISTERED_SCHEME")
 
@@ -100,7 +100,7 @@ def test_artifact_field_name_uses_field_path():
     _load_scheme_fields()
     # L0-L5 占位符命名空间已随 PGC 线移除：节点名统一为 fields.json 字段路径
     assert artifact_field_name("MULTISURV", "project.project_id") == "project.project_id"
-    assert artifact_field_name("Test_3_MULTISURV_TCGA-LAML", FIELD_BANK_FIELD) == FIELD_BANK_FIELD
+    assert artifact_field_name("paper_MULTISURV_TCGA-LAML", FIELD_BANK_FIELD) == FIELD_BANK_FIELD
 
 
 # --------------------------------------------------------------------------

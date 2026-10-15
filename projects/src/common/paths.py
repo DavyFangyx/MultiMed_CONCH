@@ -23,7 +23,6 @@ VALID_EXPERIMENTS = ("", LONGITUDINAL_EXPERIMENT)
 RESULT_EXPERIMENTS = (
     "greedy",
     "univariate",
-    "linear_probe",
     "longitudinal_greedy",
     "longitudinal_univariate",
     "schemes",
@@ -50,6 +49,7 @@ RESULTS_DISPLAY_ROOT = PROJECT_ROOT / "results_display"
 # 因为历史 run_config.json 里写死的旧 results 路径还在盘上(Test_2b 展示脚本消费)。
 
 TEST_CONFIGS_ROOT = PROJECT_ROOT / "Clinic_Analyzer" / "configs"
+LANDMARK_LABELS_DIR = RESULTS_ROOT / "labels"   # landmark 派生结局(患者线共享资产,2026-10-13 中性命名)
 
 
 def config_family_dir(family: str) -> Path:
@@ -79,12 +79,19 @@ def test_display_dir(name: str) -> Path:
 # 历史 run_config 的 results_dir 字面量含旧路径;该改写随历史产物重生成后退役。
 # 顺序敏感: A_manual_landmark 必须先于 A_manual、univariate_raw 先于 univariate。
 LEGACY_TO_TEST_RESULTS = {
-    "results/A_manual_landmark": "results/Test_2b/arm_B",
-    "results/A_manual": "results/Test_2b/arm_A",
-    "results/univariate_raw": "results/Test_1a/arm_off",
-    "results/univariate": "results/Test_1a/arm_t0",
-    "results/leak_audit": "results/Test_2a_leak_audit",
-    "results/E2_selection": "results/Test_3_search",
+    "results/A_manual_landmark": "results/paper_lm0",
+    "results/A_manual": "results/paper_raw",
+    "results/univariate_raw": "results/single_raw",
+    "results/univariate": "results/single_lm0/univariate",
+    "results/leak_audit": "results/leak_audit",
+    "results/E2_selection": "results/greedy_lm0",
+    "results/Test_2b/arm_B": "results/paper_lm0",
+    "results/Test_2b/arm_A": "results/paper_raw",
+    "results/Test_1a/arm_off": "results/single_raw",
+    "results/Test_1a/arm_t0": "results/single_lm0",
+    "results/Test_3_greedy_vs_works": "results/greedy_lm0",
+    "results/Test_3_search": "results/greedy_lm0",
+    "results/Test_2a_leak_audit": "results/leak_audit",
 }
 
 
@@ -297,7 +304,7 @@ def normalize_result_experiment(experiment: str | None = None) -> str:
 
 def result_experiment_name(kind: str, experiment: str | None = None) -> str:
     kind_value = str(kind or "").strip().lower()
-    if kind_value not in {"greedy", "univariate", "linear_probe"}:
+    if kind_value not in {"greedy", "univariate"}:
         raise ValueError(f"unsupported result kind {kind!r}")
     encoding_experiment = normalize_experiment(experiment)
     if encoding_experiment == LONGITUDINAL_EXPERIMENT:
@@ -385,16 +392,6 @@ def dataset_univariate_dir(
     return dataset_outputs_root(dataset_name, experiment) / "univariate" / encoding / tag
 
 
-def dataset_linear_probe_dir(
-    dataset_name: str,
-    encoding: str = "prompt",
-    landmark_tag: str | None = None,
-    experiment: str | None = None,
-) -> Path:
-    encoding = validate_encoding(encoding)
-    tag = require_landmark_tag(landmark_tag)
-    return dataset_outputs_root(dataset_name, experiment) / "linear_probe" / encoding / tag
-
 
 def dataset_results_dir(
     experiment: str,
@@ -448,6 +445,11 @@ def dataset_univariate_results_dir(
     landmark_tag: str | None = None,
     experiment: str | None = None,
 ) -> Path:
+    # 配置口径(2026-10-14):F=single × T=lm0 → results/single_lm0/univariate/...
+    # (raw 变体由 off 臂 --results_dir 指向 results/single_raw)。
+    if result_experiment_name("univariate", experiment) == "univariate":
+        return (RESULTS_ROOT / "single_lm0" / "univariate"
+                / validate_encoding(encoding) / require_landmark_tag(landmark_tag) / dataset_name)
     return dataset_results_dir(
         result_experiment_name("univariate", experiment),
         encoding,
@@ -475,16 +477,6 @@ def dataset_univariate_run_dir(
 ) -> Path:
     return dataset_univariate_runs_dir(dataset_name, encoding, landmark_tag, experiment) / scheme / modality
 
-
-def dataset_linear_probe_results_dir(
-    dataset_name: str,
-    encoding: str = "prompt",
-    landmark_tag: str | None = None,
-    experiment: str | None = None,
-) -> Path:
-    if normalize_experiment(experiment):
-        raise ValueError("linear_probe has no longitudinal results tree")
-    return dataset_results_dir("linear_probe", encoding, landmark_tag, dataset_name)
 
 
 def display_results_dir(

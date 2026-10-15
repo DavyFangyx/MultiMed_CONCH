@@ -301,14 +301,14 @@ def test_univariate_analyzer_results_dir_nests_under_dataset():
         kind="univariate",
     )
     assert out_dir == (
-        DEFAULT_RESULTS_DIR / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
+        DEFAULT_RESULTS_DIR / "single_lm0" / "univariate" / "prompt" / "landmark_365" / "TCGA_LIHC" / "runs" / "G1_deadbeef12" / "mlp_clinic_flatten"
     )
     assert analyzer_exp_group(
         dataset="TCGA_LIHC",
         encoding="prompt",
         landmark_tag="landmark_365",
         kind="univariate",
-    ) == "univariate/prompt/landmark_365/TCGA_LIHC/runs"
+    ) == "single_lm0/univariate/prompt/landmark_365/TCGA_LIHC/runs"
 
 
 
@@ -368,35 +368,3 @@ def test_evaluate_clinic_dir_does_not_reuse_incomplete_folds(tmp_path, monkeypat
             min_folds=5,
         )
 
-
-def test_merge_greedy_summaries_adds_missing_outer(tmp_path):
-    from greedy.cli import _merge_greedy_summaries, _json_load
-
-    out_dir = tmp_path / "greedy"
-    out_dir.mkdir()
-    existing = {
-        "inner_modality": "mlp_clinic_flatten",
-        "outer_modalities": ["mlp_clinic_flatten", "snn_clinic_flatten"],
-        "outer_scores": {
-            "mlp_clinic_flatten": {"c_index_mean": 0.66},
-            "snn_clinic_flatten": {"c_index_mean": 0.62},
-        },
-    }
-    added = _merge_greedy_summaries(
-        out_dir,
-        existing_config=existing,
-        new_outer_scores={
-            "snn_clinic_flatten": {"c_index_mean": 0.99},
-            "clinic_cox": {"c_index_mean": 0.58},
-        },
-        outer_modalities=["snn_clinic_flatten", "clinic_cox"],
-    )
-    config = _json_load(out_dir / "run_config.json")
-    assert list(added) == ["clinic_cox"]
-    assert config["outer_scores"]["snn_clinic_flatten"]["c_index_mean"] == 0.62
-    assert config["outer_scores"]["clinic_cox"]["c_index_mean"] == 0.58
-    assert config["outer_modalities"][-1] == "clinic_cox"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])

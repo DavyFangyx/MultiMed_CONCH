@@ -6,8 +6,7 @@
     臂语义见 z_notes/experiment_list/arm_registry.md 退役臂表 report_apipe / deleak_apipe）
   - 臂 B（去泄露值）  = scheme__landmark_0（经典 landmark 三要件全开）
   - Δc = c(A) − c(B)；Δc > 0 表示去掉未来信息后 c-index 下降 = 文献报告值被高估的证据
-  - 数据集分层按 n_event 四档（协议 A）：≥100 main / 70–100 main_ci（必须带 CI，不排名）
-    / 30–70 supp / <30 low（仅定性讨论）
+  - 范围（2026-10-13 拍板）= 14 主集；四档分层已随 Test_0 退役，n_event 列仅作信息标注。
 
 输入：
   - results/Test_2b/arm_B/{dataset}[gdc]/cindex.csv + run_config.json（S4 两臂产物；S4 summarize
@@ -17,7 +16,7 @@
     （run 折文件 = c 值的最终口径；S4 汇总表首次写入后不再更新，100/552 行为中途快照，
     本脚本按同算术（纯 python sum，python 3.13）从折文件重算，表冻结值保留在 *_table 列）
   - results/Test_2b/arm_A/{dataset}[gdc]/cindex.csv（论文报告值原表，4 方案 × 5 modality；
-    仅作 Test_4 三档参考，不参与本文 Δc 配对——配对用同链路的 landmark_none 行）
+    仅作 Test_4 四档参考，不参与本文 Δc 配对——配对用同链路的 landmark_none 行）
   - rawdata_stats/_shared/event_summary.csv（n_event 分层）
   - results/Test_2b/arm_B/labels/{study}__landmark_0.json（审计用：排除病例清单）
 
@@ -25,9 +24,9 @@
   文件角色前缀（z_notes/experiment_list/naming_convention.md）：Main_ = 头条（回答命题）、
   Appx_ = 附录（明细/主表补充）、Raw_ = 原始矩阵、Meta_ = 元数据；本目录平铺，无子目录。
   - Main_overview_{analyzer}.png（跨方案总览，共 2 张）
-  - Main_delta_summary.csv（按 scheme × analyzer × tier_group 汇总）
+  - Main_delta_summary.csv（按 scheme × analyzer 汇总）
   - Appx_forest_{scheme}_{analyzer}.png（每方案 × 分析器森林图，共 20 张）
-  - Appx_delta_main.csv / Appx_delta_supp.csv / Appx_delta_low.csv
+  - Appx_delta_main.csv（全主集行单表）
 
 可复跑：同输入重跑 diff=0（固定随机种子、固定行列序、无时间戳）。
 产物清单核对：main() 末尾遍历 out_dir，逐个核对上面这组文件名（清单外文件按旧名遗留告警）。
@@ -61,7 +60,7 @@ if str(SRC) not in sys.path:
 
 from common.paths import remap_legacy_result_path, test_results_dir
 
-RESULTS_LM = test_results_dir("Test_2b/arm_B")
+RESULTS_LM = REPO_ROOT / "results" / "paper_lm0"
 EVENT_SUMMARY = REPO_ROOT / "rawdata_stats" / "_shared" / "event_summary.csv"
 
 ANALYZERS = ("clinic_cox", "mlp_clinic_flatten")
@@ -103,28 +102,6 @@ def out_overview_name(analyzer: str) -> str:
 
 
 # --------------------------------------------------------------------------- 分层
-def tier_for(n_event: int) -> str:
-    if n_event >= 100:
-        return "main"
-    if n_event >= 70:
-        return "main_ci"
-    if n_event >= 30:
-        return "supp"
-    return "low"
-
-
-def tier_label(tier: str) -> str:
-    return {
-        "main": "main (n_event>=100)",
-        "main_ci": "main_ci (70-100, CI required, no ranking)",
-        "supp": "supp (30-70, qualitative)",
-        "low": "low (<30, qualitative only)",
-    }[tier]
-
-
-TIER_ORDER = {"main": 0, "main_ci": 1, "supp": 2, "low": 3}
-
-
 def load_event_summary() -> dict[str, dict]:
     df = pd.read_csv(EVENT_SUMMARY)
     out = {}
@@ -196,22 +173,47 @@ def build_rows() -> list[dict]:
         if key not in events:
             raise SystemExit(f"[error] event_summary 缺 {key}")
         meta = events[key]
-        tier = tier_for(meta["n_event"])
-        df, cfg_rows = read_table(dataset_dir)
+        df, cfg_rows = read_table(dataset_dir)                     # arm_B 表(lm0/去泄露行)
+        arm_a_dir = REPO_ROOT / "results" / "paper_raw" / d
+        if arm_a_dir.exists():
+            df_a, cfg_rows_a = read_table(arm_a_dir)               # arm_A 表(raw/报告行)
+        else:
+            df_a, cfg_rows_a = df.iloc[0:0].copy(), {}
 
-        schemes = sorted({s.split("__")[0] for s in df["scheme"]})
+        schemes = sorted({s for s in df["scheme"]})
+        pairs: list[tuple[str, str, str]] = []   # (display, armA row key, armB row key)
+        # legacy 行(冻结 apipe 口径:{base}__landmark_none / __landmark_0)按基名配对
+        legacy_bases = sorted({
+            s.split("__")[0] for s in schemes
+            if "__" in s and not s.startswith("paper_")
+        })
+        for base in legacy_bases:
+            pairs.append((base, f"{base}__{ARM_A}", f"{base}__{ARM_B}"))
+        # F×T 行(2026-10-13 bank 口径):work_raw_{work}_{ds} ↔ work_lm0_{work}_{ds};
+        # reach 行(greedy_lm0_*)单臂,Δc 由 Test_3_compare 负责
+        from manual_pipeline.arm_names import parse_arm_scheme, work_scheme_name  # noqa: E402
+
         for scheme in schemes:
-            if scheme.startswith("Test_3_"):
-                # Test_3 臂 B'/C 行只有单臂(S6 summarize 合并进 arm_B 表),无臂 A 配对;
-                # 其 Δc 由 Test_3_compare.py 负责,本脚本只管 Test_2b 双臂。
+            parsed = parse_arm_scheme(scheme)
+            if parsed is None:
+                if scheme.startswith("paper_"):
+                    n_skipped_test3 += 1
+                continue
+            if parsed["kind"] == "greedy":
                 n_skipped_test3 += 1
                 continue
+            if parsed["t"] != "lm0":
+                continue  # raw 侧由 lm0 侧配对时读取
+            pairs.append((parsed["work"],
+                          work_scheme_name(parsed["work"], parsed["dataset"], "raw"),
+                          scheme))
+        for scheme, a_key, b_key in pairs:
             for analyzer in ANALYZERS:
-                a = df[
-                    (df["scheme"] == f"{scheme}__{ARM_A}") & (df["modality"] == analyzer)
+                a = df_a[
+                    (df_a["scheme"] == a_key) & (df_a["modality"] == analyzer)
                 ]
                 b = df[
-                    (df["scheme"] == f"{scheme}__{ARM_B}") & (df["modality"] == analyzer)
+                    (df["scheme"] == b_key) & (df["modality"] == analyzer)
                 ]
                 if len(a) != 1 or len(b) != 1:
                     raise SystemExit(
@@ -219,7 +221,7 @@ def build_rows() -> list[dict]:
                         f"(A={len(a)}, B={len(b)})"
                     )
                 a_row, b_row = a.iloc[0], b.iloc[0]
-                cfg_a = cfg_rows.get(frozenset((a_row["scheme"], analyzer)))
+                cfg_a = cfg_rows_a.get(frozenset((a_row["scheme"], analyzer)))
                 cfg_b = cfg_rows.get(frozenset((b_row["scheme"], analyzer)))
                 if cfg_a is None or cfg_b is None:
                     raise SystemExit(
@@ -241,7 +243,6 @@ def build_rows() -> list[dict]:
                         "dataset": dataset,
                         "scheme": scheme,
                         "analyzer": analyzer,
-                        "tier": tier,
                         "n_patients": meta["n_patients"],
                         "n_event": meta["n_event"],
                         "event_rate": meta["event_rate"],
@@ -269,7 +270,6 @@ COLUMNS = [
     "dataset",
     "scheme",
     "analyzer",
-    "tier",
     "n_patients",
     "n_event",
     "event_rate",
@@ -289,24 +289,12 @@ COLUMNS = [
 ]
 
 
-def write_tier_tables(rows: list[dict], out_dir: Path) -> dict[str, Path]:
+def write_delta_table(rows: list[dict], out_dir: Path) -> Path:
+    """全主集行写单张表(2026-10-13:四档分层随 Test_0 退役)。"""
     df = pd.DataFrame(rows)[COLUMNS]
-    files = {}
-    for tier, fname in (
-        ("main", OUT_APPX_DELTA_MAIN),
-        ("supp", OUT_APPX_DELTA_SUPP),
-        ("low", OUT_APPX_DELTA_LOW),
-    ):
-        sub = df[df["tier"] == tier]
-        path = out_dir / fname
-        sub.to_csv(path, index=False)
-        files[tier] = path
-    # main_ci（70–100）并入主表文件，用 tier 列标注 CI 要求（不排名）
-    main = df[df["tier"].isin(("main", "main_ci"))]
     path = out_dir / OUT_APPX_DELTA_MAIN
-    main.to_csv(path, index=False)
-    files["main_ci"] = path
-    return files
+    df.to_csv(path, index=False)
+    return path
 
 
 # --------------------------------------------------------------------------- 汇总统计
@@ -324,31 +312,29 @@ def summarize(rows: list[dict], out_dir: Path) -> Path:
     recs = []
     rng = np.random.default_rng(BOOTSTRAP_SEED)
     for (scheme, analyzer), g in df.groupby(["scheme", "analyzer"], sort=True):
-        for tier in ("main", "main_ci", "supp", "low"):
-            sub = g[g["tier"] == tier]
-            if len(sub) == 0:
-                continue
-            delta = sub["delta"].to_numpy(dtype=float)
-            ca = sub["c_report"].to_numpy(dtype=float)
-            cb = sub["c_deleaked"].to_numpy(dtype=float)
-            w_stat = w_p = float("nan")
-            if len(delta) >= 2:
-                try:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", RuntimeWarning)
-                        res = stats.wilcoxon(ca, cb, alternative="two-sided")
-                    w_stat, w_p = float(res.statistic), float(res.pvalue)
-                except (ValueError, ZeroDivisionError):
-                    pass
-            lo, hi = bootstrap_mean_ci(delta, rng)
-            recs.append(
-                {
-                    "scheme": scheme,
-                    "analyzer": analyzer,
-                    "tier_group": tier,
-                    "n_datasets": len(sub),
-                    "datasets": "|".join(sorted(sub["dataset"])),
-                    "mean_delta": float(delta.mean()),
+        sub = g
+        if len(sub) == 0:
+            continue
+        delta = sub["delta"].to_numpy(dtype=float)
+        ca = sub["c_report"].to_numpy(dtype=float)
+        cb = sub["c_deleaked"].to_numpy(dtype=float)
+        w_stat = w_p = float("nan")
+        if len(delta) >= 2:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    res = stats.wilcoxon(ca, cb, alternative="two-sided")
+                w_stat, w_p = float(res.statistic), float(res.pvalue)
+            except (ValueError, ZeroDivisionError):
+                pass
+        lo, hi = bootstrap_mean_ci(delta, rng)
+        recs.append(
+            {
+                "scheme": scheme,
+                "analyzer": analyzer,
+                "n_datasets": len(sub),
+                "datasets": "|".join(sorted(sub["dataset"])),
+                "mean_delta": float(delta.mean()),
                     "median_delta": float(np.median(delta)),
                     "sd_delta": float(delta.std(ddof=1)) if len(delta) > 1 else float("nan"),
                     "direction_consistency": float((delta > 0).mean()),
@@ -359,7 +345,7 @@ def summarize(rows: list[dict], out_dir: Path) -> Path:
                 }
             )
     out = pd.DataFrame(recs).sort_values(
-        ["analyzer", "scheme", "tier_group"], kind="mergesort"
+        ["analyzer", "scheme"], kind="mergesort"
     )
     path = out_dir / OUT_MAIN_DELTA_SUMMARY
     out.to_csv(path, index=False)
@@ -379,13 +365,7 @@ def _setup_axes(ax: plt.Axes) -> None:
 
 def forest_figure(rows: list[dict], scheme: str, analyzer: str, out_dir: Path) -> Path:
     sub = [r for r in rows if r["scheme"] == scheme and r["analyzer"] == analyzer]
-    sub.sort(
-        key=lambda r: (
-            TIER_ORDER[r["tier"]],
-            -r["n_event"],
-            r["dataset"],
-        )
-    )
+    sub.sort(key=lambda r: (-r["n_event"], r["dataset"]))
     n = len(sub)
     fig, ax = plt.subplots(figsize=(8.5, max(2.6, 0.30 * n + 1.6)))
     fig.patch.set_facecolor(SURFACE)
@@ -433,26 +413,6 @@ def forest_figure(rows: list[dict], scheme: str, analyzer: str, out_dir: Path) -
             color=MUTED,
         )
 
-    # 协议 A 分层分隔线 + 分层标注（文本承载，不用颜色）
-    bounds = []
-    prev_tier = None
-    for yi, r in zip(y, sub):
-        if r["tier"] != prev_tier:
-            bounds.append((r["tier"], yi))
-            prev_tier = r["tier"]
-    for i, (tier, yi) in enumerate(bounds):
-        if i > 0:
-            ax.axhline(yi - 0.5, color=GRIDLINE, linewidth=1.0, zorder=1)
-        ax.text(
-            0.003,
-            min((yi + 0.30) / n, 0.985),
-            tier_label(tier),
-            transform=ax.transAxes,
-            ha="left",
-            va="bottom",
-            fontsize=7.0,
-            color=MUTED,
-        )
     ax.set_ylim(-0.6, n - 0.4)
     ax.set_xlabel("Δc = c(report, none) − c(deleaked, landmark_0)")
     ax.set_title(
@@ -488,11 +448,10 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
     shown_labels: set[str] = set()
     for xi, scheme in zip(x, schemes):
         sub = g[g["scheme"] == scheme]
-        main15 = sub[sub["tier"] == "main"]
-        if len(main15) == 0:  # HGCN 方案只绑定单一癌种，且其癌种不在 main 档时用单点
-            main15 = sub
-        crep = main15["c_report"].to_numpy(dtype=float)
-        cdel = main15["c_deleaked"].to_numpy(dtype=float)
+        if len(sub) == 0:
+            continue
+        crep = sub["c_report"].to_numpy(dtype=float)
+        cdel = sub["c_deleaked"].to_numpy(dtype=float)
         m_rep, m_del = float(crep.mean()), float(cdel.mean())
         lo_r, hi_r = bootstrap_mean_ci(crep, rng)
         lo_d, hi_d = bootstrap_mean_ci(cdel, rng)
@@ -507,7 +466,7 @@ def overview_figure(rows: list[dict], analyzer: str, out_dir: Path) -> Path:
             )
             ax.scatter([xi + width / 2], [m_del], marker="D", s=56, color=COL_DELEAKED, zorder=3)
             ax.annotate(
-                f"n={len(main15)}\n{m_rep:.3f} / {m_del:.3f}",
+                f"n={len(sub)}\n{m_rep:.3f} / {m_del:.3f}",
                 xy=(xi, max(m_rep, m_del)),
                 xytext=(0, 6),
                 textcoords="offset points",
@@ -570,12 +529,19 @@ def audit(rows: list[dict]) -> None:
         dataset, scheme, analyzer = r["dataset"], r["scheme"], r["analyzer"]
         print(f"  - {dataset} × {scheme} × {analyzer}")
         # 1) 独立重算 Δc：从 run 目录折文件裸读（不经报表装配逻辑）
-        df = pd.read_csv(RESULTS_LM / dataset / "cindex.csv")
-        _, cfg = read_table(RESULTS_LM / dataset)
-        a = df[(df["scheme"] == f"{scheme}__{ARM_A}") & (df["modality"] == analyzer)]
-        b = df[(df["scheme"] == f"{scheme}__{ARM_B}") & (df["modality"] == analyzer)]
-        ca_f, _, _, _ = fold_values(remap_legacy_result_path(cfg[frozenset((a.iloc[0]["scheme"], analyzer))]["results_dir"]))
-        cb_f, _, _, _ = fold_values(remap_legacy_result_path(cfg[frozenset((b.iloc[0]["scheme"], analyzer))]["results_dir"]))
+        from manual_pipeline.arm_names import parse_arm_scheme, work_scheme_name  # noqa: E402
+
+        parsed = parse_arm_scheme(f"work_lm0_{scheme}_{dataset_key(dataset)}")
+        b_key = f"work_lm0_{scheme}_{dataset_key(dataset)}"
+        a_key = work_scheme_name(scheme, dataset_key(dataset), "raw")
+        df_b = pd.read_csv(RESULTS_LM / dataset / "cindex.csv")
+        _, cfg_b = read_table(RESULTS_LM / dataset)
+        df_a = pd.read_csv(REPO_ROOT / "results" / "paper_raw" / dataset / "cindex.csv")
+        _, cfg_a = read_table(REPO_ROOT / "results" / "paper_raw" / dataset)
+        a = df_a[(df_a["scheme"] == a_key) & (df_a["modality"] == analyzer)]
+        b = df_b[(df_b["scheme"] == b_key) & (df_b["modality"] == analyzer)]
+        ca_f, _, _, _ = fold_values(remap_legacy_result_path(cfg_a[frozenset((a.iloc[0]["scheme"], analyzer))]["results_dir"]))
+        cb_f, _, _, _ = fold_values(remap_legacy_result_path(cfg_b[frozenset((b.iloc[0]["scheme"], analyzer))]["results_dir"]))
         manual = ca_f - cb_f
         ok1 = abs(manual - r["delta"]) < 1e-12
         # 2) stale 标记自洽：|折文件均值 − S4 表冻结值| > 1e-12 的行必须被标记
@@ -652,14 +618,11 @@ def main() -> None:
 
     rows = build_rows()
     print(f"[build] 两臂配对行数: {len(rows)}")
-    tier_counts = pd.Series([r["tier"] for r in rows]).value_counts().to_dict()
-    print(f"[build] tier 分布: {tier_counts}")
 
     written: list[Path] = []
-    files = write_tier_tables(rows, out_dir)
-    written.extend(files.values())
-    for tier, path in files.items():
-        print(f"[csv] {path.name} ({tier})")
+    path = write_delta_table(rows, out_dir)
+    written.append(path)
+    print(f"[csv] {path.name}")
     summary_path = summarize(rows, out_dir)
     written.append(summary_path)
     print(f"[csv] {summary_path.name}")

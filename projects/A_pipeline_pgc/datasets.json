@@ -76,5 +76,15 @@
     "project_ids": [
       "TCGA-LUSC"
     ]
+  },
+  "CPTAC-BRCA": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/CPTAC_data/cptac_brca/clinical/clinical.cart.2026-10-10.json"
+    ]
+  },
+  "CPTAC-COAD": {
+    "clinic_files": [
+      "/data/lizhe/Medteam_projects/CPTAC_data/cptac_coad/clinical/clinical.cart.2026-10-10.json"
+    ]
   }
 }

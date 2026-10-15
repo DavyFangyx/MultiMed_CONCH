@@ -82,35 +82,53 @@ def existing_job(root: Path, name: str) -> Path | None:
     return None
 
 
+def _stamp_claimed(dest: Path) -> None:
+    """认领盖章 claimed_at / claimed_pid / cuda_visible_devices;非 JSON conf 跳过。"""
+    try:
+        job = load_job(dest)
+        job["claimed_at"] = now_utc()
+        job["claimed_pid"] = os.getpid()
+        job["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        dest.write_text(json_dumps(job), encoding="utf-8")
+    except (json.JSONDecodeError, OSError):
+        # 非 JSON conf(cindex 的 bash 风格文本):以注释行盖章(被 bash source 忽略,
+        # 但 _recover_stale_running 可解析 claimed_pid 做死进程回收)。
+        with dest.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"# claimed_at={now_utc()}\n"
+                f"# claimed_pid={os.getpid()}\n"
+                f"# cuda_visible_devices={os.environ.get('CUDA_VISIBLE_DEVICES', '')}\n"
+            )
+
+
+def _rename_claim(src: Path, dest: Path) -> Path | None:
+    """原子 mv 认领:running/ 已有同名则丢弃 queue 副本并跳过。"""
+    if dest.exists():
+        src.unlink(missing_ok=True)
+        return None
+    try:
+        os.rename(src, dest)
+    except OSError:
+        return None
+    _stamp_claimed(dest)
+    return dest
+
+
 def claim(root: Path, pattern: str) -> Path | None:
     """按文件名模式从 queue/ 原子认领一个 conf 到 running/。
 
-    pattern 例:"981369e69510__"(univariate job_key 前缀)、"t2b__"(cindex 家族)。
+    pattern 例:"981369e69510__"(univariate job_key 前缀)、"work_lm0_…"(cindex 语义名)。
     认领后盖章 claimed_at / claimed_pid / cuda_visible_devices。
     """
     root = ensure_dirs(root)
     queue_dir = root / "queue"
     running_dir = root / "running"
     for src in sorted(queue_dir.glob(f"{pattern}*.conf")):
-        dest = running_dir / src.name
-        if dest.exists():
-            src.unlink(missing_ok=True)
-            continue
-        try:
-            os.rename(src, dest)
-        except OSError:
-            continue
-        try:
-            job = load_job(dest)
-            job["claimed_at"] = now_utc()
-            job["claimed_pid"] = os.getpid()
-            job["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-            dest.write_text(json_dumps(job), encoding="utf-8")
-        except (json.JSONDecodeError, OSError):
-            # 非 JSON conf(cindex 的 bash 风格文本)保持原样,只认领不盖章
-            pass
-        return dest
+        claimed = _rename_claim(src, running_dir / src.name)
+        if claimed is not None:
+            return claimed
     return None
+
 
 
 def move(path: Path, bucket: str) -> Path:

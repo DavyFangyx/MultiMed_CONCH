@@ -83,8 +83,8 @@ def load_baseline_scheme_fields(text_scheme_fields: dict[str, list[str]]) -> Non
         if name not in text_scheme_fields:
             raise ValueError(f"缺少论文方案 {name}，无法注册 baseline 字段")
         BASELINE_SCHEME_FIELDS[name] = list(text_scheme_fields[name])
-    # 自定义方案（templates/manual_schemes/{scheme}，如 Test_3_*）：与论文方案同款注册。
-    # 原 A_pipeline 时代由 Test_3_pipeline_one 进程内 append 进 PAPER_SCHEMES 绕过（且必须
+    # 自定义方案（templates/manual_schemes/{scheme}，如 paper_*）：与论文方案同款注册。
+    # 原 A_pipeline 时代进程内 append 进 PAPER_SCHEMES 绕过（且必须
     # 在 import 本模块前完成）；吸收后白名单直接在源头放开，Test_5_baseline_c 无需补丁。
     for name in text_scheme_fields:
         if name in BASELINE_SCHEME_FIELDS:
